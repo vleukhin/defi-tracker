@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { AllocationBar } from "./allocation-bar";
 import { MetricCards } from "./metric-cards";
 import { PortfolioTable } from "./portfolio-table";
-import { SparklinePlaceholder } from "./sparkline-placeholder";
+import { ValueSparkline } from "./value-sparkline";
 
 /**
  * Дашборд портфеля — «30-секундная проверка» (S1.7).
@@ -253,7 +253,7 @@ export function PortfolioDashboard() {
 
       <AllocationBar rows={data.rows} totalUsd={data.totalUsd} />
 
-      <SparklinePlaceholder />
+      <ValueSparkline />
 
       <PortfolioTable rows={data.rows} totalUsd={data.totalUsd} />
 
