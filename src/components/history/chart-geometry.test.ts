@@ -8,7 +8,7 @@ import {
   hitRegions,
   linePath,
   niceTicks,
-  pickTickIndices,
+  pickTicksByX,
   splitRuns,
   timeScale,
   yPercent,
@@ -151,20 +151,27 @@ describe("yPercent", () => {
   });
 });
 
-describe("pickTickIndices", () => {
-  it("возвращает все индексы, когда точек меньше лимита", () => {
-    expect(pickTickIndices(3, 6)).toEqual([0, 1, 2]);
+describe("pickTicksByX", () => {
+  it("разводит подписи минимальным зазором", () => {
+    // Точки сгущены слева: равномерный шаг по индексу склеил бы подписи
+    const xs = [2, 4, 6, 8, 50, 98];
+    const ticks = pickTicksByX(xs, 3, 26);
+    for (let i = 1; i < ticks.length; i += 1) {
+      expect(xs[ticks[i]] - xs[ticks[i - 1]]).toBeGreaterThanOrEqual(26);
+    }
+    expect(ticks.at(-1)).toBe(5);
   });
 
-  it("прореживает и всегда берет крайние", () => {
-    const idx = pickTickIndices(30, 4);
-    expect(idx[0]).toBe(0);
-    expect(idx.at(-1)).toBe(29);
-    expect(idx.length).toBeLessThanOrEqual(4);
+  it("всегда оставляет последнюю подпись", () => {
+    expect(pickTicksByX([0, 1, 2], 3, 90).at(-1)).toBe(2);
+  });
+
+  it("одна точка — одна подпись", () => {
+    expect(pickTicksByX([50], 5, 20)).toEqual([0]);
   });
 
   it("пустая серия — нет подписей", () => {
-    expect(pickTickIndices(0, 4)).toEqual([]);
+    expect(pickTicksByX([], 4, 20)).toEqual([]);
   });
 });
 

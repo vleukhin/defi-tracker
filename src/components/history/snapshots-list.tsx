@@ -244,7 +244,8 @@ function SnapshotDetail({
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        Состав на <span className="font-mono">{tableDate(snapshot.takenOn)}</span>
+        Состав на{" "}
+        <span className="font-mono">{tableDate(snapshot.takenOn)}</span>
         {" · "}снят{" "}
         <span className="font-mono">
           {new Date(snapshot.takenAt).toISOString().slice(11, 16)} UTC
@@ -300,7 +301,9 @@ function SnapshotDetail({
                 </div>
                 <div>
                   <dt className={DT}>Доля</dt>
-                  <dd className="font-mono text-sm">{tablePct(item.percent)}</dd>
+                  <dd className="font-mono text-sm">
+                    {tablePct(item.percent)}
+                  </dd>
                 </div>
                 <div>
                   <dt className={DT}>Залог / вручную</dt>

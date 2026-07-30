@@ -166,18 +166,52 @@ export function yPercent(axis: ValueAxis, value: number): number {
 }
 
 /**
- * Индексы подписей оси X, разреженные до `count` штук: первая и последняя
- * всегда попадают, остальные — равномерно. Подписи дат не должны
- * наезжать друг на друга на 375 px.
+ * Индексы подписей оси X по ФАКТИЧЕСКОЙ позиции точек, а не по их номеру:
+ * ось календарная, и равномерный шаг по индексу ставит подписи вплотную
+ * там, где точки сгущаются. Гарантируется минимальный зазор `minGap`
+ * (в процентах ширины) — крайние подписи сохраняются всегда.
  */
-export function pickTickIndices(n: number, count: number): number[] {
-  if (n <= 0) return [];
-  if (n <= count) return Array.from({ length: n }, (_, i) => i);
-  if (count <= 1) return [n - 1];
-  const step = (n - 1) / (count - 1);
-  const indices = new Set<number>();
-  for (let i = 0; i < count; i += 1) indices.add(Math.round(i * step));
-  return [...indices].sort((a, b) => a - b);
+export function pickTicksByX(
+  xs: readonly number[],
+  count: number,
+  minGap: number,
+): number[] {
+  const n = xs.length;
+  if (n === 0) return [];
+  if (n === 1 || count <= 1) return [n - 1];
+
+  // Ближайшая точка к каждой из `count` равномерных позиций
+  const first = xs[0];
+  const last = xs[n - 1];
+  const picked = new Set<number>();
+  for (let i = 0; i < count; i += 1) {
+    const target = first + ((last - first) * i) / (count - 1);
+    let best = 0;
+    for (let j = 1; j < n; j += 1) {
+      if (Math.abs(xs[j] - target) < Math.abs(xs[best] - target)) best = j;
+    }
+    picked.add(best);
+  }
+
+  const sorted = [...picked].sort((a, b) => a - b);
+  const kept: number[] = [];
+  for (const index of sorted) {
+    if (kept.length === 0 || xs[index] - xs[kept[kept.length - 1]] >= minGap) {
+      kept.push(index);
+    }
+  }
+  // Последняя подпись обязательна; предыдущую убираем, если она вплотную
+  const lastIndex = sorted[sorted.length - 1];
+  if (kept[kept.length - 1] !== lastIndex) {
+    while (
+      kept.length > 0 &&
+      xs[lastIndex] - xs[kept[kept.length - 1]] < minGap
+    ) {
+      kept.pop();
+    }
+    kept.push(lastIndex);
+  }
+  return kept;
 }
 
 /** «12.345» — координата SVG без хвоста плавающей точки. */

@@ -51,7 +51,8 @@ export function HistoryScreen() {
       // POST перезаписывает снепшот за сегодня — сообщение честно
       // различает первый съем за день и повторный
       const existed =
-        data?.snapshots.some((s) => s.takenOn === res.snapshot.takenOn) ?? false;
+        data?.snapshots.some((s) => s.takenOn === res.snapshot.takenOn) ??
+        false;
       const title = existed ? "Снепшот за сегодня обновлен" : "Снепшот создан";
       const reasons = res.partialReasons ?? [];
       if (reasons.length > 0) {
@@ -176,7 +177,12 @@ function EmptyState({
           : `${CRON_NOTE} Кнопка «Снепшот сейчас» снимает точку немедленно — с нее и начнется график.`}
       </p>
       {narrowed && (
-        <Button variant="outline" size="sm" className="mt-4" onClick={onAllTime}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-4"
+          onClick={onAllTime}
+        >
           Показать все время
         </Button>
       )}

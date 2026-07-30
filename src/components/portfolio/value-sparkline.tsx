@@ -78,7 +78,8 @@ export function ValueSparkline() {
   const first = snapshots[0];
   const last = snapshots[snapshots.length - 1];
   const change = last.totalUsd - first.totalUsd;
-  const changePct = first.totalUsd === 0 ? null : (change / first.totalUsd) * 100;
+  const changePct =
+    first.totalUsd === 0 ? null : (change / first.totalUsd) * 100;
   const missing = countMissingDays(snapshots);
   const anyPartial = snapshots.some((s) => s.isPartial);
 
@@ -98,7 +99,9 @@ export function ValueSparkline() {
           <h2 className="text-sm font-semibold">{TITLE}</h2>
           <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <span className="font-mono">{tableUsd(last.totalUsd)}</span>
-            <span className={cn("font-mono whitespace-nowrap", pnlClass(change))}>
+            <span
+              className={cn("font-mono whitespace-nowrap", pnlClass(change))}
+            >
               {formatPnl(change, changePct)}
             </span>
             <span className="hidden sm:inline">за 30 дней</span>

@@ -12,7 +12,12 @@ import {
   usdDecimals,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ChartTooltip, HoverLayer } from "./chart-hover";
+import {
+  ChartLegend,
+  ChartTooltip,
+  ChartXAxis,
+  HoverLayer,
+} from "./chart-parts";
 import {
   areaPath,
   bandCenter,
@@ -20,7 +25,6 @@ import {
   hitRegions,
   linePath,
   niceTicks,
-  pickTickIndices,
   splitRuns,
   timeScale,
   yPercent,
@@ -67,7 +71,8 @@ export function ValueChart({
   const first = snapshots[0];
   const last = snapshots[snapshots.length - 1];
   const change = last.totalUsd - first.totalUsd;
-  const changePct = first.totalUsd === 0 ? null : (change / first.totalUsd) * 100;
+  const changePct =
+    first.totalUsd === 0 ? null : (change / first.totalUsd) * 100;
 
   const ariaLabel =
     `Динамика стоимости портфеля, ${periodLabel}: ` +
@@ -200,8 +205,13 @@ export function ValueChart({
         </div>
 
         {/* Подписи оси X: на узких экранах их меньше — даты не наезжают */}
-        <XAxis plot={plot} count={3} className="sm:hidden" />
-        <XAxis plot={plot} count={5} className="hidden sm:block" />
+        <ChartXAxis points={plot} count={3} minGap={26} className="sm:hidden" />
+        <ChartXAxis
+          points={plot}
+          count={5}
+          minGap={14}
+          className="hidden sm:block"
+        />
       </div>
 
       <ChartLegend missing={missing} anyPartial={anyPartial} />
@@ -213,62 +223,5 @@ function pointLabel(snapshot: SnapshotDto): string {
   return (
     `${tableDate(snapshot.takenOn)}: ${tableUsd(snapshot.totalUsd)}` +
     (snapshot.isPartial ? ", частичные данные" : "")
-  );
-}
-
-function XAxis({
-  plot,
-  count,
-  className,
-}: {
-  plot: { takenOn: string; x: number }[];
-  count: number;
-  className?: string;
-}) {
-  return (
-    <div
-      aria-hidden="true"
-      className={cn("relative mt-1.5 h-4", className)}
-    >
-      {pickTickIndices(plot.length, count).map((i) => (
-        <span
-          key={plot[i].takenOn}
-          style={{ left: `${plot[i].x}%` }}
-          className="absolute -translate-x-1/2 font-mono text-[10px] whitespace-nowrap text-muted-foreground"
-        >
-          {tableDate(plot[i].takenOn)}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/** Легенда разрывов и частичных точек — цвет никогда не единственный сигнал. */
-export function ChartLegend({
-  missing,
-  anyPartial,
-}: {
-  missing: number;
-  anyPartial: boolean;
-}) {
-  if (missing === 0 && !anyPartial) return null;
-  return (
-    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {anyPartial && (
-        <span className="inline-flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className="inline-block size-2.5 shrink-0 rounded-full border-2 border-warning bg-background"
-          />
-          частичные данные
-        </span>
-      )}
-      {missing > 0 && (
-        <span>
-          разрывы — дни без снепшота:{" "}
-          <span className="font-mono">{missing}</span>
-        </span>
-      )}
-    </div>
   );
 }
