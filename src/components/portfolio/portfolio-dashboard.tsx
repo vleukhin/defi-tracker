@@ -7,9 +7,9 @@ import {
   DEVIATION_THRESHOLD_PP,
   NBSP,
   chainLabel,
-  formatPp,
   formatRelativeTime,
-  formatUsd,
+  tablePctSigned,
+  tableUsd,
 } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { PortfolioTable } from "./portfolio-table";
@@ -129,7 +129,7 @@ export function PortfolioDashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
           <p className="mt-1 text-3xl font-semibold tabular-nums sm:text-4xl">
-            {formatUsd(data.totalUsd, 0)}
+            {tableUsd(data.totalUsd)}
           </p>
           <p className="mt-1 text-xs text-gray-500">
             цены: {formatRelativeTime(data.freshness.oldestPriceAt) ?? "—"}
@@ -182,12 +182,11 @@ export function PortfolioDashboard() {
         Math.abs(maxDev.percentDiff) > DEVIATION_THRESHOLD_PP && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             Максимальное отклонение: {maxDev.label}{" "}
-            {formatPp(maxDev.percentDiff, 2)} (
-            {formatUsd(
+            {tablePctSigned(maxDev.percentDiff)} (
+            {tableUsd(
               Math.abs(
                 maxDev.amountUsd - (maxDev.targetPercent! / 100) * data.totalUsd,
               ),
-              0,
             )}{" "}
             {maxDev.percentDiff > 0 ? "сверх цели" : "ниже цели"})
           </p>

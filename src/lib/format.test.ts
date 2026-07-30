@@ -9,6 +9,12 @@ import {
   formatQuantityFull,
   formatRelativeTime,
   formatUsd,
+  tableNumber,
+  tablePct,
+  tablePctSigned,
+  tableQuantity,
+  tableSigned,
+  tableUsd,
   truncateAddress,
 } from "./format";
 
@@ -163,5 +169,54 @@ describe("chainLabel", () => {
 
   it("неизвестная сеть — как есть", () => {
     expect(chainLabel("zksync")).toBe("zksync");
+  });
+});
+
+/**
+ * Табличный формат: воспроизводит вид рабочей таблицы пользователя —
+ * десятичная запятая, сохранение нулей, «$» без отбивки.
+ */
+describe("табличный формат", () => {
+  it("количество: запятая, группировка тысяч, нули сохраняются", () => {
+    expect(tableNumber(1.2611, 4)).toBe("1,2611");
+    expect(tableNumber(16.9188, 4)).toBe("16,9188");
+    // Нули не срезаются — колонки выравниваются как в таблице
+    expect(tableNumber(1.2, 4)).toBe("1,2000");
+    expect(tableNumber(39548, 0)).toBe(`39${NBSP}548`);
+    expect(tableNumber(5350.2713, 4)).toBe(`5${NBSP}350,2713`);
+  });
+
+  it("количество: типографский минус", () => {
+    expect(tableNumber(-0.071486, 6)).toBe(`${MINUS}0,071486`);
+  });
+
+  it("к ребалансировке: плюс показывается явно (знак не только цветом)", () => {
+    expect(tableSigned(6352, 0)).toBe(`+6${NBSP}352`);
+    expect(tableSigned(-0.917713, 6)).toBe(`${MINUS}0,917713`);
+    expect(tableSigned(0, 2)).toBe("0,00");
+  });
+
+  it("доллары: без пробела после знака валюты, без копеек", () => {
+    expect(tableUsd(81098)).toBe(`$81${NBSP}098`);
+    expect(tableUsd(1)).toBe("$1");
+    expect(tableUsd(153001)).toBe(`$153${NBSP}001`);
+    expect(tableUsd(-1234)).toBe(`${MINUS}$1${NBSP}234`);
+  });
+
+  it("проценты: две цифры с сохранением нулей", () => {
+    expect(tablePct(53)).toBe("53,00%");
+    expect(tablePct(21.147)).toBe("21,15%");
+    expect(tablePctSigned(3)).toBe("+3,00%");
+    expect(tablePctSigned(-4.15)).toBe(`${MINUS}4,15%`);
+  });
+
+  it("количество из строки: запятая, точность не теряется", () => {
+    expect(tableQuantity("1.26100000")).toBe("1,261");
+    expect(tableQuantity("0.000000012345678", true)).toBe("0,000000012345678");
+  });
+
+  it("нечисловое значение не превращается в NaN на экране", () => {
+    expect(tableNumber(Number.NaN, 2)).toBe("—");
+    expect(tableUsd(Number.POSITIVE_INFINITY)).toBe("—");
   });
 });

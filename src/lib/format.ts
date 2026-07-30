@@ -16,6 +16,57 @@ function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
 }
 
+/* ---------------------------------------------------------------------------
+ * Табличный формат (вид рабочей таблицы пользователя): десятичная ЗАПЯТАЯ,
+ * фиксированное число знаков с сохранением нулей («53,00%», «1,2611»),
+ * знак доллара без отбивки («$81 098»). Нули не срезаются намеренно —
+ * так колонки визуально выравниваются, как в таблице.
+ * ------------------------------------------------------------------------- */
+
+/** «1 234,5678» — число с запятой и фиксированной точностью. */
+export function tableNumber(value: number, decimals: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value < 0 ? MINUS : "";
+  const [int, frac] = Math.abs(value).toFixed(decimals).split(".");
+  return `${sign}${groupThousands(int)}${frac ? `,${frac}` : ""}`;
+}
+
+/** Как tableNumber, но с явным «+» — знак не должен быть только цветом. */
+export function tableSigned(value: number, decimals: number): string {
+  const body = tableNumber(value, decimals);
+  return value > 0 ? `+${body}` : body;
+}
+
+/** «$81 098» / «−$1 234» — как в таблице: без пробела после знака валюты. */
+export function tableUsd(value: number, decimals = 0): string {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value < 0 ? MINUS : "";
+  const [int, frac] = Math.abs(value).toFixed(decimals).split(".");
+  return `${sign}$${groupThousands(int)}${frac ? `,${frac}` : ""}`;
+}
+
+/**
+ * Количество из десятичной СТРОКИ с запятой-разделителем.
+ * Обертка над formatQuantity/formatQuantityFull: точность не теряется
+ * (все операции строковые), меняется только разделитель.
+ */
+export function tableQuantity(quantity: string, full = false): string {
+  const formatted = full
+    ? formatQuantityFull(quantity)
+    : formatQuantity(quantity);
+  return formatted.replace(".", ",");
+}
+
+/** «53,00%» — процент с запятой и двумя знаками. */
+export function tablePct(value: number, decimals = 2): string {
+  return `${tableNumber(value, decimals)}%`;
+}
+
+/** «+3,00%» / «−4,15%» — отклонение в процентных пунктах. */
+export function tablePctSigned(value: number, decimals = 2): string {
+  return `${tableSigned(value, decimals)}%`;
+}
+
 /**
  * «$ 12 345.67». По умолчанию 2 знака; decimals: 0 — для сумм
  * ребалансировки («Купить $ 980»). Отрицательные — с типографским минусом.

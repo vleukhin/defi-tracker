@@ -6,7 +6,7 @@ import type {
   PortfolioCategory,
   TargetsResponseDto,
 } from "@/lib/api/types";
-import { NBSP, formatQuantity, formatUsd } from "@/lib/format";
+import { NBSP, formatQuantity, tableUsd } from "@/lib/format";
 import { ApiError, apiFetch } from "@/lib/use-api";
 
 /**
@@ -276,7 +276,7 @@ function ManualSection({
           {entries.length > 0 && (
             <span className="text-sm tabular-nums text-gray-600">
               {unit === "USD"
-                ? formatUsd(total, 0)
+                ? tableUsd(total)
                 : `${formatQuantity(String(total))} ${unit}`}
             </span>
           )}

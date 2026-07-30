@@ -1,38 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { PortfolioRowDto } from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
-  NBSP,
   chainLabel,
-  formatAmount,
-  formatPct,
-  formatPp,
-  formatQuantity,
-  formatQuantityFull,
-  formatSignedAmount,
-  formatUsd,
+  tableNumber,
+  tableQuantity,
+  tablePct,
+  tablePctSigned,
+  tableSigned,
+  tableUsd,
 } from "@/lib/format";
 
 /**
- * Компактная таблица портфеля (S1.7): три фиксированные строки.
- * Столбцы повторяют рабочую таблицу пользователя:
+ * Таблица портфеля в виде рабочей таблицы пользователя (S1.7):
+ * сетка с границами ячеек, числа выровнены по правому краю, десятичная
+ * запятая, фиксированная точность с сохранением нулей, итог — в колонке
+ * стоимости. Столбцы 1:1 повторяют исходную таблицу:
  * Количество · Стоимость USD · Цена · Доля · Цель · Отклонение · К ребалансировке.
  *
- * На ≥ md — сетка со «шапкой»; на мобильном — стек карточек с подписями,
- * без горизонтальной прокрутки страницы. Строка раскрывается в состав.
+ * Единственное расширение против таблицы — раскрытие строки в состав
+ * (залог по сетям и ручные записи): без него не видно, из чего собрано
+ * количество. Раскрытие оформлено сдержанно, чтобы не ломать вид таблицы.
+ *
+ * На узких экранах (< md) сетка заменяется стеком карточек: таблица из
+ * восьми колонок на 375 px нечитаема.
  */
 
-/** Знаков после точки в количестве категории: у стейблов дроби не нужны. */
+/** Знаков в количестве: у стейблов дробная часть не нужна. */
 function amountDecimals(unit: string): number {
   return unit === "USD" ? 0 : 4;
 }
 
 /**
  * Точность количества к ребалансировке подстраивается под масштаб:
- * −0.071486 BTC нужно видеть целиком, а у −3 732.86 ETH шесть знаков
- * только ломают верстку и ничего не добавляют.
+ * −0,071486 BTC нужно видеть целиком, а у −3 732,86 ETH шесть знаков
+ * только ломают верстку.
  */
 function balanceDecimals(unit: string, value: number): number {
   if (unit === "USD") return 0;
@@ -42,13 +46,31 @@ function balanceDecimals(unit: string, value: number): number {
   return 6;
 }
 
-function deviationTone(diff: number): string {
-  if (diff > DEVIATION_THRESHOLD_PP) return "text-orange-700 bg-orange-50";
-  if (diff < -DEVIATION_THRESHOLD_PP) return "text-sky-700 bg-sky-50";
-  return "text-gray-600";
+/** Подсказка к знаку: минус — продать, плюс — купить. */
+function balanceHint(value: number, unit: string): string {
+  const body = `${tableNumber(Math.abs(value), balanceDecimals(unit, value))} ${unit}`;
+  return value > 0 ? `Купить ${body}` : `Продать ${body}`;
 }
 
-const GRID = "grid grid-cols-2 gap-x-3 gap-y-1 md:grid-cols-8 md:gap-y-0";
+function deviationClass(diff: number): string {
+  if (diff > DEVIATION_THRESHOLD_PP) return "font-medium text-orange-700";
+  if (diff < -DEVIATION_THRESHOLD_PP) return "font-medium text-sky-700";
+  return "";
+}
+
+const COLUMNS = [
+  "Количество",
+  "Стоимость USD",
+  "Цена",
+  "Доля",
+  "Цель",
+  "Отклонение",
+  "К ребалансировке",
+];
+
+/** Общие классы ячейки: границы сетки + выравнивание чисел вправо. */
+const CELL = "border border-gray-200 px-3 py-2 text-right tabular-nums";
+const HEAD = "border border-gray-200 bg-gray-50 px-3 py-2 font-medium";
 
 export function PortfolioTable({
   rows,
@@ -57,134 +79,249 @@ export function PortfolioTable({
   rows: PortfolioRowDto[];
   totalUsd: number;
 }) {
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      {/* Шапка — только на десктопе; на мобильном подписи внутри карточек */}
-      <div
-        className={`${GRID} hidden border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500 md:grid`}
-      >
-        <div>Актив</div>
-        <div className="text-right">Количество</div>
-        <div className="text-right">Стоимость</div>
-        <div className="text-right">Цена</div>
-        <div className="text-right">Доля</div>
-        <div className="text-right">Цель</div>
-        <div className="text-right">Отклонение</div>
-        <div className="text-right">К ребалансировке</div>
+    <>
+      {/* Табличный вид — от md и шире */}
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="text-xs text-gray-600">
+              {/* Угловая ячейка пустая — как в исходной таблице */}
+              <th className={`${HEAD} text-left`} />
+              {COLUMNS.map((c) => (
+                <th key={c} className={`${HEAD} text-right`} scope="col">
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const open = openCategory === row.category;
+              const detailCount =
+                row.collateralDetail.length + row.manualEntries.length;
+              return (
+                <Fragment key={row.category}>
+                  <tr className="hover:bg-gray-50">
+                    <th
+                      scope="row"
+                      className="border border-gray-200 px-3 py-2 text-left font-normal"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenCategory(open ? null : row.category)
+                        }
+                        aria-expanded={open}
+                        className="flex items-center gap-1.5 text-gray-900"
+                        title={
+                          detailCount > 0
+                            ? "Показать состав"
+                            : "Состав пока пуст"
+                        }
+                      >
+                        <span className="text-[10px] text-gray-400">
+                          {open ? "▾" : "▸"}
+                        </span>
+                        {row.label}
+                      </button>
+                    </th>
+
+                    <td className={CELL}>
+                      {row.amount === null ? (
+                        <span className="text-gray-400">нет цены</span>
+                      ) : (
+                        tableNumber(row.amount, amountDecimals(row.unit))
+                      )}
+                    </td>
+
+                    <td className={CELL}>{tableUsd(row.amountUsd)}</td>
+
+                    <td className={CELL}>
+                      {row.price === null ? "—" : tableUsd(row.price)}
+                      {row.priceStale && (
+                        <span
+                          className="ml-1 text-xs text-amber-600"
+                          title="Цена устарела: не удалось обновить"
+                        >
+                          !
+                        </span>
+                      )}
+                    </td>
+
+                    <td className={CELL}>{tablePct(row.percent)}</td>
+
+                    <td className={CELL}>
+                      {row.targetPercent === null ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        tablePct(row.targetPercent)
+                      )}
+                    </td>
+
+                    <td
+                      className={`${CELL} ${
+                        row.percentDiff === null
+                          ? ""
+                          : deviationClass(row.percentDiff)
+                      }`}
+                    >
+                      {row.percentDiff === null ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        tablePctSigned(row.percentDiff)
+                      )}
+                    </td>
+
+                    <td className={CELL}>
+                      {row.amountToBalance === null ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <span title={balanceHint(row.amountToBalance, row.unit)}>
+                          {tableSigned(
+                            row.amountToBalance,
+                            balanceDecimals(row.unit, row.amountToBalance),
+                          )}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+
+                  {row.warnings.length > 0 && (
+                    <tr>
+                      <td
+                        colSpan={COLUMNS.length + 1}
+                        className="border border-gray-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800"
+                      >
+                        {row.warnings.map((w) => (
+                          <span key={w} className="mr-3">
+                            ⚠ {w}
+                          </span>
+                        ))}
+                      </td>
+                    </tr>
+                  )}
+
+                  {open && (
+                    <tr>
+                      <td
+                        colSpan={COLUMNS.length + 1}
+                        className="border border-gray-200 bg-gray-50 px-3 py-2"
+                      >
+                        <RowDetail row={row} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+
+            {/* Итог — в колонке стоимости, как в исходной таблице */}
+            <tr>
+              <th scope="row" className={`${HEAD} text-left text-gray-600`} />
+              <td className={`${CELL} bg-gray-50`} />
+              <td className={`${CELL} bg-gray-50 font-semibold`}>
+                {tableUsd(totalUsd)}
+              </td>
+              <td className={`${CELL} bg-gray-50`} colSpan={5} />
+            </tr>
+          </tbody>
+        </table>
       </div>
 
-      <ul className="divide-y divide-gray-100">
+      {/* Мобильный вид: восемь колонок на 375 px нечитаемы */}
+      <ul className="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-white md:hidden">
         {rows.map((row) => (
-          <PortfolioRow key={row.category} row={row} />
+          <MobileCard
+            key={row.category}
+            row={row}
+            open={openCategory === row.category}
+            onToggle={() =>
+              setOpenCategory(openCategory === row.category ? null : row.category)
+            }
+          />
         ))}
+        <li className="flex items-baseline justify-between bg-gray-50 px-4 py-2.5">
+          <span className="text-sm text-gray-500">Итого</span>
+          <span className="text-base font-semibold tabular-nums">
+            {tableUsd(totalUsd)}
+          </span>
+        </li>
       </ul>
-
-      <div className="flex items-baseline justify-between border-t border-gray-200 bg-gray-50 px-4 py-2.5">
-        <span className="text-sm text-gray-500">Итого</span>
-        <span className="text-base font-semibold text-gray-900">
-          {formatUsd(totalUsd, 0)}
-        </span>
-      </div>
-    </div>
+    </>
   );
 }
 
-function PortfolioRow({ row }: { row: PortfolioRowDto }) {
-  const [open, setOpen] = useState(false);
-  const decimals = amountDecimals(row.unit);
-  const hasDetail =
-    row.collateralDetail.length > 0 || row.manualEntries.length > 0;
+function MobileCard({
+  row,
+  open,
+  onToggle,
+}: {
+  row: PortfolioRowDto;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const pairs: [string, React.ReactNode][] = [
+    [
+      "Количество",
+      row.amount === null
+        ? "нет цены"
+        : tableNumber(row.amount, amountDecimals(row.unit)),
+    ],
+    ["Стоимость USD", tableUsd(row.amountUsd)],
+    ["Цена", row.price === null ? "—" : tableUsd(row.price)],
+    ["Доля", tablePct(row.percent)],
+    ["Цель", row.targetPercent === null ? "—" : tablePct(row.targetPercent)],
+    [
+      "Отклонение",
+      row.percentDiff === null ? (
+        "—"
+      ) : (
+        <span className={deviationClass(row.percentDiff)}>
+          {tablePctSigned(row.percentDiff)}
+        </span>
+      ),
+    ],
+    [
+      "К ребалансировке",
+      row.amountToBalance === null
+        ? "—"
+        : tableSigned(
+            row.amountToBalance,
+            balanceDecimals(row.unit, row.amountToBalance),
+          ),
+    ],
+  ];
 
   return (
     <li>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
         aria-expanded={open}
-        className={`${GRID} w-full items-baseline px-4 py-3 text-left hover:bg-gray-50`}
+        className="w-full px-4 py-3 text-left hover:bg-gray-50"
       >
-        <div className="col-span-2 flex items-center gap-1.5 md:col-span-1">
-          <span className="text-xs text-gray-400">{open ? "▾" : "▸"}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-400">{open ? "▾" : "▸"}</span>
           <span className="text-sm font-medium text-gray-900">{row.label}</span>
-        </div>
-
-        <Cell label="Количество">
-          {row.amount === null ? (
-            <span className="text-gray-400">нет цены</span>
-          ) : (
-            <>
-              {formatAmount(row.amount, decimals)}
-              <span className="ml-1 text-xs text-gray-400">{row.unit}</span>
-            </>
-          )}
-        </Cell>
-
-        <Cell label="Стоимость" strong>
-          {formatUsd(row.amountUsd, 0)}
-        </Cell>
-
-        <Cell label="Цена">
-          {row.price === null ? "—" : formatUsd(row.price, 0)}
-          {row.priceStale && (
-            <span className="ml-1 text-xs text-amber-600">устарела</span>
-          )}
-        </Cell>
-
-        <Cell label="Доля">{formatPct(row.percent, 2)}</Cell>
-
-        <Cell label="Цель">
-          {row.targetPercent === null ? (
-            <span className="text-gray-400">—</span>
-          ) : (
-            formatPct(row.targetPercent, 2)
-          )}
-        </Cell>
-
-        <Cell label="Отклонение">
-          {row.percentDiff === null ? (
-            <span className="text-gray-400">—</span>
-          ) : (
-            <span
-              className={`rounded px-1.5 py-0.5 text-xs font-medium ${deviationTone(row.percentDiff)}`}
-            >
-              {row.percentDiff > DEVIATION_THRESHOLD_PP
-                ? "▲ "
-                : row.percentDiff < -DEVIATION_THRESHOLD_PP
-                  ? "▼ "
-                  : ""}
-              {formatPp(row.percentDiff, 2)}
-            </span>
-          )}
-        </Cell>
-
-        <Cell label="К ребалансировке">
-          {row.amountToBalance === null ? (
-            <span className="text-gray-400">—</span>
-          ) : Math.abs(row.amountToBalance) < (row.unit === "USD" ? 1 : 1e-6) ? (
-            <span className="text-gray-400">в балансе</span>
-          ) : (
-            <span
-              className={
-                row.amountToBalance > 0 ? "text-emerald-700" : "text-orange-700"
-              }
-              title={
-                row.amountToBalance > 0
-                  ? `Купить ${formatAmount(row.amountToBalance, 6)} ${row.unit}`
-                  : `Продать ${formatAmount(Math.abs(row.amountToBalance), 6)} ${row.unit}`
-              }
-            >
-              {formatSignedAmount(
-                row.amountToBalance,
-                balanceDecimals(row.unit, row.amountToBalance),
-              )}
-              <span className="ml-1 text-xs text-gray-400">{row.unit}</span>
-            </span>
-          )}
-        </Cell>
+          <span className="ml-auto text-sm font-semibold tabular-nums">
+            {tableUsd(row.amountUsd)}
+          </span>
+        </span>
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+          {pairs.slice(0, 1).concat(pairs.slice(2)).map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-xs text-gray-400">{label}</dt>
+              <dd className="text-sm tabular-nums text-gray-800">{value}</dd>
+            </div>
+          ))}
+        </dl>
       </button>
 
       {row.warnings.length > 0 && (
-        <ul className="px-4 pb-2 text-xs text-amber-700">
+        <ul className="bg-amber-50 px-4 py-1.5 text-xs text-amber-800">
           {row.warnings.map((w) => (
             <li key={w}>⚠ {w}</li>
           ))}
@@ -192,111 +329,97 @@ function PortfolioRow({ row }: { row: PortfolioRowDto }) {
       )}
 
       {open && (
-        <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-          {!hasDetail && (
-            <p className="text-xs text-gray-500">
-              Пока пусто. Залог подтянется из лендинга, остальное можно внести
-              вручную на странице «Цели и записи».
-            </p>
-          )}
-
-          {row.collateralDetail.length > 0 && (
-            <Detail
-              title={`Залог в лендинге${NBSP}·${NBSP}${formatUsd(row.breakdown.collateralUsd, 0)}`}
-            >
-              {row.collateralDetail.map((d) => (
-                <li
-                  key={`${d.walletId}-${d.chain}-${d.symbol}`}
-                  className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
-                >
-                  <span className="text-gray-700">
-                    {d.symbol}
-                    <span className="ml-1.5 text-xs text-gray-400">
-                      {chainLabel(d.chain)}
-                      {d.walletLabel ? ` · ${d.walletLabel}` : ""}
-                    </span>
-                  </span>
-                  <span className="text-gray-600" title={formatQuantityFull(d.quantity)}>
-                    {formatQuantity(d.quantity)}
-                    {d.priceUsd === null ? (
-                      <span className="ml-1.5 text-amber-700">нет цены</span>
-                    ) : (
-                      <>
-                        <span className="mx-1.5 text-gray-400">×</span>
-                        {formatUsd(d.priceUsd, 0)}
-                        <span className="mx-1.5 text-gray-400">=</span>
-                        <span className="font-medium text-gray-900">
-                          {formatUsd(d.valueUsd, 0)}
-                        </span>
-                      </>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </Detail>
-          )}
-
-          {row.manualEntries.length > 0 && (
-            <Detail
-              title={`Внесено вручную${NBSP}·${NBSP}${formatUsd(row.breakdown.manualUsd, 0)}`}
-            >
-              {row.manualEntries.map((m) => (
-                <li
-                  key={m.id}
-                  className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
-                >
-                  <span className="text-gray-700">{m.label}</span>
-                  <span className="text-gray-600">
-                    {formatQuantity(m.amount)}
-                    <span className="ml-1 text-xs text-gray-400">{row.unit}</span>
-                    <span className="mx-1.5 text-gray-400">=</span>
-                    <span className="font-medium text-gray-900">
-                      {formatUsd(m.valueUsd, 0)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </Detail>
-          )}
+        <div className="bg-gray-50 px-4 py-2">
+          <RowDetail row={row} />
         </div>
       )}
     </li>
   );
 }
 
-/** Ячейка: на мобильном — с подписью сверху, на десктопе — только значение. */
-function Cell({
-  label,
-  strong,
-  children,
-}: {
-  label: string;
-  strong?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="md:text-right">
-      <span className="block text-xs text-gray-400 md:hidden">{label}</span>
-      <span
-        className={`text-sm ${strong ? "font-medium text-gray-900" : "text-gray-700"}`}
-      >
-        {children}
-      </span>
-    </div>
-  );
-}
+/** Состав категории: залог по сетям и ручные записи. */
+function RowDetail({ row }: { row: PortfolioRowDto }) {
+  const empty =
+    row.collateralDetail.length === 0 && row.manualEntries.length === 0;
 
-function Detail({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+  if (empty) {
+    return (
+      <p className="text-xs text-gray-500">
+        Пока пусто. Залог подтянется из лендинга, остальное вносится вручную на
+        странице «Цели и записи».
+      </p>
+    );
+  }
+
   return (
-    <div className="mt-1 first:mt-0">
-      <p className="text-xs font-medium text-gray-500">{title}</p>
-      <ul className="mt-0.5 divide-y divide-gray-200 text-sm">{children}</ul>
+    <div className="space-y-2">
+      {row.collateralDetail.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-gray-500">
+            Залог в лендинге · {tableUsd(row.breakdown.collateralUsd)}
+          </p>
+          <ul className="mt-0.5 divide-y divide-gray-200 text-sm">
+            {row.collateralDetail.map((d) => (
+              <li
+                key={`${d.walletId}-${d.chain}-${d.symbol}`}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
+              >
+                <span className="text-gray-700">
+                  {d.symbol}
+                  <span className="ml-1.5 text-xs text-gray-400">
+                    {chainLabel(d.chain)}
+                    {d.walletLabel ? ` · ${d.walletLabel}` : ""}
+                  </span>
+                </span>
+                <span
+                  className="tabular-nums text-gray-600"
+                  title={tableQuantity(d.quantity, true)}
+                >
+                  {tableQuantity(d.quantity)}
+                  {d.priceUsd === null ? (
+                    <span className="ml-1.5 text-amber-700">нет цены</span>
+                  ) : (
+                    <>
+                      <span className="mx-1.5 text-gray-400">×</span>
+                      {tableUsd(d.priceUsd)}
+                      <span className="mx-1.5 text-gray-400">=</span>
+                      <span className="font-medium text-gray-900">
+                        {tableUsd(d.valueUsd)}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {row.manualEntries.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-gray-500">
+            Внесено вручную · {tableUsd(row.breakdown.manualUsd)}
+          </p>
+          <ul className="mt-0.5 divide-y divide-gray-200 text-sm">
+            {row.manualEntries.map((m) => (
+              <li
+                key={m.id}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
+              >
+                <span className="text-gray-700">{m.label}</span>
+                <span className="tabular-nums text-gray-600">
+                  {tableQuantity(m.amount)}
+                  <span className="ml-1 text-xs text-gray-400">{row.unit}</span>
+                  <span className="mx-1.5 text-gray-400">=</span>
+                  <span className="font-medium text-gray-900">
+                    {tableUsd(m.valueUsd)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
