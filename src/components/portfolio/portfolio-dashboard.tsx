@@ -1,7 +1,13 @@
 "use client";
 
+import { CircleAlert, RefreshCw, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LogoMark } from "@/components/logo";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { PortfolioDto, RefreshResponseDto } from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
@@ -12,7 +18,11 @@ import {
   tableUsd,
 } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
+import { cn } from "@/lib/utils";
+import { AllocationBar } from "./allocation-bar";
+import { MetricCards } from "./metric-cards";
 import { PortfolioTable } from "./portfolio-table";
+import { SparklinePlaceholder } from "./sparkline-placeholder";
 
 /**
  * Дашборд портфеля — «30-секундная проверка» (S1.7).
@@ -82,27 +92,44 @@ export function PortfolioDashboard() {
     return () => clearInterval(id);
   }, []);
 
+  // Скелетоны формой повторяют будущий контент (ТЗ §6.1)
   if (loading && !data) {
     return (
-      <div className="space-y-3">
-        <div className="h-9 w-48 animate-pulse rounded bg-gray-200" />
-        <div className="h-40 animate-pulse rounded-lg bg-gray-100" />
+      <div className="space-y-5">
+        <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-44" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <Skeleton className="h-[92px] rounded-xl" />
+          <Skeleton className="h-[92px] rounded-xl" />
+          <Skeleton className="h-[92px] rounded-xl" />
+        </div>
+        <Skeleton className="h-3 rounded-full" />
+        <Skeleton className="h-64 rounded-xl" />
       </div>
     );
   }
 
   if (error && !data) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-        <p className="text-sm text-red-700">
-          Не удалось загрузить портфель: {error}
-        </p>
-        <button
-          onClick={refetch}
-          className="mt-2 rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-100"
-        >
-          Повторить
-        </button>
+      <div className="space-y-5">
+        <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
+        <Alert variant="destructive">
+          <CircleAlert className="size-4" />
+          <AlertTitle>Не удалось загрузить портфель: {error}</AlertTitle>
+          <AlertDescription>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refetch}
+              className="mt-2"
+            >
+              Повторить
+            </Button>
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -124,120 +151,151 @@ export function PortfolioDashboard() {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Шапка: итог — самый крупный элемент экрана, тезис страницы (§5.1.1) */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
-          <p className="mt-1 text-3xl font-semibold tabular-nums sm:text-4xl">
+          <p className="mt-2 font-mono text-3xl leading-none font-semibold tracking-tight sm:text-4xl">
             {tableUsd(data.totalUsd)}
           </p>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             цены: {formatRelativeTime(data.freshness.oldestPriceAt) ?? "—"}
             {NBSP}·{NBSP}залог:{" "}
             {formatRelativeTime(data.freshness.oldestCollateralAt) ?? "нет данных"}
             {refreshing && (
-              <span className="ml-2 text-gray-400">обновляется…</span>
+              <span className="ml-2 inline-flex items-baseline gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 self-center rounded-full bg-primary animate-pulse"
+                />
+                обновляется…
+              </span>
             )}
           </p>
         </div>
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => void doRefresh()}
           disabled={refreshing}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          aria-label="Обновить"
+          className="max-sm:size-9 max-sm:p-0"
         >
-          {refreshing ? "Обновление…" : "Обновить"}
-        </button>
+          <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+          <span className="hidden sm:inline">
+            {refreshing ? "Обновление…" : "Обновить"}
+          </span>
+        </Button>
       </div>
 
+      {/* Баннеры деградации — только при проблемах, неблокирующие (§5.1.2) */}
       {refreshError && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          {refreshError}
-        </p>
+        <Alert variant="warning">
+          <TriangleAlert className="size-4" />
+          <AlertTitle>{refreshError}</AlertTitle>
+        </Alert>
       )}
 
-      {[...chainIssues.entries()].map(([chain, message]) => (
-        <p
-          key={chain}
-          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
-        >
-          {chainLabel(chain)}: данные устарели ({message})
-        </p>
-      ))}
+      {chainIssues.size > 0 && (
+        <Alert variant="warning">
+          <TriangleAlert className="size-4" />
+          <AlertTitle>Данные по сетям устарели</AlertTitle>
+          <AlertDescription>
+            <ul className="space-y-0.5">
+              {[...chainIssues.entries()].map(([chain, message]) => (
+                <li key={chain}>
+                  {chainLabel(chain)}: данные устарели ({message})
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
 
-      {data.targetSumPct === 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
-          <p className="text-sm text-gray-600">
+      {data.targetSumPct !== 0 &&
+        maxDev?.percentDiff != null &&
+        Math.abs(maxDev.percentDiff) > DEVIATION_THRESHOLD_PP && (
+          <Alert variant="warning">
+            <TriangleAlert className="size-4" />
+            <AlertTitle>
+              Максимальное отклонение: {maxDev.label}{" "}
+              <span className="font-mono">
+                {tablePctSigned(maxDev.percentDiff)}
+              </span>{" "}
+              (
+              <span className="font-mono">
+                {tableUsd(
+                  Math.abs(
+                    maxDev.amountUsd -
+                      (maxDev.targetPercent! / 100) * data.totalUsd,
+                  ),
+                )}
+              </span>{" "}
+              {maxDev.percentDiff > 0 ? "сверх цели" : "ниже цели"})
+            </AlertTitle>
+          </Alert>
+        )}
+
+      <MetricCards rows={data.rows} />
+
+      {data.targetSumPct === 0 && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <p className="text-sm text-muted-foreground">
             Задайте целевые проценты, чтобы видеть отклонения и количество к
             ребалансировке.
           </p>
-          <Link
-            href="/targets"
-            className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
-          >
-            Задать цели
-          </Link>
-        </div>
-      ) : (
-        maxDev?.percentDiff != null &&
-        Math.abs(maxDev.percentDiff) > DEVIATION_THRESHOLD_PP && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Максимальное отклонение: {maxDev.label}{" "}
-            {tablePctSigned(maxDev.percentDiff)} (
-            {tableUsd(
-              Math.abs(
-                maxDev.amountUsd - (maxDev.targetPercent! / 100) * data.totalUsd,
-              ),
-            )}{" "}
-            {maxDev.percentDiff > 0 ? "сверх цели" : "ниже цели"})
-          </p>
-        )
+          <Button asChild size="sm">
+            <Link href="/targets">Задать цели</Link>
+          </Button>
+        </Card>
       )}
+
+      <AllocationBar rows={data.rows} totalUsd={data.totalUsd} />
+
+      <SparklinePlaceholder />
 
       <PortfolioTable rows={data.rows} totalUsd={data.totalUsd} />
 
       {data.targetSumPct !== 0 &&
         Math.abs(data.targetSumPct - 100) > 0.001 && (
-          <p className="text-xs text-amber-700">
+          <p className="text-xs text-warning">
             Сумма целей {data.targetSumPct}% — отклонения считаются от заданных
             целей.
           </p>
         )}
 
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-muted-foreground">
         Количество к ребалансировке — расчет, а не финансовый совет.
       </p>
     </div>
   );
 }
 
+/** Пустое состояние (§5.1.8): заменяет весь дашборд. */
 function EmptyState() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
-      <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
-        <p className="text-base font-medium text-gray-900">
-          Портфель пока пуст
-        </p>
-        <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+      <Card className="p-6 text-center">
+        <div className="mb-3 flex justify-center">
+          <LogoMark size="lg" className="opacity-60" />
+        </div>
+        <p className="text-base font-medium">Портфель пока пуст</p>
+        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
           Количество BTC и ETH подтягивается из залога на лендинг-маркетах —
           добавьте адрес кошелька. Проинвестированные стейблкоины и монеты вне
           лендинга вносятся вручную.
         </p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">
-          <Link
-            href="/wallets"
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
-          >
-            Добавить кошелек
-          </Link>
-          <Link
-            href="/targets"
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Внести вручную
-          </Link>
+          <Button asChild>
+            <Link href="/wallets">Добавить кошелек</Link>
+          </Button>
+          <Button asChild variant="secondary">
+            <Link href="/targets">Внести вручную</Link>
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

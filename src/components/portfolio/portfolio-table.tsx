@@ -1,6 +1,16 @@
 "use client";
 
+import { ChevronRight, TriangleAlert } from "lucide-react";
 import { Fragment, useState } from "react";
+import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { PortfolioRowDto } from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
@@ -12,6 +22,8 @@ import {
   tableSigned,
   tableUsd,
 } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { CATEGORY_VAR, CategoryDot } from "./category";
 
 /**
  * Таблица портфеля в виде рабочей таблицы пользователя (S1.7):
@@ -20,9 +32,8 @@ import {
  * стоимости. Столбцы 1:1 повторяют исходную таблицу:
  * Количество · Стоимость USD · Цена · Доля · Цель · Отклонение · К ребалансировке.
  *
- * Единственное расширение против таблицы — раскрытие строки в состав
- * (залог по сетям и ручные записи): без него не видно, из чего собрано
- * количество. Раскрытие оформлено сдержанно, чтобы не ломать вид таблицы.
+ * Отделка — «Terminal Blue» (ТЗ §5.1.6): структура не меняется, зебры нет
+ * (сетка границ уже структурирует), числа — JetBrains Mono.
  *
  * На узких экранах (< md) сетка заменяется стеком карточек: таблица из
  * восьми колонок на 375 px нечитаема.
@@ -52,9 +63,17 @@ function balanceHint(value: number, unit: string): string {
   return value > 0 ? `Купить ${body}` : `Продать ${body}`;
 }
 
+/** Отклонение за порогом — warning; направление уже кодируется знаком. */
 function deviationClass(diff: number): string {
-  if (diff > DEVIATION_THRESHOLD_PP) return "font-medium text-orange-700";
-  if (diff < -DEVIATION_THRESHOLD_PP) return "font-medium text-sky-700";
+  return Math.abs(diff) > DEVIATION_THRESHOLD_PP
+    ? "font-medium text-warning"
+    : "";
+}
+
+/** «К ребалансировке»: плюс — купить (success), минус — продать (destructive). */
+function balanceClass(value: number): string {
+  if (value > 0) return "text-success";
+  if (value < 0) return "text-destructive";
   return "";
 }
 
@@ -68,9 +87,10 @@ const COLUMNS = [
   "К ребалансировке",
 ];
 
-/** Общие классы ячейки: границы сетки + выравнивание чисел вправо. */
-const CELL = "border border-gray-200 px-3 py-2 text-right tabular-nums";
-const HEAD = "border border-gray-200 bg-gray-50 px-3 py-2 font-medium";
+/** Общие классы ячейки: границы сетки + числа mono по правому краю. */
+const CELL = "border border-border px-3 py-2 text-right font-mono text-sm";
+const HEAD =
+  "h-auto border border-border bg-muted/60 px-3 py-2 text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground";
 
 export function PortfolioTable({
   rows,
@@ -84,30 +104,30 @@ export function PortfolioTable({
   return (
     <>
       {/* Табличный вид — от md и шире */}
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="text-xs text-gray-600">
+      <Card className="hidden overflow-hidden p-0 md:block">
+        <Table className="border-collapse">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
               {/* Угловая ячейка пустая — как в исходной таблице */}
-              <th className={`${HEAD} text-left`} />
+              <TableHead className={`${HEAD} text-left`} />
               {COLUMNS.map((c) => (
-                <th key={c} className={`${HEAD} text-right`} scope="col">
+                <TableHead key={c} className={`${HEAD} text-right`} scope="col">
                   {c}
-                </th>
+                </TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => {
               const open = openCategory === row.category;
               const detailCount =
                 row.collateralDetail.length + row.manualEntries.length;
               return (
                 <Fragment key={row.category}>
-                  <tr className="hover:bg-gray-50">
+                  <TableRow className="transition-colors duration-120 hover:bg-accent/50">
                     <th
                       scope="row"
-                      className="border border-gray-200 px-3 py-2 text-left font-normal"
+                      className="border border-border px-3 py-2 text-left font-normal"
                     >
                       <button
                         type="button"
@@ -115,53 +135,68 @@ export function PortfolioTable({
                           setOpenCategory(open ? null : row.category)
                         }
                         aria-expanded={open}
-                        className="flex items-center gap-1.5 text-gray-900"
+                        className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                         title={
                           detailCount > 0
                             ? "Показать состав"
                             : "Состав пока пуст"
                         }
                       >
-                        <span className="text-[10px] text-gray-400">
-                          {open ? "▾" : "▸"}
-                        </span>
+                        <ChevronRight
+                          aria-hidden="true"
+                          className={cn(
+                            "size-3.5 text-muted-foreground transition-transform duration-150",
+                            open && "rotate-90",
+                          )}
+                        />
+                        <CategoryDot category={row.category} />
                         {row.label}
                       </button>
                     </th>
 
-                    <td className={CELL}>
+                    <TableCell className={CELL}>
                       {row.amount === null ? (
-                        <span className="text-gray-400">нет цены</span>
+                        <span className="font-sans text-muted-foreground">
+                          нет цены
+                        </span>
                       ) : (
                         tableNumber(row.amount, amountDecimals(row.unit))
                       )}
-                    </td>
+                    </TableCell>
 
-                    <td className={CELL}>{tableUsd(row.amountUsd)}</td>
+                    <TableCell className={CELL}>
+                      {tableUsd(row.amountUsd)}
+                    </TableCell>
 
-                    <td className={CELL}>
+                    <TableCell className={CELL}>
                       {row.price === null ? "—" : tableUsd(row.price)}
                       {row.priceStale && (
+                        // Существующая подсказка сохраняется (ТЗ §6.2)
                         <span
-                          className="ml-1 text-xs text-amber-600"
+                          className="ml-1"
                           title="Цена устарела: не удалось обновить"
                         >
-                          !
+                          <TriangleAlert
+                            aria-hidden="true"
+                            className="inline size-3 text-warning"
+                          />
                         </span>
                       )}
-                    </td>
+                    </TableCell>
 
-                    <td className={CELL}>{tablePct(row.percent)}</td>
+                    <TableCell className={CELL}>
+                      {tablePct(row.percent)}
+                    </TableCell>
 
-                    <td className={CELL}>
+                    <TableCell className={CELL}>
                       {row.targetPercent === null ? (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-muted-foreground">—</span>
                       ) : (
                         tablePct(row.targetPercent)
                       )}
-                    </td>
+                    </TableCell>
 
-                    <td
+                    <TableCell
                       className={`${CELL} ${
                         row.percentDiff === null
                           ? ""
@@ -169,15 +204,21 @@ export function PortfolioTable({
                       }`}
                     >
                       {row.percentDiff === null ? (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-muted-foreground">—</span>
                       ) : (
                         tablePctSigned(row.percentDiff)
                       )}
-                    </td>
+                    </TableCell>
 
-                    <td className={CELL}>
+                    <TableCell
+                      className={`${CELL} ${
+                        row.amountToBalance === null
+                          ? ""
+                          : balanceClass(row.amountToBalance)
+                      }`}
+                    >
                       {row.amountToBalance === null ? (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-muted-foreground">—</span>
                       ) : (
                         <span title={balanceHint(row.amountToBalance, row.unit)}>
                           {tableSigned(
@@ -186,70 +227,84 @@ export function PortfolioTable({
                           )}
                         </span>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
 
                   {row.warnings.length > 0 && (
-                    <tr>
-                      <td
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell
                         colSpan={COLUMNS.length + 1}
-                        className="border border-gray-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800"
+                        className="border border-border bg-warning/10 px-3 py-1.5 text-xs text-warning"
                       >
                         {row.warnings.map((w) => (
-                          <span key={w} className="mr-3">
-                            ⚠ {w}
+                          <span
+                            key={w}
+                            className="mr-3 inline-flex items-center gap-1"
+                          >
+                            <TriangleAlert
+                              aria-hidden="true"
+                              className="size-3.5 shrink-0"
+                            />
+                            {w}
                           </span>
                         ))}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
 
                   {open && (
-                    <tr>
-                      <td
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell
                         colSpan={COLUMNS.length + 1}
-                        className="border border-gray-200 bg-gray-50 px-3 py-2"
+                        className="border border-border bg-muted/40 px-3 py-2"
+                        style={{
+                          boxShadow: `inset 2px 0 0 ${CATEGORY_VAR[row.category]}`,
+                        }}
                       >
                         <RowDetail row={row} />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                 </Fragment>
               );
             })}
 
             {/* Итог — в колонке стоимости, как в исходной таблице */}
-            <tr>
-              <th scope="row" className={`${HEAD} text-left text-gray-600`} />
-              <td className={`${CELL} bg-gray-50`} />
-              <td className={`${CELL} bg-gray-50 font-semibold`}>
+            <TableRow className="hover:bg-transparent">
+              <th scope="row" className={`${HEAD} text-left`} />
+              <TableCell className={`${CELL} bg-muted/60`} />
+              <TableCell className={`${CELL} bg-muted/60 font-semibold`}>
                 {tableUsd(totalUsd)}
-              </td>
-              <td className={`${CELL} bg-gray-50`} colSpan={5} />
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </TableCell>
+              <TableCell className={`${CELL} bg-muted/60`} colSpan={5} />
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* Мобильный вид: восемь колонок на 375 px нечитаемы */}
-      <ul className="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-white md:hidden">
-        {rows.map((row) => (
-          <MobileCard
-            key={row.category}
-            row={row}
-            open={openCategory === row.category}
-            onToggle={() =>
-              setOpenCategory(openCategory === row.category ? null : row.category)
-            }
-          />
-        ))}
-        <li className="flex items-baseline justify-between bg-gray-50 px-4 py-2.5">
-          <span className="text-sm text-gray-500">Итого</span>
-          <span className="text-base font-semibold tabular-nums">
-            {tableUsd(totalUsd)}
-          </span>
-        </li>
-      </ul>
+      <Card className="p-0 md:hidden">
+        <ul className="divide-y divide-border">
+          {rows.map((row) => (
+            <MobileCard
+              key={row.category}
+              row={row}
+              open={openCategory === row.category}
+              onToggle={() =>
+                setOpenCategory(
+                  openCategory === row.category ? null : row.category,
+                )
+              }
+            />
+          ))}
+          <li className="flex items-baseline justify-between rounded-b-xl bg-muted/60 px-4 py-2.5">
+            <span className="text-sm text-muted-foreground">Итого</span>
+            <span className="font-mono text-base font-semibold">
+              {tableUsd(totalUsd)}
+            </span>
+          </li>
+        </ul>
+      </Card>
     </>
   );
 }
@@ -266,12 +321,31 @@ function MobileCard({
   const pairs: [string, React.ReactNode][] = [
     [
       "Количество",
-      row.amount === null
-        ? "нет цены"
-        : tableNumber(row.amount, amountDecimals(row.unit)),
+      row.amount === null ? (
+        <span className="font-sans text-muted-foreground">нет цены</span>
+      ) : (
+        tableNumber(row.amount, amountDecimals(row.unit))
+      ),
     ],
     ["Стоимость USD", tableUsd(row.amountUsd)],
-    ["Цена", row.price === null ? "—" : tableUsd(row.price)],
+    [
+      "Цена",
+      row.price === null ? (
+        "—"
+      ) : (
+        <>
+          {tableUsd(row.price)}
+          {row.priceStale && (
+            <span className="ml-1" title="Цена устарела: не удалось обновить">
+              <TriangleAlert
+                aria-hidden="true"
+                className="inline size-3 text-warning"
+              />
+            </span>
+          )}
+        </>
+      ),
+    ],
     ["Доля", tablePct(row.percent)],
     ["Цель", row.targetPercent === null ? "—" : tablePct(row.targetPercent)],
     [
@@ -286,12 +360,16 @@ function MobileCard({
     ],
     [
       "К ребалансировке",
-      row.amountToBalance === null
-        ? "—"
-        : tableSigned(
+      row.amountToBalance === null ? (
+        "—"
+      ) : (
+        <span className={balanceClass(row.amountToBalance)}>
+          {tableSigned(
             row.amountToBalance,
             balanceDecimals(row.unit, row.amountToBalance),
-          ),
+          )}
+        </span>
+      ),
     ],
   ];
 
@@ -301,35 +379,52 @@ function MobileCard({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="w-full px-4 py-3 text-left hover:bg-gray-50"
+        className="w-full px-4 py-3 text-left outline-none transition-colors duration-120 active:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <span className="flex items-center gap-1.5">
-          <span className="text-[10px] text-gray-400">{open ? "▾" : "▸"}</span>
-          <span className="text-sm font-medium text-gray-900">{row.label}</span>
-          <span className="ml-auto text-sm font-semibold tabular-nums">
+          <ChevronRight
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
+              open && "rotate-90",
+            )}
+          />
+          <CategoryDot category={row.category} />
+          <span className="text-sm font-medium">{row.label}</span>
+          <span className="ml-auto font-mono text-sm font-semibold">
             {tableUsd(row.amountUsd)}
           </span>
         </span>
-        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
           {pairs.slice(0, 1).concat(pairs.slice(2)).map(([label, value]) => (
             <div key={label}>
-              <dt className="text-xs text-gray-400">{label}</dt>
-              <dd className="text-sm tabular-nums text-gray-800">{value}</dd>
+              <dt className="text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground">
+                {label}
+              </dt>
+              <dd className="font-mono text-sm">{value}</dd>
             </div>
           ))}
         </dl>
       </button>
 
       {row.warnings.length > 0 && (
-        <ul className="bg-amber-50 px-4 py-1.5 text-xs text-amber-800">
+        <ul className="bg-warning/10 px-4 py-1.5 text-xs text-warning">
           {row.warnings.map((w) => (
-            <li key={w}>⚠ {w}</li>
+            <li key={w} className="flex items-center gap-1">
+              <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
+              {w}
+            </li>
           ))}
         </ul>
       )}
 
       {open && (
-        <div className="bg-gray-50 px-4 py-2">
+        <div
+          className="bg-muted/40 px-4 py-2"
+          style={{
+            boxShadow: `inset 2px 0 0 ${CATEGORY_VAR[row.category]}`,
+          }}
+        >
           <RowDetail row={row} />
         </div>
       )}
@@ -344,7 +439,7 @@ function RowDetail({ row }: { row: PortfolioRowDto }) {
 
   if (empty) {
     return (
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         Пока пусто. Залог подтянется из лендинга, остальное вносится вручную на
         странице «Цели и записи».
       </p>
@@ -355,35 +450,40 @@ function RowDetail({ row }: { row: PortfolioRowDto }) {
     <div className="space-y-2">
       {row.collateralDetail.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-gray-500">
-            Залог в лендинге · {tableUsd(row.breakdown.collateralUsd)}
+          <p className="text-xs font-medium text-muted-foreground">
+            Залог в лендинге ·{" "}
+            <span className="font-mono">
+              {tableUsd(row.breakdown.collateralUsd)}
+            </span>
           </p>
-          <ul className="mt-0.5 divide-y divide-gray-200 text-sm">
+          <ul className="mt-0.5 divide-y divide-border text-sm">
             {row.collateralDetail.map((d) => (
               <li
                 key={`${d.walletId}-${d.chain}-${d.symbol}`}
                 className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
               >
-                <span className="text-gray-700">
+                <span>
                   {d.symbol}
-                  <span className="ml-1.5 text-xs text-gray-400">
+                  <span className="ml-1.5 text-xs text-muted-foreground">
                     {chainLabel(d.chain)}
                     {d.walletLabel ? ` · ${d.walletLabel}` : ""}
                   </span>
                 </span>
                 <span
-                  className="tabular-nums text-gray-600"
+                  className="font-mono text-muted-foreground"
                   title={tableQuantity(d.quantity, true)}
                 >
                   {tableQuantity(d.quantity)}
                   {d.priceUsd === null ? (
-                    <span className="ml-1.5 text-amber-700">нет цены</span>
+                    <span className="ml-1.5 font-sans text-warning">
+                      нет цены
+                    </span>
                   ) : (
                     <>
-                      <span className="mx-1.5 text-gray-400">×</span>
+                      <span className="mx-1.5">×</span>
                       {tableUsd(d.priceUsd)}
-                      <span className="mx-1.5 text-gray-400">=</span>
-                      <span className="font-medium text-gray-900">
+                      <span className="mx-1.5">=</span>
+                      <span className="font-medium text-foreground">
                         {tableUsd(d.valueUsd)}
                       </span>
                     </>
@@ -397,21 +497,24 @@ function RowDetail({ row }: { row: PortfolioRowDto }) {
 
       {row.manualEntries.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-gray-500">
-            Внесено вручную · {tableUsd(row.breakdown.manualUsd)}
+          <p className="text-xs font-medium text-muted-foreground">
+            Внесено вручную ·{" "}
+            <span className="font-mono">
+              {tableUsd(row.breakdown.manualUsd)}
+            </span>
           </p>
-          <ul className="mt-0.5 divide-y divide-gray-200 text-sm">
+          <ul className="mt-0.5 divide-y divide-border text-sm">
             {row.manualEntries.map((m) => (
               <li
                 key={m.id}
                 className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
               >
-                <span className="text-gray-700">{m.label}</span>
-                <span className="tabular-nums text-gray-600">
+                <span>{m.label}</span>
+                <span className="font-mono text-muted-foreground">
                   {tableQuantity(m.amount)}
-                  <span className="ml-1 text-xs text-gray-400">{row.unit}</span>
-                  <span className="mx-1.5 text-gray-400">=</span>
-                  <span className="font-medium text-gray-900">
+                  <span className="ml-1 font-sans text-xs">{row.unit}</span>
+                  <span className="mx-1.5">=</span>
+                  <span className="font-medium text-foreground">
                     {tableUsd(m.valueUsd)}
                   </span>
                 </span>
