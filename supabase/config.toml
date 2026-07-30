@@ -233,6 +233,16 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
+# Шаблоны писем ведут на /auth/confirm с token_hash (SSR-флоу @supabase/ssr).
+# В hosted-проекте Supabase шаблоны нужно настроить так же (Dashboard -> Auth -> Templates).
+[auth.email.template.confirmation]
+subject = "Подтвердите email — DeFi Portfolio Tracker"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Сброс пароля — DeFi Portfolio Tracker"
+content_path = "./supabase/templates/recovery.html"
+
 # Use a production-ready SMTP server
 # [auth.email.smtp]
 # enabled = true
