@@ -1,0 +1,114 @@
+/**
+ * Форматирование чисел и строк для UI (ТЗ §6.1, S1.7).
+ * Денежные суммы: «$ 12 345.67» — неразрывный пробел между тысячами.
+ * Количества токенов приходят десятичными СТРОКАМИ — форматируем
+ * строковыми операциями, никогда не гоняем через float (потеря точности).
+ */
+
+export const NBSP = " ";
+/** Типографский минус (U+2212) — визуально согласован с «+». */
+export const MINUS = "−";
+/** Порог выделения отклонения по умолчанию, п.п. (S1.7). */
+export const DEVIATION_THRESHOLD_PP = 5;
+
+/** «12 345» — группировка тысяч неразрывными пробелами. */
+function groupThousands(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+}
+
+/**
+ * «$ 12 345.67». По умолчанию 2 знака; decimals: 0 — для сумм
+ * ребалансировки («Купить $ 980»). Отрицательные — с типографским минусом.
+ */
+export function formatUsd(value: number, decimals = 2): string {
+  if (!Number.isFinite(value)) return `$${NBSP}—`;
+  const sign = value < 0 ? MINUS : "";
+  const fixed = Math.abs(value).toFixed(decimals);
+  const [int, frac] = fixed.split(".");
+  return `${sign}$${NBSP}${groupThousands(int)}${frac ? `.${frac}` : ""}`;
+}
+
+/** «42.3%» — проценты с одним знаком после точки. */
+export function formatPct(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+/** «+7.2 п.п.» / «−3.1 п.п.» — отклонение со знаком (знак = не только цвет). */
+export function formatPp(value: number): string {
+  const sign = value > 0 ? "+" : value < 0 ? MINUS : "";
+  return `${sign}${Math.abs(value).toFixed(1)}${NBSP}п.п.`;
+}
+
+/**
+ * Компактное количество токена из десятичной строки:
+ * 4 значащие цифры дробной части, только строковые операции (усечение,
+ * без округления — округление потребовало бы арифметики).
+ * «1234.567891» -> «1 234.5678», «0.000123456» -> «0.0001234».
+ * Полное значение показывается отдельно (formatQuantityFull) в title/разбивке.
+ */
+export function formatQuantity(quantity: string): string {
+  const negative = quantity.startsWith("-");
+  const unsigned = negative ? quantity.slice(1) : quantity;
+  const [intRaw = "0", fracRaw = ""] = unsigned.split(".");
+  const int = intRaw.replace(/^0+(?=\d)/, "");
+  const grouped = groupThousands(int);
+  const prefix = negative ? MINUS : "";
+
+  const firstSignificant = fracRaw.search(/[1-9]/);
+  if (firstSignificant === -1) return `${prefix}${grouped}`; // дробь пустая или нули
+
+  // Целая часть ненулевая -> хватит 4 знаков дроби;
+  // число < 1 -> ведущие нули + 4 значащие цифры.
+  const keep = int === "0" ? firstSignificant + 4 : 4;
+  const frac = fracRaw.slice(0, keep).replace(/0+$/, "");
+  return frac ? `${prefix}${grouped}.${frac}` : `${prefix}${grouped}`;
+}
+
+/** Полное количество с группировкой тысяч, дробная часть без усечения. */
+export function formatQuantityFull(quantity: string): string {
+  const negative = quantity.startsWith("-");
+  const unsigned = negative ? quantity.slice(1) : quantity;
+  const [intRaw = "0", frac = ""] = unsigned.split(".");
+  const int = groupThousands(intRaw.replace(/^0+(?=\d)/, ""));
+  const prefix = negative ? MINUS : "";
+  return frac ? `${prefix}${int}.${frac}` : `${prefix}${int}`;
+}
+
+/**
+ * Относительное время для меток свежести: «только что», «5 мин назад»,
+ * «3 ч назад», «2 дн назад». null -> null (вызывающий покажет «—»).
+ */
+export function formatRelativeTime(
+  iso: string | null,
+  nowMs: number = Date.now(),
+): string | null {
+  if (!iso) return null;
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return null;
+  const diffSec = Math.max(0, Math.floor((nowMs - ts) / 1000));
+  if (diffSec < 60) return "только что";
+  const min = Math.floor(diffSec / 60);
+  if (min < 60) return `${min}${NBSP}мин назад`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `${hours}${NBSP}ч назад`;
+  const days = Math.floor(hours / 24);
+  return `${days}${NBSP}дн назад`;
+}
+
+/** «0x1234…abcd» — усечение checksummed-адреса для списков. */
+export function truncateAddress(address: string): string {
+  if (address.length <= 12) return address;
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+/** Отображаемые имена сетей (идентификаторы из chains/config). */
+export const CHAIN_LABELS: Record<string, string> = {
+  ethereum: "Ethereum",
+  arbitrum: "Arbitrum",
+  base: "Base",
+  optimism: "Optimism",
+};
+
+export function chainLabel(chain: string): string {
+  return CHAIN_LABELS[chain] ?? chain;
+}
