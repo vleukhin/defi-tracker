@@ -1,11 +1,138 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-@theme {
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+@custom-variant dark (&:is(.dark *));
+
+/* ------- Светлая тема ------- */
+:root {
+  --background: oklch(0.977 0.004 250);        /* #f5f8fa — холодный белый */
+  --foreground: oklch(0.22 0.02 258);          /* #151b24 */
+  --card: oklch(1 0 0);                        /* #ffffff */
+  --card-foreground: oklch(0.22 0.02 258);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.02 258);
+  --primary: oklch(0.50 0.23 262);             /* #0151e3 — банковский синий */
+  --primary-foreground: oklch(0.985 0 0);      /* #fafafa */
+  --secondary: oklch(0.96 0.008 250);          /* #eef2f7 */
+  --secondary-foreground: oklch(0.25 0.02 258);
+  --muted: oklch(0.955 0.006 250);             /* #edf0f4 */
+  --muted-foreground: oklch(0.50 0.02 257);    /* #5c646f */
+  --accent: oklch(0.95 0.01 255);              /* #eaeff5 — hover-поверхность */
+  --accent-foreground: oklch(0.22 0.02 258);
+  --destructive: oklch(0.514 0.19 27);         /* #bc2021 */
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.90 0.008 250);             /* ≈#dde2e8 */
+  --input: oklch(0.87 0.01 250);               /* ≈#d1d7e0 */
+  --ring: oklch(0.50 0.23 262);
+  --success: oklch(0.50 0.13 155);             /* #007840 */
+  --warning: oklch(0.53 0.12 66);              /* #995b00 */
+  --link: oklch(0.47 0.20 262);                /* #0e4ec8 */
+  --chart-btc: oklch(0.62 0.15 55);            /* #c9690c */
+  --chart-eth: oklch(0.51 0.19 275);           /* #4c52d0 */
+  --chart-stable: oklch(0.56 0.10 180);        /* #098777 */
+  --radius: 0.625rem;
 }
+
+/* ------- Темная тема (по умолчанию) ------- */
+.dark {
+  --background: oklch(0.165 0.013 255);        /* #0b0f14 — сине-угольный */
+  --foreground: oklch(0.955 0.004 250);        /* #eef0f3 */
+  --card: oklch(0.205 0.015 255);              /* #13181e — elevation 1 */
+  --card-foreground: oklch(0.955 0.004 250);
+  --popover: oklch(0.225 0.016 255);           /* #171c23 — elevation 2 */
+  --popover-foreground: oklch(0.955 0.004 250);
+  --primary: oklch(0.546 0.245 262.9);         /* #165dfc */
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.27 0.02 255);           /* #202730 */
+  --secondary-foreground: oklch(0.955 0.004 250);
+  --muted: oklch(0.25 0.016 255);              /* #1d2229 */
+  --muted-foreground: oklch(0.72 0.02 255);    /* #9ca5b1 */
+  --accent: oklch(0.245 0.02 258);             /* #1b212a — hover-поверхность */
+  --accent-foreground: oklch(0.955 0.004 250);
+  --destructive: oklch(0.68 0.19 25);          /* #f75d59 */
+  --destructive-foreground: oklch(0.16 0.03 25); /* ≈#180807 */
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.62 0.19 255);                /* #1d84f5 */
+  --success: oklch(0.75 0.15 155);             /* #4ec983 */
+  --warning: oklch(0.80 0.14 80);              /* #edb345 */
+  --link: oklch(0.74 0.13 255);                /* #70adfb */
+  --chart-btc: oklch(0.75 0.15 60);            /* #f2943c */
+  --chart-eth: oklch(0.67 0.15 278);           /* #8189ef */
+  --chart-stable: oklch(0.76 0.12 180);        /* #42cab4 */
+}
+
+/* ------- Маппинг в утилиты Tailwind 4 ------- */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-link: var(--link);
+  --color-chart-btc: var(--chart-btc);
+  --color-chart-eth: var(--chart-eth);
+  --color-chart-stable: var(--chart-stable);
+
+  --radius-sm: calc(var(--radius) - 4px);   /* 6px  — бейджи, мелкие элементы */
+  --radius-md: calc(var(--radius) - 2px);   /* 8px  — кнопки, инпуты */
+  --radius-lg: var(--radius);               /* 10px — поповеры, алерты */
+  --radius-xl: calc(var(--radius) + 4px);   /* 14px — карточки */
+}
+
+/* ------- База ------- */
+* { border-color: var(--border); }
 
 body {
   font-family: var(--font-sans);
+  background-color: var(--background);
+  color: var(--foreground);
+  /* Финтех-глубина: едва заметное синее «свечение» из-за верхней кромки.
+     Радиальный градиент, а не заливка: на скролле фон остается спокойным. */
+  background-image: radial-gradient(
+    80rem 36rem at 50% -12rem,
+    color-mix(in oklab, var(--primary) 8%, transparent),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
+}
+.dark body,
+body:where(.dark, .dark *) {
+  background-image: radial-gradient(
+    80rem 36rem at 50% -12rem,
+    color-mix(in oklab, var(--primary) 10%, transparent),
+    transparent 70%
+  );
+}
+
+/* Все числовые данные: моноширинные табличные цифры */
+.font-mono { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
