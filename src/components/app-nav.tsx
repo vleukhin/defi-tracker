@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   ChartLine,
   ChartPie,
+  Scale,
   Settings,
   Target,
   Wallet,
@@ -24,6 +25,8 @@ const NAV_ITEMS = [
   },
   // Фаза 3: снепшоты и графики динамики
   { href: "/history", label: "История", shortLabel: "История", icon: ChartLine },
+  // Фаза 4: долг Aave и health factor
+  { href: "/debt", label: "Долг", shortLabel: "Долг", icon: Scale },
   { href: "/wallets", label: "Кошельки", shortLabel: "Кошельки", icon: Wallet },
   // В нижнем баре подпись сокращается до «Цели» (ТЗ §5.6.2)
   { href: "/targets", label: "Цели и записи", shortLabel: "Цели", icon: Target },
@@ -95,8 +98,9 @@ export function AppNav() {
         aria-label="Основная навигация (мобильная)"
         className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden"
       >
-        {/* Шесть пунктов на 375 px: подписи 10px, чтобы «Настройки» не резалось */}
-        <div className="grid h-14 grid-cols-6">
+        {/* Семь пунктов на 375 px: подписи 10px + tracking-tight,
+            чтобы «Настройки» не резалось в ячейке ~53px */}
+        <div className="grid h-14 grid-cols-7">
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -110,7 +114,7 @@ export function AppNav() {
                 )}
               >
                 <item.icon className="size-5" aria-hidden="true" />
-                <span className="text-[10px] leading-tight">
+                <span className="max-w-full truncate text-[10px] leading-tight tracking-tight">
                   {item.shortLabel}
                 </span>
               </Link>
