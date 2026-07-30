@@ -28,15 +28,39 @@ export function formatUsd(value: number, decimals = 2): string {
   return `${sign}$${NBSP}${groupThousands(int)}${frac ? `.${frac}` : ""}`;
 }
 
-/** «42.3%» — проценты с одним знаком после точки. */
-export function formatPct(value: number): string {
-  return `${value.toFixed(1)}%`;
+/** «42.3%» — проценты. В таблице портфеля используется 2 знака (как в ТЗ). */
+export function formatPct(value: number, decimals = 1): string {
+  return `${value.toFixed(decimals)}%`;
 }
 
 /** «+7.2 п.п.» / «−3.1 п.п.» — отклонение со знаком (знак = не только цвет). */
-export function formatPp(value: number): string {
+export function formatPp(value: number, decimals = 1): string {
   const sign = value > 0 ? "+" : value < 0 ? MINUS : "";
-  return `${sign}${Math.abs(value).toFixed(1)}${NBSP}п.п.`;
+  return `${sign}${Math.abs(value).toFixed(decimals)}${NBSP}п.п.`;
+}
+
+/**
+ * Число с группировкой тысяч и типографским минусом: «1 234.5678».
+ * Для количеств категорий (BTC/ETH — 4 знака) и сумм в USD (0 знаков).
+ */
+export function formatAmount(value: number, decimals: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value < 0 ? MINUS : "";
+  const [int, frac] = Math.abs(value).toFixed(decimals).split(".");
+  const trimmed = frac?.replace(/0+$/, "") ?? "";
+  return `${sign}${groupThousands(int)}${trimmed ? `.${trimmed}` : ""}`;
+}
+
+/**
+ * Количество к ребалансировке: со знаком, где плюс значим («купить»),
+ * поэтому он показывается явно, а не только цветом.
+ */
+export function formatSignedAmount(value: number, decimals: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : value < 0 ? MINUS : "";
+  const [int, frac] = Math.abs(value).toFixed(decimals).split(".");
+  const trimmed = frac?.replace(/0+$/, "") ?? "";
+  return `${sign}${groupThousands(int)}${trimmed ? `.${trimmed}` : ""}`;
 }
 
 /**

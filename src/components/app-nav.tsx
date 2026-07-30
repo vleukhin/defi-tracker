@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Дашборд" },
+  { href: "/", label: "Портфель" },
   { href: "/wallets", label: "Кошельки" },
-  { href: "/targets", label: "Цели" },
+  { href: "/targets", label: "Цели и записи" },
   { href: "/settings", label: "Настройки" },
 ] as const;
 
