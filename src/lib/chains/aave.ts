@@ -39,7 +39,7 @@ interface ReserveSpec {
  * Резерв попадает в портфель только если он есть И здесь, И в address book
  * для конкретной сети (курируемый список = защита от «оценим что попало»).
  */
-const COVERED_RESERVES: Record<string, ReserveSpec> = {
+export const COVERED_RESERVES: Record<string, ReserveSpec> = {
   // --- BTC-подобные ---
   WBTC: { category: "btc", coingeckoId: "wrapped-bitcoin" },
   cbBTC: { category: "btc", coingeckoId: "coinbase-wrapped-btc" },
