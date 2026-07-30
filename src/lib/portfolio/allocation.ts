@@ -185,15 +185,23 @@ export function computeAllocation(input: AllocationInput): AllocationResult {
     oldestBalanceMs = older(oldestBalanceMs, Date.parse(h.balanceUpdatedAt));
 
     const price = input.prices.get(h.assetId);
-    const mergeKey = h.coingeckoId ?? `sym:${h.symbol.toLowerCase()}`;
+    let mergeKey = h.coingeckoId ?? `sym:${h.symbol.toLowerCase()}`;
+    let displaySymbol = h.symbol;
     const bucketId = effectiveBucket.get(h.assetId) ?? OTHER_BUCKET_ID;
+    // Правило отождествления S1.5: WETH -> ETH (одна строка «ETH»).
+    // Действует, пока WETH лежит в встроенной корзине ETH; пользовательский
+    // override корзины отменяет и слияние (ТЗ: правила переопределяемы).
+    if (mergeKey === "weth" && bucketId === BUILTIN_BUCKET_IDS.ETH) {
+      mergeKey = "ethereum";
+      displaySymbol = "ETH";
+    }
     const groupKey = `${bucketId}|${mergeKey}`;
 
     let group = groups.get(groupKey);
     if (!group) {
       group = {
         key: mergeKey,
-        symbol: h.symbol,
+        symbol: displaySymbol,
         bucketId,
         assetIds: new Set(),
         sumScaled: 0n,
