@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   AssetRowDto,
   BucketDto,
@@ -27,6 +27,12 @@ function formatSum(sum: number): string {
   return s.endsWith(".0") ? s.slice(0, -2) : s;
 }
 
+function toInputValues(data: TargetsResponseDto): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const t of data.targets) next[t.bucketId] = String(t.targetPct);
+  return next;
+}
+
 function TargetsEditor({
   buckets,
   targetsData,
@@ -37,18 +43,21 @@ function TargetsEditor({
   onSaved: () => void;
 }) {
   // bucketId -> строка инпута; пустая строка = цель не задана
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    toInputValues(targetsData),
+  );
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<
     { kind: "ok" | "warn" | "error"; text: string } | null
   >(null);
 
-  // Инициализация из загруженных целей (и при их обновлении с сервера)
-  useEffect(() => {
-    const next: Record<string, string> = {};
-    for (const t of targetsData.targets) next[t.bucketId] = String(t.targetPct);
-    setValues(next);
-  }, [targetsData]);
+  // Ресинк при обновлении целей с сервера — setState во время рендера
+  // (паттерн «adjusting state when props change», не эффект)
+  const [syncedFor, setSyncedFor] = useState(targetsData);
+  if (syncedFor !== targetsData) {
+    setSyncedFor(targetsData);
+    setValues(toInputValues(targetsData));
+  }
 
   const sum = useMemo(() => {
     let s = 0;

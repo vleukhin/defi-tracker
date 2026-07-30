@@ -75,10 +75,12 @@ export function Dashboard() {
   }, [refetch]);
 
   useEffect(() => {
-    void doRefresh();
+    // Первый refresh — отложенно (не синхронный setState в теле эффекта)
+    const initial = setTimeout(() => void doRefresh(), 0);
     const refreshTimer = setInterval(() => void doRefresh(), AUTO_REFRESH_MS);
     const tickTimer = setInterval(() => setTick((t) => t + 1), 60_000);
     return () => {
+      clearTimeout(initial);
       clearInterval(refreshTimer);
       clearInterval(tickTimer);
     };

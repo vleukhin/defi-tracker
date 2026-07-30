@@ -61,19 +61,25 @@ export function useApi<T>(url: string): UseApiResult<T> {
   // Счетчик поколений отбрасывает ответы устаревших запросов
   const generation = useRef(0);
 
-  const refetch = useCallback(async () => {
+  const refetch = useCallback((): Promise<void> => {
     const gen = ++generation.current;
-    try {
-      const result = await apiFetch<T>(url);
-      if (generation.current !== gen) return;
-      setData(result);
-      setError(null);
-    } catch (e) {
-      if (generation.current !== gen) return;
-      setError(e instanceof ApiError ? e.message : "Не удалось загрузить данные");
-    } finally {
-      if (generation.current === gen) setLoading(false);
-    }
+    // Промис-цепочка вместо async-тела: setState только в колбэках ответа,
+    // синхронного setState нет (react-hooks/set-state-in-effect)
+    return apiFetch<T>(url).then(
+      (result) => {
+        if (generation.current !== gen) return;
+        setData(result);
+        setError(null);
+        setLoading(false);
+      },
+      (e: unknown) => {
+        if (generation.current !== gen) return;
+        setError(
+          e instanceof ApiError ? e.message : "Не удалось загрузить данные",
+        );
+        setLoading(false);
+      },
+    );
   }, [url]);
 
   useEffect(() => {

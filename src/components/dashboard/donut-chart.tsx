@@ -47,7 +47,15 @@ export function DonutChart({ buckets, totalUsd }: DonutChartProps) {
   const totalLabel = formatUsd(totalUsd, 0);
   const totalFontSize = totalLabel.length > 9 ? 15 : 19;
 
-  let offset = 0;
+  // Предрасчет дуг: длина и стартовое смещение каждого сегмента
+  const arcs: { bucket: BucketAllocationDto; len: number; start: number }[] =
+    [];
+  let acc = 0;
+  for (const s of slices) {
+    const len = (s.currentPct / 100) * C;
+    arcs.push({ bucket: s, len, start: acc });
+    acc += len;
+  }
 
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
@@ -58,24 +66,19 @@ export function DonutChart({ buckets, totalUsd }: DonutChartProps) {
         aria-label={`Аллокация по корзинам: ${description}`}
       >
         <g transform="rotate(-90 100 100)">
-          {slices.map((s) => {
-            const len = (s.currentPct / 100) * C;
-            const circle = (
-              <circle
-                key={s.bucketId}
-                cx="100"
-                cy="100"
-                r={R}
-                fill="none"
-                stroke={colors.get(s.bucketId)}
-                strokeWidth="30"
-                strokeDasharray={`${len} ${C - len}`}
-                strokeDashoffset={-offset}
-              />
-            );
-            offset += len;
-            return circle;
-          })}
+          {arcs.map(({ bucket, len, start }) => (
+            <circle
+              key={bucket.bucketId}
+              cx="100"
+              cy="100"
+              r={R}
+              fill="none"
+              stroke={colors.get(bucket.bucketId)}
+              strokeWidth="30"
+              strokeDasharray={`${len} ${C - len}`}
+              strokeDashoffset={-start}
+            />
+          ))}
         </g>
         <text
           x="100"
