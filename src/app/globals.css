@@ -101,33 +101,37 @@
   --radius-xl: calc(var(--radius) + 4px);   /* 14px — карточки */
 }
 
-/* ------- База ------- */
-* { border-color: var(--border); }
+/* ------- База -------
+   В @layer base: нелейерные правила перебивали бы утилиты Tailwind
+   (border-transparent, border-warning/30 и т.д.) — база должна уступать. */
+@layer base {
+  * { border-color: var(--border); }
 
-body {
-  font-family: var(--font-sans);
-  background-color: var(--background);
-  color: var(--foreground);
-  /* Финтех-глубина: едва заметное синее «свечение» из-за верхней кромки.
-     Радиальный градиент, а не заливка: на скролле фон остается спокойным. */
-  background-image: radial-gradient(
-    80rem 36rem at 50% -12rem,
-    color-mix(in oklab, var(--primary) 8%, transparent),
-    transparent 70%
-  );
-  background-repeat: no-repeat;
-}
-.dark body,
-body:where(.dark, .dark *) {
-  background-image: radial-gradient(
-    80rem 36rem at 50% -12rem,
-    color-mix(in oklab, var(--primary) 10%, transparent),
-    transparent 70%
-  );
-}
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--background);
+    color: var(--foreground);
+    /* Финтех-глубина: едва заметное синее «свечение» из-за верхней кромки.
+       Радиальный градиент, а не заливка: на скролле фон остается спокойным. */
+    background-image: radial-gradient(
+      80rem 36rem at 50% -12rem,
+      color-mix(in oklab, var(--primary) 8%, transparent),
+      transparent 70%
+    );
+    background-repeat: no-repeat;
+  }
+  .dark body,
+  body:where(.dark, .dark *) {
+    background-image: radial-gradient(
+      80rem 36rem at 50% -12rem,
+      color-mix(in oklab, var(--primary) 10%, transparent),
+      transparent 70%
+    );
+  }
 
-/* Все числовые данные: моноширинные табличные цифры */
-.font-mono { font-variant-numeric: tabular-nums; }
+  /* Все числовые данные: моноширинные табличные цифры */
+  .font-mono { font-variant-numeric: tabular-nums; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
