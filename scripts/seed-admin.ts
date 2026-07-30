@@ -8,7 +8,7 @@
  * если пользователь уже существует — обновляет пароль и роль.
  */
 import { createClient } from "@supabase/supabase-js";
-import { assertRemoteIfRequired } from "./env-guard.ts";
+import { assertRemoteIfRequired, normalizeSupabaseUrl } from "./env-guard.ts";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -19,7 +19,7 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-const url = requiredEnv("NEXT_PUBLIC_SUPABASE_URL");
+const url = normalizeSupabaseUrl(requiredEnv("NEXT_PUBLIC_SUPABASE_URL"));
 const serviceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
 const email = requiredEnv("ADMIN_EMAIL");
 const password = requiredEnv("ADMIN_PASSWORD");

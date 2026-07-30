@@ -10,6 +10,27 @@
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
 
+/**
+ * Приводит адрес к базовому виду `https://<ref>.supabase.co`.
+ *
+ * В панели Supabase рядом с Project URL показаны и REST/GraphQL-адреса —
+ * скопировать не тот легко. Клиент дописывает `/auth/v1/...` и `/rest/v1/...`
+ * поверх базового адреса, поэтому лишний хвост дает «Invalid path specified
+ * in request URL». Чиним молча, но с предупреждением.
+ */
+export function normalizeSupabaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  const cleaned = trimmed.replace(/\/(rest|auth|storage|realtime)\/v\d+$/, "");
+  if (cleaned !== trimmed) {
+    console.warn(
+      `Внимание: из адреса убран лишний хвост — нужен базовый Project URL.\n` +
+        `  было:  ${raw}\n  стало: ${cleaned}\n` +
+        `Поправьте NEXT_PUBLIC_SUPABASE_URL, чтобы предупреждение не повторялось.\n`,
+    );
+  }
+  return cleaned;
+}
+
 export function isLocalUrl(url: string): boolean {
   try {
     return LOCAL_HOSTS.includes(new URL(url).hostname);
