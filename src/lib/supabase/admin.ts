@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { normalizeSupabaseUrl } from "./url";
 
 /**
  * Service-role клиент Supabase: ОБХОДИТ RLS.
@@ -17,7 +18,7 @@ export function createAdminClient(): SupabaseClient {
       "NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY не заданы",
     );
   }
-  return createSupabaseClient(url, serviceKey, {
+  return createSupabaseClient(normalizeSupabaseUrl(url), serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
