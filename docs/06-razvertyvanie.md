@@ -1,0 +1,143 @@
+# ТЗ. Часть 6: Развертывание в облаке
+
+**Версия:** 1.0 (30.07.2026)
+Стек по ТЗ Часть 4 §1: **Vercel Hobby + Supabase Free = $0/мес.**
+
+Шаги, помеченные **[вы]**, требуют входа в аккаунты — их выполняете вы.
+Помеченные **[скрипт]** — запускаются командой из проекта.
+
+---
+
+## 0. Перед началом
+
+- [ ] Свежая резервная копия локальных данных: `npm run data:export`
+      (файл `backup-ГГГГ-ММ-ДД.json`, в репозиторий не попадает).
+- [ ] Все коммиты отправлены на GitHub: `git push`.
+- [ ] Под рукой ключи `ALCHEMY_API_KEY` и `COINGECKO_API_KEY` из `.env.local`
+      — в облаке используются те же самые.
+
+## 1. Проект Supabase **[вы]**
+
+1. [supabase.com](https://supabase.com) → **New project**.
+   - Регион: ближайший к вам (для Европы — `Central EU (Frankfurt)`).
+   - **Пароль базы сохраните** — понадобится на шаге 2 и больше нигде не показывается.
+2. Дождитесь создания (1–2 мин).
+3. **Project Settings → API** — оттуда понадобятся три значения:
+   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
+   - `anon public` → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `service_role` → `SUPABASE_SERVICE_ROLE_KEY` (**секрет**, только сервер)
+
+## 2. Миграции в облачную базу **[вы]**
+
+```bash
+npx supabase login
+npx supabase link --project-ref <ref-проекта>
+npx supabase db push
+```
+
+`ref` — в адресе панели: `supabase.com/dashboard/project/<ref>`.
+`db push` накатит все миграции: схему, RLS-политики, GRANT'ы, справочник
+активов, модель портфеля, сделки.
+
+Проверка: **Table Editor** — должны быть таблицы `wallets`, `trades`,
+`manual_positions`, `portfolio_targets`, `protocol_positions`, `coin_prices`.
+
+## 3. Настройки Auth **[вы]** — здесь легко ошибиться
+
+**Authentication → Sign In / Providers → Email:**
+
+| Настройка | Значение | Почему |
+|---|---|---|
+| **Enable Email provider** | **ВКЛ** | Выключение убивает и вход тоже — приложение станет недоступно |
+| **Confirm email** | **ВЫКЛ** | Аккаунты создает админ, почта считается подтвержденной |
+
+**Authentication → Sign In / Providers → внизу «Allow new users to sign up»: ВЫКЛ.**
+Именно эта пара (провайдер включен, регистрация выключена) дает закрытый
+контур: войти можно, зарегистрироваться самому — нет. Если выключить
+провайдер целиком, вход вернет `email_provider_disabled`.
+
+**Authentication → URL Configuration:**
+- `Site URL`: адрес продакшена (например `https://defi-tracker.vercel.app`)
+- `Redirect URLs`: добавьте `https://<ваш-домен>/**`
+
+**Authentication → Emails → Reset Password** — замените ссылку на:
+
+```
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery
+```
+
+Стандартный шаблон Supabase не работает с cookie-сессиями `@supabase/ssr`:
+ссылка восстановления пароля молча не сработает. Локальный аналог —
+`supabase/templates/recovery.html`.
+
+## 4. Vercel **[вы]**
+
+1. [vercel.com](https://vercel.com) → **Add New → Project** → импорт
+   репозитория `vleukhin/defi-tracker`.
+2. Framework определится сам (Next.js), настройки сборки менять не нужно.
+3. **Environment Variables** — пять переменных для Production:
+
+| Переменная | Значение |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Project URL из шага 1 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon public |
+| `SUPABASE_SERVICE_ROLE_KEY` | service_role (**секрет**) |
+| `ALCHEMY_API_KEY` | из `.env.local` |
+| `COINGECKO_API_KEY` | из `.env.local` |
+
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` в Vercel **не нужны** — админ создается
+скриптом с вашей машины (шаг 5).
+
+4. **Deploy.** После деплоя вернитесь в Supabase и впишите полученный адрес
+   в `Site URL` (шаг 3), если он тогда был неизвестен.
+
+## 5. Админ и данные **[скрипт]**
+
+Создайте `.env.production.local` в корне проекта (файл игнорируется git):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon>
+SUPABASE_SERVICE_ROLE_KEY=<service_role>
+ADMIN_EMAIL=<ваш email>
+ADMIN_PASSWORD=<надежный пароль, минимум 8 символов>
+```
+
+Затем:
+
+```bash
+npm run seed:admin:prod
+npm run data:import:prod -- --file backup-ГГГГ-ММ-ДД.json
+```
+
+Первая команда заводит администратора, вторая переносит кошельки, ручные
+записи, цели и сделки. Импорт не задваивает: если данные уже есть, таблица
+пропускается (перезаписать — флаг `--replace`).
+
+**Пароль в продакшене задайте другой, чем локальный.** Локальный
+`admin-local-1` — учебный.
+
+## 6. Проверка
+
+- [ ] Открыть адрес, войти под админом.
+- [ ] «Кошельки» — адрес на месте.
+- [ ] Дашборд → **«Обновить»**: залог Aave подтянется из блокчейна
+      (кэш балансов не переносится — он пересобирается по запросу).
+- [ ] «Сделки» — 39 записей, средняя цена совпадает с локальной.
+- [ ] «Цели» — 50 / 20 / 30.
+- [ ] Выйти и войти заново — сессия работает.
+
+## 7. Что помнить дальше
+
+- **Vercel Hobby — только некоммерческое использование.** Личный трекер
+  подходит; если появится монетизация — Pro $20/мес.
+- **Supabase Free засыпает после 7 дней простоя.** Ежедневный cron из
+  Фазы 3 будет держать проект живым сам по себе.
+- **Cron для снепшотов** появится вместе с Фазой 3: файл `vercel.json`
+  с расписанием и роут `/api/cron/snapshot`, защищенный `CRON_SECRET`.
+  На Hobby доступен один запуск в сутки — этого достаточно.
+- **Резервные копии.** `npm run data:export:prod` выгружает облачные данные
+  в том же формате. На Supabase Free автоматических бэкапов нет — выгружать
+  раз в месяц стоит.
+- **Ротация ключей.** Если `service_role` куда-то утек — перевыпуск в
+  Project Settings → API, затем обновить переменную в Vercel.

@@ -46,3 +46,6 @@ next-env.d.ts
 
 # supabase
 supabase/.temp
+
+# резервные копии данных: адреса кошельков и история сделок — не в репозиторий
+backup-*.json
