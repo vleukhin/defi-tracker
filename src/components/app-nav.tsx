@@ -1,6 +1,13 @@
 "use client";
 
-import { ArrowLeftRight, ChartPie, Settings, Target, Wallet } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ChartLine,
+  ChartPie,
+  Settings,
+  Target,
+  Wallet,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
@@ -15,6 +22,8 @@ const NAV_ITEMS = [
     shortLabel: "Сделки",
     icon: ArrowLeftRight,
   },
+  // Фаза 3: снепшоты и графики динамики
+  { href: "/history", label: "История", shortLabel: "История", icon: ChartLine },
   { href: "/wallets", label: "Кошельки", shortLabel: "Кошельки", icon: Wallet },
   // В нижнем баре подпись сокращается до «Цели» (ТЗ §5.6.2)
   { href: "/targets", label: "Цели и записи", shortLabel: "Цели", icon: Target },
@@ -86,7 +95,8 @@ export function AppNav() {
         aria-label="Основная навигация (мобильная)"
         className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden"
       >
-        <div className="grid h-14 grid-cols-5">
+        {/* Шесть пунктов на 375 px: подписи 10px, чтобы «Настройки» не резалось */}
+        <div className="grid h-14 grid-cols-6">
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -95,12 +105,14 @@ export function AppNav() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-0.5 outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
+                  "flex flex-col items-center justify-center gap-0.5 overflow-hidden outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >
                 <item.icon className="size-5" aria-hidden="true" />
-                <span className="text-[11px]">{item.shortLabel}</span>
+                <span className="text-[10px] leading-tight">
+                  {item.shortLabel}
+                </span>
               </Link>
             );
           })}
