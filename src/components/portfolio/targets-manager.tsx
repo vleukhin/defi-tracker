@@ -1,6 +1,13 @@
 "use client";
 
+import { TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type {
   ManualListDto,
   PortfolioCategory,
@@ -8,6 +15,8 @@ import type {
 } from "@/lib/api/types";
 import { NBSP, formatQuantity, tableUsd } from "@/lib/format";
 import { ApiError, apiFetch } from "@/lib/use-api";
+import { cn } from "@/lib/utils";
+import { CATEGORY_BG, CategoryDot } from "./category";
 
 /**
  * Цели (S1.6) и ручные записи (S1.4) на одном экране.
@@ -37,13 +46,11 @@ const CATEGORIES: { key: PortfolioCategory; label: string; unit: string; hint: s
   },
 ];
 
-type Notice = { kind: "ok" | "warn" | "error"; text: string } | null;
-
 export function TargetsManager() {
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [savedSum, setSavedSum] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<Notice>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [entries, setEntries] = useState<ManualListDto["entries"] | null>(null);
 
   const loadTargets = useCallback(() => {
@@ -80,7 +87,7 @@ export function TargetsManager() {
   async function saveTargets(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setNotice(null);
+    setSaveError(null);
     try {
       const payload = CATEGORIES.flatMap((c) => {
         const raw = (targets[c.key] ?? "").trim();
@@ -93,16 +100,17 @@ export function TargetsManager() {
         body: JSON.stringify({ targets: payload }),
       });
       setSavedSum(res.sumPct);
-      setNotice(
-        res.warning
-          ? { kind: "warn", text: `Сохранено. ${res.warning}` }
-          : { kind: "ok", text: "Цели сохранены" },
-      );
+      // Успех — тостом; предупреждение о сумме ≠ 100% — вместе с ним (§5.3)
+      if (res.warning) {
+        toast.warning(`Сохранено. ${res.warning}`);
+      } else {
+        toast.success("Цели сохранены");
+      }
     } catch (err) {
-      setNotice({
-        kind: "error",
-        text: err instanceof ApiError ? err.message : "Не удалось сохранить",
-      });
+      // Ошибка — инлайн: должна остаться на экране (§5.3)
+      setSaveError(
+        err instanceof ApiError ? err.message : "Не удалось сохранить",
+      );
     } finally {
       setSaving(false);
     }
@@ -110,89 +118,100 @@ export function TargetsManager() {
 
   return (
     <div className="space-y-4">
-      <form
-        onSubmit={saveTargets}
-        className="rounded-lg border border-gray-200 bg-white p-4"
-      >
-        <h2 className="text-sm font-medium text-gray-700">Целевые проценты</h2>
-        <p className="mt-1 text-xs text-gray-500">
-          Портфель состоит из трех частей. Пустое поле — цель не задана.
-        </p>
+      <Card className="p-4">
+        <form onSubmit={saveTargets}>
+          <h2 className="text-sm font-semibold">Целевые проценты</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Портфель состоит из трех частей. Пустое поле — цель не задана.
+          </p>
 
-        <div className="mt-3 divide-y divide-gray-100">
-          {CATEGORIES.map((c) => (
-            <div
-              key={c.key}
-              className="flex items-center justify-between gap-3 py-2.5"
-            >
-              <label
-                htmlFor={`target-${c.key}`}
-                className="text-sm text-gray-900"
+          <div className="mt-3 divide-y divide-border">
+            {CATEGORIES.map((c) => (
+              <div
+                key={c.key}
+                className="flex items-center justify-between gap-3 py-2.5"
               >
-                {c.label}
-              </label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  id={`target-${c.key}`}
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  inputMode="decimal"
-                  value={targets[c.key] ?? ""}
-                  onChange={(e) =>
-                    setTargets((prev) => ({ ...prev, [c.key]: e.target.value }))
-                  }
-                  placeholder="—"
-                  className="w-24 rounded-md border border-gray-300 px-2 py-1.5 text-right text-sm tabular-nums"
-                />
-                <span className="text-sm text-gray-500">%</span>
+                <Label
+                  htmlFor={`target-${c.key}`}
+                  className="gap-2 font-normal"
+                >
+                  <CategoryDot category={c.key} />
+                  {c.label}
+                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    id={`target-${c.key}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    inputMode="decimal"
+                    value={targets[c.key] ?? ""}
+                    onChange={(e) =>
+                      setTargets((prev) => ({ ...prev, [c.key]: e.target.value }))
+                    }
+                    placeholder="—"
+                    className="w-24 text-right font-mono"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
 
-        <p
-          className={`mt-3 rounded-md px-3 py-2 text-sm ${
-            sumIs100
-              ? "bg-emerald-50 text-emerald-800"
-              : "bg-amber-50 text-amber-800"
-          }`}
-          role="status"
-        >
-          {sumIs100
-            ? "Сумма: 100%"
-            : `Сумма: ${sum}%${NBSP}— отклонения будут считаться от заданных целей`}
-        </p>
+          {/* Живой индикатор суммы (S1.6): предупреждение, не блокировка */}
+          <div role="status" className="mt-3">
+            {sumIs100 ? (
+              <div className="space-y-2">
+                <p className="text-sm text-success">Сумма: 100%</p>
+                {/* Мини-превью полосы: будущая аллокация до сохранения (§5.3) */}
+                <div className="flex h-1.5 gap-0.5">
+                  {CATEGORIES.map((c) => {
+                    const pct = Number.parseFloat(targets[c.key] ?? "");
+                    if (!Number.isFinite(pct) || pct <= 0) return null;
+                    return (
+                      <div
+                        key={c.key}
+                        className={cn(
+                          "h-full transition-[width] duration-400 ease-out first:rounded-l-full last:rounded-r-full",
+                          CATEGORY_BG[c.key],
+                        )}
+                        style={{
+                          width: `${pct}%`,
+                          minWidth: pct < 1 ? "4px" : undefined,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <Alert variant="warning" className="py-2">
+                <TriangleAlert className="size-4" />
+                <AlertTitle className="font-normal">
+                  Сумма: <span className="font-mono">{sum}%</span>
+                  {NBSP}— отклонения будут считаться от заданных целей
+                </AlertTitle>
+              </Alert>
+            )}
+          </div>
 
-        {notice && (
-          <p
-            className={`mt-2 rounded-md px-3 py-2 text-sm ${
-              notice.kind === "ok"
-                ? "bg-emerald-50 text-emerald-800"
-                : notice.kind === "warn"
-                  ? "bg-amber-50 text-amber-800"
-                  : "bg-red-50 text-red-700"
-            }`}
-            role="status"
-          >
-            {notice.text}
-          </p>
-        )}
+          {saveError && (
+            <p role="status" className="mt-2 text-sm text-destructive">
+              {saveError}
+            </p>
+          )}
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="mt-3 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
-        >
-          {saving ? "Сохранение…" : "Сохранить цели"}
-        </button>
-        {savedSum !== null && savedSum === 0 && (
-          <p className="mt-2 text-xs text-gray-400">
-            Пока цели не заданы — отклонения не рассчитываются.
-          </p>
-        )}
-      </form>
+          <Button type="submit" disabled={saving} className="mt-3">
+            {saving ? "Сохранение…" : "Сохранить цели"}
+          </Button>
+          {savedSum !== null && savedSum === 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Пока цели не заданы — отклонения не рассчитываются.
+            </p>
+          )}
+        </form>
+      </Card>
 
       {CATEGORIES.map((c) => (
         <ManualSection
@@ -261,31 +280,33 @@ function ManualSection({
     try {
       await apiFetch(`/api/portfolio/manual/${id}`, { method: "DELETE" });
       onChanged();
+      toast.success("Запись удалена");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось удалить");
     }
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white">
-      <div className="border-b border-gray-100 px-4 py-3">
+    <Card className="p-0">
+      <div className="border-b border-border px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium text-gray-700">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <CategoryDot category={category} />
             {label} — вручную
           </h2>
           {entries.length > 0 && (
-            <span className="text-sm tabular-nums text-gray-600">
+            <span className="font-mono text-sm text-muted-foreground">
               {unit === "USD"
                 ? tableUsd(total)
                 : `${formatQuantity(String(total))} ${unit}`}
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-gray-500">{hint}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
       </div>
 
       <form onSubmit={add} className="flex flex-col gap-2 px-4 py-3 sm:flex-row">
-        <input
+        <Input
           type="text"
           required
           maxLength={60}
@@ -293,9 +314,9 @@ function ManualSection({
           onChange={(e) => setEntryLabel(e.target.value)}
           placeholder={unit === "USD" ? "GMX пул" : "Биржа, холодный кошелек"}
           aria-label={`Подпись записи ${label}`}
-          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="flex-1"
         />
-        <input
+        <Input
           type="text"
           required
           inputMode="decimal"
@@ -303,54 +324,55 @@ function ManualSection({
           onChange={(e) => setAmount(e.target.value)}
           placeholder={unit === "USD" ? "15000" : "0.5"}
           aria-label={`Количество (${unit})`}
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-right text-sm tabular-nums sm:w-32"
+          className="w-full text-right font-mono sm:w-32"
         />
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
-        >
+        <Button type="submit" variant="secondary" disabled={pending}>
           {pending ? "…" : "Добавить"}
-        </button>
+        </Button>
       </form>
 
       {error && (
-        <p className="px-4 pb-2 text-sm text-red-700" role="status">
+        <p className="px-4 pb-2 text-sm text-destructive" role="status">
           {error}
         </p>
       )}
 
       {loading ? (
-        <p className="px-4 pb-3 text-sm text-gray-400">Загрузка…</p>
+        <p className="px-4 pb-3 text-xs text-muted-foreground">Загрузка…</p>
       ) : entries.length === 0 ? (
-        <p className="px-4 pb-3 text-sm text-gray-400">Записей пока нет.</p>
+        <p className="px-4 pb-3 text-xs text-muted-foreground">
+          Записей пока нет.
+        </p>
       ) : (
-        <ul className="divide-y divide-gray-100 border-t border-gray-100">
+        <ul className="divide-y divide-border border-t border-border">
           {entries.map((e) => (
             <li
               key={e.id}
               className="flex items-center justify-between gap-2 px-4 py-2.5"
             >
-              <span className="min-w-0 truncate text-sm text-gray-900">
-                {e.label}
-              </span>
+              <span className="min-w-0 truncate text-sm">{e.label}</span>
               <span className="flex items-center gap-3">
-                <span className="text-sm tabular-nums text-gray-600">
+                <span className="font-mono text-sm">
                   {formatQuantity(e.amount)}
-                  <span className="ml-1 text-xs text-gray-400">{unit}</span>
+                  <span className="ml-1 font-sans text-xs text-muted-foreground">
+                    {unit}
+                  </span>
                 </span>
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
                   onClick={() => void remove(e.id)}
                   aria-label={`Удалить запись ${e.label}`}
-                  className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                  className="text-muted-foreground hover:text-destructive"
                 >
-                  Удалить
-                </button>
+                  <X className="size-4" />
+                </Button>
               </span>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }

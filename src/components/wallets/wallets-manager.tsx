@@ -1,15 +1,33 @@
 "use client";
 
+import { Check, CircleAlert, Copy } from "lucide-react";
 import { useState } from "react";
 import { isAddress } from "viem";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { WalletDto } from "@/lib/api/types";
 import { formatRelativeTime, truncateAddress } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 
 /**
- * Управление кошельками (S1.2): список read-only адресов, добавление
- * с клиентской предпроверкой EIP-55 (viem isAddress: lowercase принимается,
- * неверный checksum — нет), удаление с подтверждением.
+ * Управление кошельками (S1.2, дизайн §5.2): список read-only адресов,
+ * добавление с клиентской предпроверкой EIP-55 (viem isAddress: lowercase
+ * принимается, неверный checksum — нет), удаление через AlertDialog.
  * Никаких полей для приватных ключей и сид-фраз — только публичный адрес.
  */
 
@@ -27,14 +45,20 @@ function CopyButton({ address }: { address: string }) {
   }
 
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon-xs"
       onClick={copy}
       aria-label={`Скопировать адрес ${address}`}
-      className="rounded px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+      className="text-muted-foreground hover:text-foreground"
     >
-      {copied ? "Скопировано" : "Копировать"}
-    </button>
+      {copied ? (
+        <Check className="size-4 text-success" />
+      ) : (
+        <Copy className="size-4" />
+      )}
+    </Button>
   );
 }
 
@@ -45,7 +69,6 @@ function WalletRow({
   wallet: WalletDto;
   onDeleted: () => void;
 }) {
-  const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,66 +87,58 @@ function WalletRow({
   const refreshedAgo = formatRelativeTime(wallet.lastRefreshedAt);
 
   return (
-    <li className="border-t border-gray-100 px-4 py-3 first:border-t-0">
+    <li className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-gray-900">
-            {wallet.label ?? "Без метки"}
-          </p>
-          <p className="flex items-center gap-1 text-xs text-gray-500">
+          <p className="text-sm font-medium">{wallet.label ?? "Без метки"}</p>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
             <span className="font-mono" title={wallet.address}>
               {truncateAddress(wallet.address)}
             </span>
             <CopyButton address={wallet.address} />
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-muted-foreground">
             {refreshedAgo ? `обновлен ${refreshedAgo}` : "еще не обновлялся"}
           </p>
         </div>
-        {!confirming && (
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Удалить
-          </button>
-        )}
-      </div>
 
-      {confirming && (
-        <div
-          role="alertdialog"
-          aria-label="Подтверждение удаления кошелька"
-          className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5"
-        >
-          <p className="text-sm text-red-800">
-            Балансы этого кошелька будут убраны из портфеля.
-          </p>
-          <div className="mt-2 flex gap-2">
-            <button
+        {/* Подтверждение удаления — AlertDialog (ТЗ §5.2) */}
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
               type="button"
-              onClick={handleDelete}
+              variant="ghost"
+              size="sm"
               disabled={deleting}
-              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              className="text-muted-foreground hover:text-destructive"
             >
               {deleting ? "Удаление…" : "Удалить"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirming(false)}
-              disabled={deleting}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Отмена
-            </button>
-          </div>
-          {error && (
-            <p role="alert" className="mt-2 text-sm text-red-700">
-              {error}
-            </p>
-          )}
-        </div>
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Удалить кошелек?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Балансы этого кошелька будут убраны из портфеля.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel variant="secondary">Отмена</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => void handleDelete()}
+              >
+                Удалить
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
       )}
     </li>
   );
@@ -178,85 +193,86 @@ export function WalletsManager() {
   return (
     <div className="space-y-4">
       {/* Форма добавления */}
-      <form
-        onSubmit={handleAdd}
-        className="space-y-3 rounded-lg border border-gray-200 bg-white p-4"
-      >
-        <h2 className="text-sm font-medium text-gray-700">Добавить адрес</h2>
-        <div className="space-y-1">
-          <label htmlFor="wallet-address" className="block text-sm font-medium">
-            EVM-адрес
-          </label>
-          <input
-            id="wallet-address"
-            type="text"
-            required
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="0x…"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="wallet-label" className="block text-sm font-medium">
-            Метка <span className="font-normal text-gray-400">(необязательно)</span>
-          </label>
-          <input
-            id="wallet-label"
-            type="text"
-            maxLength={64}
-            placeholder="Основной, Ledger…"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-          />
-        </div>
-        {formError && (
-          <p
-            role="alert"
-            className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
-          >
-            {formError}
+      <Card className="p-4">
+        <form onSubmit={handleAdd} className="space-y-3">
+          <h2 className="text-sm font-semibold">Добавить адрес</h2>
+          <div className="space-y-1.5">
+            <Label htmlFor="wallet-address">EVM-адрес</Label>
+            <Input
+              id="wallet-address"
+              type="text"
+              required
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="0x…"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="font-mono placeholder:font-mono"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="wallet-label">
+              Метка{" "}
+              <span className="font-normal text-muted-foreground">
+                (необязательно)
+              </span>
+            </Label>
+            <Input
+              id="wallet-label"
+              type="text"
+              maxLength={64}
+              placeholder="Основной, Ledger…"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+          </div>
+          {formError && (
+            <p role="alert" className="text-sm text-destructive">
+              {formError}
+            </p>
+          )}
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Добавление…" : "Добавить"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Адрес отслеживается на Ethereum, Arbitrum, Base и Optimism.
           </p>
-        )}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
-        >
-          {submitting ? "Добавление…" : "Добавить"}
-        </button>
-        <p className="text-xs text-gray-500">
-          Адрес отслеживается на Ethereum, Arbitrum, Base и Optimism.
-        </p>
-      </form>
+        </form>
+      </Card>
 
       {/* Список */}
       {loading && !data ? (
-        <div aria-busy="true" className="h-24 animate-pulse rounded-lg bg-gray-100" />
+        <Skeleton aria-busy="true" className="h-24 rounded-xl" />
       ) : error && !data ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          <p>Не удалось загрузить кошельки: {error}</p>
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            className="mt-2 rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium hover:bg-red-100"
-          >
-            Повторить
-          </button>
-        </div>
+        <Alert variant="destructive">
+          <CircleAlert className="size-4" />
+          <AlertTitle>Не удалось загрузить кошельки: {error}</AlertTitle>
+          <AlertDescription>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void refetch()}
+              className="mt-2"
+            >
+              Повторить
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : data && data.wallets.length === 0 ? (
-        <p className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
-          Кошельков пока нет — добавьте первый адрес выше.
-        </p>
+        <Card className="p-0">
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Кошельков пока нет — добавьте первый адрес выше.
+          </p>
+        </Card>
       ) : data ? (
-        <ul className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          {data.wallets.map((w) => (
-            <WalletRow key={w.id} wallet={w} onDeleted={() => void refetch()} />
-          ))}
-        </ul>
+        <Card className="p-0">
+          <ul className="divide-y divide-border">
+            {data.wallets.map((w) => (
+              <WalletRow key={w.id} wallet={w} onDeleted={() => void refetch()} />
+            ))}
+          </ul>
+        </Card>
       ) : null}
     </div>
   );
