@@ -24,7 +24,8 @@ export async function GET() {
   let dbError: string | null = null;
   try {
     const admin = createAdminClient();
-    const { error } = await admin.from("buckets").select("id").limit(1);
+    // assets — справочная таблица, существует с первой миграции
+    const { error } = await admin.from("assets").select("id").limit(1);
     db = !error;
     dbError = error?.message ?? null;
   } catch (err) {
