@@ -1,4 +1,5 @@
 import type { PortfolioRowDto } from "@/lib/api/types";
+import { formatPnl, pnlClass } from "@/components/pnl";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
@@ -6,6 +7,8 @@ import {
   tablePct,
   tablePctSigned,
   tableUsd,
+  tableUsdSigned,
+  usdDecimals,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CategoryDot, categoryTint } from "./category";
@@ -66,6 +69,18 @@ function MetricCard({ row }: { row: PortfolioRowDto }) {
           ? tablePct(row.percent)
           : `${tablePct(row.percent)} → цель ${tablePct(row.targetPercent)}`}
       </p>
+      {/* Unrealized P/L из леджера сделок (Фаза 2, S2.2); без сделок — нет строки */}
+      {row.ledger.unrealizedPnlUsd !== null && (
+        <p
+          className={cn(
+            "font-mono text-xs",
+            pnlClass(row.ledger.unrealizedPnlUsd) || "text-muted-foreground",
+          )}
+        >
+          P/L:{" "}
+          {formatPnl(row.ledger.unrealizedPnlUsd, row.ledger.unrealizedPnlPct)}
+        </p>
+      )}
     </Card>
   );
 }
@@ -92,6 +107,21 @@ function MiniMetricCard({ row }: { row: PortfolioRowDto }) {
       >
         {tablePct(row.percent)}
       </p>
+      {/* Мини-версия P/L: только доллары — проценты не влезают в треть 375px */}
+      {row.ledger.unrealizedPnlUsd !== null && (
+        <p
+          className={cn(
+            "font-mono text-[11px]",
+            pnlClass(row.ledger.unrealizedPnlUsd) || "text-muted-foreground",
+          )}
+        >
+          P/L:{" "}
+          {tableUsdSigned(
+            row.ledger.unrealizedPnlUsd,
+            usdDecimals(row.ledger.unrealizedPnlUsd),
+          )}
+        </p>
+      )}
     </Card>
   );
 }

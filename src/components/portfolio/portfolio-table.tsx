@@ -1,7 +1,9 @@
 "use client";
 
 import { ChevronRight, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { Fragment, useState } from "react";
+import { formatPnl, pnlClass } from "@/components/pnl";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -21,6 +23,7 @@ import {
   tablePctSigned,
   tableSigned,
   tableUsd,
+  usdDecimals,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CATEGORY_VAR, CategoryDot } from "./category";
@@ -85,7 +88,96 @@ const COLUMNS = [
   "Цель",
   "Отклонение",
   "К ребалансировке",
+  // Фаза 2 (S2.2): средняя цена покупки и unrealized P/L из леджера сделок
+  "Средняя",
+  "P/L",
 ];
+
+/** «—» без данных леджера: нет цены покупки — не фиктивный ноль (S2.2). */
+const NO_AVG_TITLE = "нет данных о цене покупки";
+
+/** Средняя цена покупки: null-safe. */
+function AvgPriceValue({ value }: { value: number | null }) {
+  if (value === null) {
+    return (
+      <span className="text-muted-foreground" title={NO_AVG_TITLE}>
+        —
+      </span>
+    );
+  }
+  return <>{tableUsd(value, usdDecimals(value))}</>;
+}
+
+/** Unrealized P/L: «+$1 234 (+5,2%)», цвет по знаку; null → «—». */
+function UnrealizedPnlValue({
+  usd,
+  pct,
+}: {
+  usd: number | null;
+  pct: number | null;
+}) {
+  if (usd === null) {
+    return (
+      <span className="text-muted-foreground" title={NO_AVG_TITLE}>
+        —
+      </span>
+    );
+  }
+  return <span className={pnlClass(usd)}>{formatPnl(usd, pct)}</span>;
+}
+
+/**
+ * Предупреждения строки: деградация данных (Фаза 1) + аномалии леджера и
+ * мягкое расхождение «леджер ↔ факт» со ссылкой на сверку (S2.2).
+ */
+function RowWarnings({ row }: { row: PortfolioRowDto }) {
+  const { discrepancy } = row.ledger;
+  return (
+    <>
+      {[...row.warnings, ...row.ledger.warnings].map((w) => (
+        <span key={w} className="mr-3 inline-flex items-center gap-1">
+          <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
+          {w}
+        </span>
+      ))}
+      {discrepancy !== null && (
+        <span className="mr-3 inline-flex flex-wrap items-center gap-1">
+          <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
+          <span>
+            Леджер:{" "}
+            <span className="font-mono">
+              {tableNumber(discrepancy.ledgerQty, amountDecimals(row.unit))}
+            </span>{" "}
+            {row.unit}, факт:{" "}
+            <span className="font-mono">
+              {tableNumber(discrepancy.actualQty, amountDecimals(row.unit))}
+            </span>{" "}
+            {row.unit} — расхождение{" "}
+            <span className="font-mono">
+              {tableSigned(discrepancy.diff, amountDecimals(row.unit))}
+            </span>{" "}
+            {row.unit}
+          </span>
+          <Link
+            href="/trades"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            Сверить в сделках
+          </Link>
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Есть ли что показывать в строке предупреждений. */
+function hasRowWarnings(row: PortfolioRowDto): boolean {
+  return (
+    row.warnings.length > 0 ||
+    row.ledger.warnings.length > 0 ||
+    row.ledger.discrepancy !== null
+  );
+}
 
 /** Общие классы ячейки: границы сетки + числа mono по правому краю. */
 const CELL = "border border-border px-3 py-2 text-right font-mono text-sm";
@@ -228,26 +320,26 @@ export function PortfolioTable({
                         </span>
                       )}
                     </TableCell>
+
+                    <TableCell className={CELL}>
+                      <AvgPriceValue value={row.ledger.avgPriceUsd} />
+                    </TableCell>
+
+                    <TableCell className={CELL}>
+                      <UnrealizedPnlValue
+                        usd={row.ledger.unrealizedPnlUsd}
+                        pct={row.ledger.unrealizedPnlPct}
+                      />
+                    </TableCell>
                   </TableRow>
 
-                  {row.warnings.length > 0 && (
+                  {hasRowWarnings(row) && (
                     <TableRow className="hover:bg-transparent">
                       <TableCell
                         colSpan={COLUMNS.length + 1}
-                        className="border border-border bg-warning/10 px-3 py-1.5 text-xs text-warning"
+                        className="border border-border bg-warning/10 px-3 py-1.5 text-xs whitespace-normal text-warning"
                       >
-                        {row.warnings.map((w) => (
-                          <span
-                            key={w}
-                            className="mr-3 inline-flex items-center gap-1"
-                          >
-                            <TriangleAlert
-                              aria-hidden="true"
-                              className="size-3.5 shrink-0"
-                            />
-                            {w}
-                          </span>
-                        ))}
+                        <RowWarnings row={row} />
                       </TableCell>
                     </TableRow>
                   )}
@@ -276,7 +368,7 @@ export function PortfolioTable({
               <TableCell className={`${CELL} bg-muted/60 font-semibold`}>
                 {tableUsd(totalUsd)}
               </TableCell>
-              <TableCell className={`${CELL} bg-muted/60`} colSpan={5} />
+              <TableCell className={`${CELL} bg-muted/60`} colSpan={7} />
             </TableRow>
           </TableBody>
         </Table>
@@ -371,6 +463,15 @@ function MobileCard({
         </span>
       ),
     ],
+    ["Средняя", <AvgPriceValue key="avg" value={row.ledger.avgPriceUsd} />],
+    [
+      "P/L",
+      <UnrealizedPnlValue
+        key="pnl"
+        usd={row.ledger.unrealizedPnlUsd}
+        pct={row.ledger.unrealizedPnlPct}
+      />,
+    ],
   ];
 
   return (
@@ -407,15 +508,10 @@ function MobileCard({
         </dl>
       </button>
 
-      {row.warnings.length > 0 && (
-        <ul className="bg-warning/10 px-4 py-1.5 text-xs text-warning">
-          {row.warnings.map((w) => (
-            <li key={w} className="flex items-center gap-1">
-              <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
-              {w}
-            </li>
-          ))}
-        </ul>
+      {hasRowWarnings(row) && (
+        <div className="bg-warning/10 px-4 py-1.5 text-xs text-warning">
+          <RowWarnings row={row} />
+        </div>
       )}
 
       {open && (
