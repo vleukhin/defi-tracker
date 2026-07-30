@@ -12,6 +12,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      // Реальный "server-only" бросает ошибку вне React Server-окружения
+      "server-only": path.resolve(__dirname, "src/test/server-only-stub.ts"),
       "@": path.resolve(__dirname, "src"),
     },
   },
