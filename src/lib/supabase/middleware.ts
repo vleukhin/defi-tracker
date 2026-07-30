@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Пути, доступные без авторизации. */
-const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/auth"];
+const PUBLIC_PATHS = ["/login", "/reset-password", "/auth"];
 
 /** API-роуты без авторизации (health-чек для мониторинга). */
 const PUBLIC_API_PATHS = ["/api/health"];
@@ -66,7 +66,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && (pathname === "/login" || pathname === "/register")) {
+  if (user && pathname === "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.search = "";

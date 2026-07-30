@@ -29,6 +29,35 @@ export async function requireUser(): Promise<
   return { user, supabase, unauthorized: null };
 }
 
+/**
+ * Роль администратора хранится в app_metadata.role (задается только через
+ * админ-API service-role: сид-скрипт или роут /api/admin/users) и попадает
+ * в подписанный JWT — пользователь не может выставить ее сам.
+ */
+export function isAdmin(user: User): boolean {
+  return user.app_metadata?.role === "admin";
+}
+
+/** Как requireUser, но дополнительно требует роль администратора (403 иначе). */
+export async function requireAdmin(): Promise<
+  | { user: User; supabase: SupabaseClient; unauthorized: null }
+  | { user: null; supabase: SupabaseClient; unauthorized: NextResponse }
+> {
+  const result = await requireUser();
+  if (result.unauthorized) return result;
+  if (!isAdmin(result.user)) {
+    return {
+      user: null,
+      supabase: result.supabase,
+      unauthorized: NextResponse.json(
+        { error: "Требуются права администратора" },
+        { status: 403 },
+      ),
+    };
+  }
+  return result;
+}
+
 /** Единый формат ошибок API. */
 export function apiError(status: number, message: string, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...extra }, { status });

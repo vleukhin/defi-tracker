@@ -92,10 +92,7 @@ export function LoginForm({ linkError }: { linkError?: boolean }) {
         {pending ? "Вход…" : "Войти"}
       </button>
 
-      <div className="flex justify-between text-sm">
-        <Link href="/register" className="text-gray-600 hover:underline">
-          Регистрация
-        </Link>
+      <div className="flex justify-end text-sm">
         <Link href="/reset-password" className="text-gray-600 hover:underline">
           Забыли пароль?
         </Link>

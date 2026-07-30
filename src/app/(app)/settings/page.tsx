@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { NBSP } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { UsersManager } from "@/components/settings/users-manager";
 
 export const metadata: Metadata = { title: "Настройки" };
 
@@ -13,6 +14,7 @@ export default async function SettingsPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const isAdmin = user?.app_metadata?.role === "admin";
 
   return (
     <div className="space-y-4">
@@ -37,6 +39,8 @@ export default async function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {isAdmin && user && <UsersManager selfId={user.id} />}
 
       <p className="text-xs text-gray-400">
         Суммы ребалансировки на дашборде — расчеты, а не финансовые советы.
