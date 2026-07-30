@@ -7,11 +7,18 @@ import {
   getCoinPrices,
 } from "@/lib/prices/coins";
 import {
+  buildLedgerRowInfo,
+  replayTrades,
+  type LedgerRowInfo,
+  type LedgerTrade,
+} from "./ledger";
+import {
   computePortfolio,
   type CollateralInput,
   type ManualInput,
   type PortfolioCategory,
   type PortfolioResult,
+  type PortfolioRow,
 } from "./portfolio";
 
 /**
@@ -35,7 +42,13 @@ export interface ChainStatusRow {
   checked_at: string;
 }
 
-export interface LoadPortfolioResult extends PortfolioResult {
+/** Строка портфеля + блок леджера сделок (Фаза 2, S2.2). */
+export interface PortfolioRowWithLedger extends PortfolioRow {
+  ledger: LedgerRowInfo;
+}
+
+export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
+  rows: PortfolioRowWithLedger[];
   wallets: WalletRow[];
   /** Статус последнего чтения по сетям (агрегировано по кошелькам). */
   chains: ChainStatusRow[];
@@ -105,6 +118,21 @@ export async function loadPortfolio(
     amount: String(r.amount),
   }));
 
+  // --- Сделки (Фаза 2): реплей леджера для средней цены и P/L ---
+  const { data: tradeRows, error: tradesError } = await supabase
+    .from("trades")
+    .select("category, side, quantity, price_usd, fee_usd, traded_at, created_at");
+  if (tradesError) throw new Error(`trades: ${tradesError.message}`);
+  const ledgerTrades: LedgerTrade[] = (tradeRows ?? []).map((r) => ({
+    category: r.category as PortfolioCategory,
+    side: r.side as LedgerTrade["side"],
+    quantity: String(r.quantity),
+    priceUsd: String(r.price_usd),
+    feeUsd: r.fee_usd === null ? null : String(r.fee_usd),
+    tradedAt: r.traded_at as string,
+    createdAt: r.created_at as string,
+  }));
+
   // --- Цели ---
   const { data: targetRows, error: targetsError } = await supabase
     .from("portfolio_targets")
@@ -135,6 +163,17 @@ export async function loadPortfolio(
     stablePriceUsd: STABLE_PRICE_USD,
     categoryIds: CATEGORY_COINGECKO_IDS,
   });
+
+  // Unrealized P/L и расхождение леджер/факт — здесь, где известны текущая
+  // цена категории (row.price) и фактическое количество (row.amount)
+  const ledger = replayTrades(ledgerTrades);
+  const rows: PortfolioRowWithLedger[] = result.rows.map((row) => ({
+    ...row,
+    ledger: buildLedgerRowInfo(ledger[row.category], {
+      currentPriceUsd: row.price,
+      actualQty: row.amount,
+    }),
+  }));
 
   // --- Статус чтения сетей: сеть считается деградировавшей, если упала
   // хотя бы по одному кошельку (данные портфеля в этом случае неполные) ---
@@ -169,5 +208,5 @@ export async function loadPortfolio(
     chains.push(...byChain.values());
   }
 
-  return { ...result, wallets, chains, oldestCollateralAt };
+  return { ...result, rows, wallets, chains, oldestCollateralAt };
 }

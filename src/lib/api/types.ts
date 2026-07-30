@@ -33,6 +33,31 @@ export interface ManualEntryDto {
   valueUsd: number;
 }
 
+/**
+ * Блок леджера в строке портфеля (Фаза 2, S2.2). Null-safe: без сделок
+ * средняя и unrealized равны null («нет данных о цене покупки»), не нулям.
+ */
+export interface PortfolioRowLedgerDto {
+  /** null — покупок еще не было. */
+  avgPriceUsd: number | null;
+  /** ledgerQty × (текущая цена − средняя); null без средней или цены. */
+  unrealizedPnlUsd: number | null;
+  /** (текущая / средняя − 1) × 100; null без средней или цены. */
+  unrealizedPnlPct: number | null;
+  /** Суммарный realized P/L по продажам (0 — честный ноль без продаж). */
+  realizedPnlUsd: number;
+  /** Количество по леджеру в единицах категории. */
+  ledgerQty: number;
+  /**
+   * Мягкое предупреждение о расхождении леджера с фактом (залог + ручные,
+   * >1%); diff = ledgerQty − actualQty. null — нет сделок / нет факта /
+   * расхождение в пределах порога. Никогда не блокирует отображение.
+   */
+  discrepancy: { ledgerQty: number; actualQty: number; diff: number } | null;
+  /** Oversell и прочие аномалии реплея. */
+  warnings: string[];
+}
+
 export interface PortfolioRowDto {
   category: PortfolioCategory;
   label: string;
@@ -52,6 +77,7 @@ export interface PortfolioRowDto {
   collateralDetail: CollateralDetailDto[];
   manualEntries: ManualEntryDto[];
   warnings: string[];
+  ledger: PortfolioRowLedgerDto;
 }
 
 export interface PortfolioDto {
@@ -104,4 +130,48 @@ export interface ManualListDto {
 
 export interface WalletsResponseDto {
   wallets: WalletDto[];
+}
+
+// --- Фаза 2: журнал сделок ---
+
+export interface TradeDto {
+  id: string;
+  category: PortfolioCategory;
+  side: "buy" | "sell";
+  /** Количество в единицах категории, десятичной строкой (точность numeric). */
+  quantity: string;
+  /** Цена за единицу в USD на момент сделки, строкой. */
+  priceUsd: string;
+  /** Комиссия в USD строкой; null — без комиссии. */
+  feeUsd: string | null;
+  tradedAt: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** Итог реплея леджера по категории (GET /api/trades). */
+export interface LedgerSummaryDto {
+  ledgerQty: number;
+  /** null — покупок еще не было. */
+  avgPriceUsd: number | null;
+  realizedPnlUsd: number;
+  /** Комиссии отдельно: в среднюю цену не входят. */
+  totalFeesUsd: number;
+  warnings: string[];
+  /** Число сделок — отличает пустой леджер от «все продано». */
+  tradeCount: number;
+}
+
+/**
+ * GET /api/trades[?category=]: сделки новыми вперед (traded_at desc);
+ * summary всегда по всем трем категориям, фильтр сужает только список.
+ */
+export interface TradesResponseDto {
+  trades: TradeDto[];
+  summary: Record<PortfolioCategory, LedgerSummaryDto>;
+}
+
+/** POST /api/trades (201) и PUT /api/trades/{id} (200). */
+export interface TradeResponseDto {
+  trade: TradeDto;
 }
