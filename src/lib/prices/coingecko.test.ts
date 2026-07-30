@@ -4,7 +4,7 @@ import { fetchNativePrices, fetchTokenPrices } from "./coingecko";
 
 /** Быстрый bucket без ожиданий для тестов. */
 const fastBucket = () => new TokenBucket(1000, 1000, () => 0);
-const noopLog = vi.fn(async () => {});
+const noopLog = vi.fn(async (_url: string) => {});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -17,7 +17,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("fetchTokenPrices", () => {
   it("батчит адреса, ключует lowercase, пропускает адреса без листинга", async () => {
-    const fetchFn = vi.fn(async () =>
+    const fetchFn = vi.fn(async (_url: string) =>
       jsonResponse({
         "0xaaa0000000000000000000000000000000000001": { usd: 2.5 },
         "0xAAA0000000000000000000000000000000000002": { usd: 1 },
@@ -36,7 +36,7 @@ describe("fetchTokenPrices", () => {
     );
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    const url = new URL(fetchFn.mock.calls[0]![0] as string);
+    const url = new URL(fetchFn.mock.calls[0]![0]);
     expect(url.pathname).toBe("/api/v3/simple/token_price/arbitrum-one");
     expect(url.searchParams.get("vs_currencies")).toBe("usd");
 
@@ -46,7 +46,7 @@ describe("fetchTokenPrices", () => {
   });
 
   it("делит больше 100 адресов на несколько вызовов", async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({}));
+    const fetchFn = vi.fn(async (_url: string) => jsonResponse({}));
     const addresses = Array.from(
       { length: 150 },
       (_, i) => `0x${String(i).padStart(40, "0")}`,
@@ -57,12 +57,12 @@ describe("fetchTokenPrices", () => {
       logCall: noopLog,
     });
     expect(fetchFn).toHaveBeenCalledTimes(2);
-    const firstUrl = new URL(fetchFn.mock.calls[0]![0] as string);
+    const firstUrl = new URL(fetchFn.mock.calls[0]![0]);
     expect(firstUrl.searchParams.get("contract_addresses")!.split(",")).toHaveLength(100);
   });
 
   it("бросает ошибку при HTTP-сбое (не 429)", async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ error: "nope" }, 500));
+    const fetchFn = vi.fn(async (_url: string) => jsonResponse({ error: "nope" }, 500));
     await expect(
       fetchTokenPrices("base", ["0x" + "1".repeat(40)], {
         fetchFn: fetchFn as unknown as typeof fetch,
@@ -97,14 +97,14 @@ describe("fetchTokenPrices", () => {
 
 describe("fetchNativePrices", () => {
   it("дедуплицирует id и возвращает цены по id", async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ ethereum: { usd: 3200 } }));
+    const fetchFn = vi.fn(async (_url: string) => jsonResponse({ ethereum: { usd: 3200 } }));
     const prices = await fetchNativePrices(["ethereum", "ethereum"], {
       fetchFn: fetchFn as unknown as typeof fetch,
       bucket: fastBucket(),
       logCall: noopLog,
     });
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    const url = new URL(fetchFn.mock.calls[0]![0] as string);
+    const url = new URL(fetchFn.mock.calls[0]![0]);
     expect(url.pathname).toBe("/api/v3/simple/price");
     expect(url.searchParams.get("ids")).toBe("ethereum");
     expect(prices.ethereum).toBe(3200);

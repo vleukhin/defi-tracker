@@ -3,7 +3,7 @@ import { TokenBucket } from "./token-bucket";
 
 describe("TokenBucket (лимитер CoinGecko 25/мин)", () => {
   it("отдает не больше capacity токенов подряд", () => {
-    let now = 0;
+    const now = 0;
     const bucket = new TokenBucket(25, 25 / 60_000, () => now);
     for (let i = 0; i < 25; i++) expect(bucket.tryTake()).toBe(true);
     expect(bucket.tryTake()).toBe(false);

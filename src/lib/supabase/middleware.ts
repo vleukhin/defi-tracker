@@ -4,6 +4,9 @@ import { NextResponse, type NextRequest } from "next/server";
 /** Пути, доступные без авторизации. */
 const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/auth"];
 
+/** API-роуты без авторизации (health-чек для мониторинга). */
+const PUBLIC_API_PATHS = ["/api/health"];
+
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
@@ -46,6 +49,15 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // API: не редиректить на /login, а отвечать 401 JSON
+  // (роуты дополнительно проверяют сессию сами — защита в глубину).
+  if (pathname.startsWith("/api")) {
+    if (!user && !PUBLIC_API_PATHS.includes(pathname)) {
+      return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
+    }
+    return supabaseResponse;
+  }
 
   if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone();

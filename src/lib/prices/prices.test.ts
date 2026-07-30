@@ -8,7 +8,7 @@ const FRESH_AT = new Date(NOW - 60_000).toISOString(); // 1 мин назад
 const EXPIRED_AT = new Date(NOW - PRICE_TTL_MS - 60_000).toISOString(); // 6 мин назад
 
 const fastBucket = () => new TokenBucket(1000, 1000, () => 0);
-const noopLog = vi.fn(async () => {});
+const noopLog = vi.fn(async (_url: string) => {});
 
 interface CacheRow {
   asset_id: string;
@@ -76,7 +76,7 @@ describe("getPrices: кэш с TTL 5 минут (S1.4)", () => {
     const { client, upserted } = fakeAdmin([
       { asset_id: "a1", price_usd: 40, fetched_at: EXPIRED_AT },
     ]);
-    const fetchFn = vi.fn(async () => jsonResponse({ [addr]: { usd: 45 } }));
+    const fetchFn = vi.fn(async (_url: string) => jsonResponse({ [addr]: { usd: 45 } }));
 
     const prices = await getPrices([erc20("a1", "arbitrum", addr, "tkn")], {
       admin: client,
@@ -86,7 +86,7 @@ describe("getPrices: кэш с TTL 5 минут (S1.4)", () => {
     });
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    const url = new URL(fetchFn.mock.calls[0]![0] as unknown as string);
+    const url = new URL(fetchFn.mock.calls[0]![0]);
     expect(url.pathname).toContain("/simple/token_price/arbitrum-one");
     expect(prices.get("a1")!.priceUsd).toBe(45);
     expect(prices.get("a1")!.stale).toBe(false);
@@ -98,7 +98,7 @@ describe("getPrices: кэш с TTL 5 минут (S1.4)", () => {
     const { client, upserted } = fakeAdmin([
       { asset_id: "a1", price_usd: 40, fetched_at: EXPIRED_AT },
     ]);
-    const fetchFn = vi.fn(async () => {
+    const fetchFn = vi.fn(async (_url: string) => {
       throw new Error("network down");
     });
 
@@ -156,7 +156,7 @@ describe("getPrices: кэш с TTL 5 минут (S1.4)", () => {
 
   it("нативный ETH идет через /simple/price, один id на 4 сети", async () => {
     const { client, upserted } = fakeAdmin([]);
-    const fetchFn = vi.fn(async () => jsonResponse({ ethereum: { usd: 3000 } }));
+    const fetchFn = vi.fn(async (_url: string) => jsonResponse({ ethereum: { usd: 3000 } }));
 
     const natives: AssetForPricing[] = (["ethereum", "arbitrum", "base", "optimism"] as const).map(
       (chain) => ({
