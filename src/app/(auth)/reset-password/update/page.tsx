@@ -1,12 +1,14 @@
 "use client";
 
+import { CircleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { z } from "zod";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
-
-const inputClass =
-  "w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200";
 
 const schema = z
   .object({
@@ -64,16 +66,15 @@ export default function UpdatePasswordPage() {
       <h2 className="text-lg font-medium">Новый пароль</h2>
 
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
+        <Alert variant="destructive" role="alert" className="py-2.5">
+          <CircleAlert className="size-4" />
+          <AlertTitle>{error}</AlertTitle>
+        </Alert>
       )}
 
-      <div className="space-y-1">
-        <label htmlFor="password" className="block text-sm font-medium">
-          Пароль
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor="password">Пароль</Label>
+        <Input
           id="password"
           type="password"
           required
@@ -81,15 +82,13 @@ export default function UpdatePasswordPage() {
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className={inputClass}
+          className="h-10"
         />
       </div>
 
-      <div className="space-y-1">
-        <label htmlFor="passwordConfirm" className="block text-sm font-medium">
-          Пароль еще раз
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor="passwordConfirm">Пароль еще раз</Label>
+        <Input
           id="passwordConfirm"
           type="password"
           required
@@ -97,17 +96,13 @@ export default function UpdatePasswordPage() {
           autoComplete="new-password"
           value={passwordConfirm}
           onChange={(e) => setPasswordConfirm(e.target.value)}
-          className={inputClass}
+          className="h-10"
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
-      >
+      <Button type="submit" disabled={pending} className="h-10 w-full">
         {pending ? "Сохранение…" : "Сохранить пароль"}
-      </button>
+      </Button>
     </form>
   );
 }

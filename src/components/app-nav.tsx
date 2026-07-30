@@ -1,13 +1,23 @@
 "use client";
 
+import { ChartPie, Settings, Target, Wallet } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Logo } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Портфель" },
-  { href: "/wallets", label: "Кошельки" },
-  { href: "/targets", label: "Цели и записи" },
-  { href: "/settings", label: "Настройки" },
+  { href: "/", label: "Портфель", shortLabel: "Портфель", icon: ChartPie },
+  { href: "/wallets", label: "Кошельки", shortLabel: "Кошельки", icon: Wallet },
+  // В нижнем баре подпись сокращается до «Цели» (ТЗ §5.6.2)
+  { href: "/targets", label: "Цели и записи", shortLabel: "Цели", icon: Target },
+  {
+    href: "/settings",
+    label: "Настройки",
+    shortLabel: "Настройки",
+    icon: Settings,
+  },
 ] as const;
 
 function isActive(pathname: string, href: string) {
@@ -15,19 +25,22 @@ function isActive(pathname: string, href: string) {
 }
 
 /**
- * Навигация приложения: верхняя панель на десктопе,
- * нижняя фиксированная навигация на мобильных (mobile-first, экран 375px).
+ * Навигация приложения (ТЗ §5.6): верхняя панель на всех брейкпоинтах,
+ * нижняя фиксированная навигация с иконками на мобильных (< sm).
  */
 export function AppNav() {
   const pathname = usePathname();
 
   return (
     <>
-      {/* Верхняя панель: бренд + ссылки (десктоп) + выход */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white">
+      {/* Верхняя панель: логомарк + пилюли (≥ sm) + тема и выход */}
+      <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-          <Link href="/" className="text-sm font-semibold tracking-tight">
-            DeFi Portfolio
+          <Link
+            href="/"
+            className="rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <Logo size="sm" />
           </Link>
 
           <nav className="hidden gap-1 sm:flex" aria-label="Основная навигация">
@@ -36,48 +49,55 @@ export function AppNav() {
                 key={item.href}
                 href={item.href}
                 aria-current={isActive(pathname, item.href) ? "page" : undefined}
-                className={`rounded-md px-3 py-1.5 text-sm ${
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
                   isActive(pathname, item.href)
-                    ? "bg-gray-100 font-medium text-gray-900"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`}
+                    ? "bg-accent font-medium text-foreground"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                )}
               >
                 {item.label}
               </Link>
             ))}
           </nav>
 
-          <form action="/auth/signout" method="post">
-            <button
-              type="submit"
-              className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-            >
-              Выйти
-            </button>
-          </form>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <form action="/auth/signout" method="post">
+              <button
+                type="submit"
+                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground outline-none transition-colors duration-120 ease-out hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                Выйти
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
-      {/* Нижняя навигация (мобильные) */}
+      {/* Нижняя навигация (мобильные): иконка 20px + подпись 11px */}
       <nav
         aria-label="Основная навигация (мобильная)"
-        className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white sm:hidden"
+        className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden"
       >
-        <div className="grid grid-cols-4">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive(pathname, item.href) ? "page" : undefined}
-              className={`px-1 py-3 text-center text-xs ${
-                isActive(pathname, item.href)
-                  ? "font-semibold text-gray-900"
-                  : "text-gray-500"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+        <div className="grid h-14 grid-cols-4">
+          {NAV_ITEMS.map((item) => {
+            const active = isActive(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-0.5 outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
+                  active ? "text-primary" : "text-muted-foreground",
+                )}
+              >
+                <item.icon className="size-5" aria-hidden="true" />
+                <span className="text-[11px]">{item.shortLabel}</span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
     </>

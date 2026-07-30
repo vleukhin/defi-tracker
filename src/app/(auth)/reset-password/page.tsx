@@ -1,11 +1,13 @@
 "use client";
 
+import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
-
-const inputClass =
-  "w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200";
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
@@ -36,13 +38,13 @@ export default function ResetPasswordPage() {
     return (
       <div className="space-y-4">
         <h2 className="text-lg font-medium">Проверьте почту</h2>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">
           Если аккаунт с адресом <span className="font-medium">{email}</span>{" "}
           существует, мы отправили ссылку для сброса пароля.
         </p>
         <Link
           href="/login"
-          className="block text-center text-sm text-gray-600 hover:underline"
+          className="block text-center text-sm text-link underline-offset-4 hover:underline"
         >
           Ко входу
         </Link>
@@ -53,42 +55,37 @@ export default function ResetPasswordPage() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <h2 className="text-lg font-medium">Сброс пароля</h2>
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-muted-foreground">
         Укажите email — мы пришлем ссылку для установки нового пароля.
       </p>
 
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
+        <Alert variant="destructive" role="alert" className="py-2.5">
+          <CircleAlert className="size-4" />
+          <AlertTitle>{error}</AlertTitle>
+        </Alert>
       )}
 
-      <div className="space-y-1">
-        <label htmlFor="email" className="block text-sm font-medium">
-          Email
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor="email">Email</Label>
+        <Input
           id="email"
           type="email"
           required
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className={inputClass}
+          className="h-10"
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
-      >
+      <Button type="submit" disabled={pending} className="h-10 w-full">
         {pending ? "Отправка…" : "Отправить ссылку"}
-      </button>
+      </Button>
 
       <Link
         href="/login"
-        className="block text-center text-sm text-gray-600 hover:underline"
+        className="block text-center text-sm text-link underline-offset-4 hover:underline"
       >
         Ко входу
       </Link>

@@ -1,4 +1,6 @@
-/** Layout страниц авторизации: центрированная карточка. */
+import { Logo } from "@/components/logo";
+
+/** Layout страниц авторизации (ТЗ §5.5): логомарк lg + центрированная карточка. */
 export default function AuthLayout({
   children,
 }: Readonly<{
@@ -7,10 +9,10 @@ export default function AuthLayout({
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
-        <h1 className="mb-6 text-center text-xl font-semibold tracking-tight">
-          DeFi Portfolio Tracker
-        </h1>
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="mb-6 flex justify-center">
+          <Logo size="lg" />
+        </div>
+        <div className="rounded-xl border border-border bg-card p-6 shadow-lg shadow-black/5 dark:shadow-none">
           {children}
         </div>
       </div>
