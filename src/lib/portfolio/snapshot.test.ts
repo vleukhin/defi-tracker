@@ -17,6 +17,7 @@ interface RowOverrides {
   collateralUsd?: number;
   manualUsd?: number;
   collateralDetail?: PortfolioRow["collateralDetail"];
+  manualEntries?: PortfolioRow["manualEntries"];
 }
 
 function row(category: PortfolioCategory, o: RowOverrides = {}): PortfolioRow {
@@ -25,9 +26,9 @@ function row(category: PortfolioCategory, o: RowOverrides = {}): PortfolioRow {
     category,
     label: category.toUpperCase(),
     unit: category === "stable" ? "USD" : category.toUpperCase(),
-    amount: o.amount ?? 0,
+    amount: "amount" in o ? (o.amount ?? null) : 0,
     amountUsd,
-    price: o.price ?? 1,
+    price: "price" in o ? (o.price ?? null) : 1,
     priceStale: o.priceStale ?? false,
     percent: o.percent ?? 0,
     targetPercent: null,
@@ -38,7 +39,7 @@ function row(category: PortfolioCategory, o: RowOverrides = {}): PortfolioRow {
       manualUsd: o.manualUsd ?? amountUsd,
     },
     collateralDetail: o.collateralDetail ?? [],
-    manualEntries: [],
+    manualEntries: o.manualEntries ?? [],
     warnings: [],
   };
 }
@@ -186,5 +187,92 @@ describe("buildSnapshotRows", () => {
     expect(build.items.every((i) => i.valueUsd === 0 && i.percent === 0)).toBe(
       true,
     );
+  });
+});
+
+describe("buildSnapshotRows: сырые количества монет", () => {
+  const collateral = [
+    {
+      walletId: "w1",
+      walletLabel: "Основной",
+      chain: "ethereum",
+      symbol: "WBTC",
+      quantity: "0.5",
+      priceUsd: 60_000,
+      valueUsd: 30_000,
+      priceStale: false,
+    },
+    {
+      walletId: "w1",
+      walletLabel: "Основной",
+      chain: "arbitrum",
+      symbol: "cbBTC",
+      quantity: "0.25",
+      priceUsd: 60_000,
+      valueUsd: 15_000,
+      priceStale: false,
+    },
+  ];
+
+  it("сохраняет количества по каждому токену и сети", () => {
+    const build = buildSnapshotRows({
+      totalUsd: 45_000,
+      chains: [],
+      rows: [
+        row("btc", { amountUsd: 45_000, price: 60_000, amount: 0.75, collateralUsd: 45_000, collateralDetail: collateral }),
+        row("eth"),
+        row("stable"),
+      ],
+    });
+
+    expect(build.items[0].composition.collateral).toEqual([
+      { symbol: "WBTC", chain: "ethereum", quantity: "0.5" },
+      { symbol: "cbBTC", chain: "arbitrum", quantity: "0.25" },
+    ]);
+  });
+
+  it("сохраняет ручные записи количествами, а не только суммой", () => {
+    const build = buildSnapshotRows({
+      totalUsd: 35_000,
+      chains: [],
+      rows: [
+        row("btc"),
+        row("eth"),
+        row("stable", {
+          amountUsd: 35_000,
+          manualUsd: 35_000,
+          manualEntries: [
+            { id: "m1", label: "GMX пул", amount: "15000", valueUsd: 15_000 },
+            { id: "m2", label: "Aave USDC", amount: "20000", valueUsd: 20_000 },
+          ],
+        }),
+      ],
+    });
+
+    expect(build.items[2].composition.manual).toEqual([
+      { label: "GMX пул", amount: "15000" },
+      { label: "Aave USDC", amount: "20000" },
+    ]);
+  });
+
+  /**
+   * Главное свойство: количество монет невосстановимо задним числом,
+   * поэтому пишется даже когда цены нет и quantity вырождается в null.
+   */
+  it("пишет количества даже без цены, когда quantity === null", () => {
+    const build = buildSnapshotRows({
+      totalUsd: 0,
+      chains: [],
+      rows: [
+        row("btc", { price: null, amount: null, collateralDetail: collateral }),
+        row("eth"),
+        row("stable"),
+      ],
+    });
+
+    expect(build.items[0].quantity).toBeNull();
+    expect(build.items[0].composition.collateral).toHaveLength(2);
+    expect(build.items[0].composition.collateral[0].quantity).toBe("0.5");
+    expect(build.isPartial).toBe(true);
   });
 });

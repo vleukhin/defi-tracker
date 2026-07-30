@@ -189,6 +189,15 @@ export interface TradeResponseDto {
 // --- Фаза 3: снепшоты и история ---
 
 /** Состав снепшота: ровно три строки, по одной на категорию. */
+/**
+ * Сырые количества монет на дату — то, что нельзя восстановить задним числом.
+ * Доллары пересчитываются из исторической цены, количество BTC — нет.
+ */
+export interface SnapshotCompositionDto {
+  collateral: { symbol: string; chain: string; quantity: string }[];
+  manual: { label: string; amount: string }[];
+}
+
 export interface SnapshotItemDto {
   category: PortfolioCategory;
   /**
@@ -196,6 +205,8 @@ export interface SnapshotItemDto {
    * null = цены категории на момент съема не было, эквивалент не выводится.
    */
   quantity: number | null;
+  /** Сырой состав: количества монет, не зависящие от наличия цен. */
+  composition: SnapshotCompositionDto;
   /** Цена категории на момент съема; null — цены не было. */
   priceUsd: number | null;
   valueUsd: number;

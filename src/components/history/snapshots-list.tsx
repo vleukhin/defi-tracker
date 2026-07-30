@@ -50,6 +50,7 @@ function orderedItems(snapshot: SnapshotDto): SnapshotItemDto[] {
       snapshot.items.find((i) => i.category === c.key) ?? {
         category: c.key,
         quantity: null,
+        composition: { collateral: [], manual: [] },
         priceUsd: null,
         valueUsd: 0,
         percent: 0,

@@ -29,6 +29,18 @@ export interface SnapshotSource {
   chains: ChainStatusRow[];
 }
 
+/**
+ * Сырой состав категории: количества монет, не зависящие от цен.
+ *
+ * quantity в SnapshotItemInput — производная (стоимость / цена категории),
+ * и при отсутствии цены она null. Доллары на прошлую дату восстановимы из
+ * исторической цены, количество монет — нет, поэтому пишем и его.
+ */
+export interface SnapshotComposition {
+  collateral: { symbol: string; chain: string; quantity: string }[];
+  manual: { label: string; amount: string }[];
+}
+
 export interface SnapshotItemInput {
   category: PortfolioCategory;
   /**
@@ -41,6 +53,8 @@ export interface SnapshotItemInput {
   percent: number;
   collateralUsd: number;
   manualUsd: number;
+  /** Сырые количества — единственное, что нельзя восстановить задним числом. */
+  composition: SnapshotComposition;
 }
 
 export interface SnapshotBuild {
@@ -104,6 +118,19 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
       percent: row.percent,
       collateralUsd: row.breakdown.collateralUsd,
       manualUsd: row.breakdown.manualUsd,
+      // Сырые количества пишутся ВСЕГДА, даже когда цены нет и
+      // quantity === null: счетчик монет за день не должен теряться
+      composition: {
+        collateral: row.collateralDetail.map((c) => ({
+          symbol: c.symbol,
+          chain: c.chain,
+          quantity: c.quantity,
+        })),
+        manual: row.manualEntries.map((m) => ({
+          label: m.label,
+          amount: m.amount,
+        })),
+      },
     };
   });
 
@@ -218,6 +245,7 @@ export async function createSnapshot(
       snapshot_id: snapshot.id,
       category: item.category,
       quantity: item.quantity,
+      composition: item.composition,
       price_usd: item.priceUsd,
       value_usd: item.valueUsd,
       percent: item.percent,
@@ -231,6 +259,7 @@ export async function createSnapshot(
   const items: SnapshotItemDto[] = build.items.map((item) => ({
     category: item.category,
     quantity: item.quantity,
+    composition: item.composition,
     priceUsd: item.priceUsd,
     valueUsd: item.valueUsd,
     percent: item.percent,

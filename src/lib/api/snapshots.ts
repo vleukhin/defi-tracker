@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SnapshotComposition } from "@/lib/portfolio/snapshot";
 import type { SnapshotDto, SnapshotPeriod } from "./types";
 import {
   PORTFOLIO_CATEGORIES,
@@ -47,11 +48,13 @@ export function periodCutoff(
 /** Колонки снепшота вместе с составом (embedded resource PostgREST). */
 export const SNAPSHOT_COLUMNS =
   "id, taken_on, taken_at, total_usd, is_partial, " +
-  "snapshot_items (category, quantity, price_usd, value_usd, percent, collateral_usd, manual_usd)";
+  "snapshot_items (category, quantity, composition, price_usd, value_usd, percent, collateral_usd, manual_usd)";
 
 export interface SnapshotItemRow {
   category: string;
   quantity: number | string | null;
+  /** Может отсутствовать у снепшотов, снятых до появления поля. */
+  composition?: SnapshotComposition | null;
   price_usd: number | string | null;
   value_usd: number | string;
   percent: number | string;
@@ -93,6 +96,8 @@ export function mapSnapshotRow(row: SnapshotRow): SnapshotDto {
     .map((item) => ({
       category: item.category as PortfolioCategory,
       quantity: nullableNum(item.quantity),
+      // Сырые количества монет: не зависят от цен, поэтому отдаются как есть
+      composition: item.composition ?? { collateral: [], manual: [] },
       priceUsd: nullableNum(item.price_usd),
       valueUsd: num(item.value_usd),
       percent: num(item.percent),
