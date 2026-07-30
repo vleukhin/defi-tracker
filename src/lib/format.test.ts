@@ -12,10 +12,13 @@ import {
   tableNumber,
   tablePct,
   tablePctSigned,
+  tableDate,
   tableQuantity,
   tableSigned,
   tableUsd,
+  tableUsdSigned,
   truncateAddress,
+  usdDecimals,
 } from "./format";
 
 describe("formatUsd", () => {
@@ -218,5 +221,28 @@ describe("табличный формат", () => {
   it("нечисловое значение не превращается в NaN на экране", () => {
     expect(tableNumber(Number.NaN, 2)).toBe("—");
     expect(tableUsd(Number.POSITIVE_INFINITY)).toBe("—");
+  });
+});
+
+/** Фаза 2: P/L, цены сделок и даты журнала. */
+describe("формат леджера", () => {
+  it("P/L в долларах: плюс показывается явно (знак не только цветом)", () => {
+    expect(tableUsdSigned(1234)).toBe(`+$1${NBSP}234`);
+    expect(tableUsdSigned(-1234)).toBe(`${MINUS}$1${NBSP}234`);
+    expect(tableUsdSigned(0)).toBe("$0");
+    expect(tableUsdSigned(3.5, 2)).toBe("+$3,50");
+  });
+
+  it("точность цен адаптивная: крупные — целые, мелкие — с копейками", () => {
+    expect(usdDecimals(60000)).toBe(0);
+    expect(usdDecimals(999.5)).toBe(2);
+    expect(usdDecimals(-1200)).toBe(0);
+    expect(tableUsd(1.0005, usdDecimals(1.0005))).toBe("$1,00");
+  });
+
+  it("дата сделки: дд.мм.гггг по UTC, без сдвига поясом", () => {
+    expect(tableDate("2026-07-29T00:00:00.000Z")).toBe("29.07.2026");
+    expect(tableDate("2026-01-05T23:59:59.000Z")).toBe("05.01.2026");
+    expect(tableDate("мусор")).toBe("—");
   });
 });

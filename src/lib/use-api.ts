@@ -12,6 +12,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Построчные ошибки валидации из `{issues}` — для инлайн-вывода у форм. */
+    public readonly issues: string[] = [],
   ) {
     super(message);
     this.name = "ApiError";
@@ -34,14 +36,18 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
+    const record =
+      body !== null && typeof body === "object"
+        ? (body as Record<string, unknown>)
+        : {};
     const message =
-      body !== null &&
-      typeof body === "object" &&
-      "error" in body &&
-      typeof (body as { error: unknown }).error === "string"
-        ? (body as { error: string }).error
+      typeof record.error === "string"
+        ? record.error
         : `Ошибка запроса (${res.status})`;
-    throw new ApiError(res.status, message);
+    const issues = Array.isArray(record.issues)
+      ? record.issues.filter((i): i is string => typeof i === "string")
+      : [];
+    throw new ApiError(res.status, message, issues);
   }
   return body as T;
 }

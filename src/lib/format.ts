@@ -57,6 +57,30 @@ export function tableQuantity(quantity: string, full = false): string {
   return formatted.replace(".", ",");
 }
 
+/** «+$1 234» / «−$1 234» — P/L: плюс показывается явно (не только цветом). */
+export function tableUsdSigned(value: number, decimals = 0): string {
+  const body = tableUsd(value, decimals);
+  return value > 0 ? `+${body}` : body;
+}
+
+/**
+ * Точность цен и сумм в $: крупные — целые (как в таблице портфеля),
+ * мелкие — с копейками ($1,00 у стейблов информативнее, чем $1).
+ */
+export function usdDecimals(value: number): number {
+  return Math.abs(value) >= 1000 ? 0 : 2;
+}
+
+/** «29.07.2026» — дата сделки из ISO; UTC, чтобы дата не сдвигалась поясом. */
+export function tableDate(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return "—";
+  const d = new Date(ts);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getUTCFullYear()}`;
+}
+
 /** «53,00%» — процент с запятой и двумя знаками. */
 export function tablePct(value: number, decimals = 2): string {
   return `${tableNumber(value, decimals)}%`;
