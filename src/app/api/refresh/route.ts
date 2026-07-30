@@ -8,15 +8,23 @@ import {
   persistAaveCollateral,
   persistChainStatus,
 } from "@/lib/chains/aave";
+import {
+  persistAaveDebt,
+  persistAaveHealth,
+  persistDebtStatus,
+  readWalletAaveDebt,
+} from "@/lib/chains/aave-debt";
 import { CATEGORY_COINGECKO_IDS, getCoinPrices } from "@/lib/prices/coins";
 
 /**
  * POST /api/refresh[?walletId=...] — on-demand обновление (ТЗ Часть 4 §6.1):
  * 1) debounce 60 с на кошелек (last_refreshed_at; внутри окна — debounced: true);
  * 2) один multicall на сеть: aToken.balanceOf по покрываемым резервам Aave v3;
- * 3) цены категорий и залоговых токенов — coin_prices, внешний поход только
- *    по истекшему TTL;
- * 4) запись в protocol_positions + chain_read_status.
+ * 3) второй multicall на сеть (Фаза 4): Pool.getUserAccountData (Долг и HF,
+ *    оракул Aave) + vToken.balanceOf по всем резервам (разбивка долга);
+ * 4) цены категорий, залоговых и долговых токенов — coin_prices, внешний
+ *    поход только по истекшему TTL;
+ * 5) запись в protocol_positions + aave_account_health + chain_read_status.
  * Без walletId обновляются все кошельки пользователя.
  *
  * Свободные ERC-20 балансы кошелька здесь НЕ читаются: по ТЗ 02 §2а количества
@@ -78,6 +86,22 @@ export async function POST(request: NextRequest) {
       const statuses = await readWalletAaveCollateral(wallet.address as Address);
       await persistAaveCollateral(admin, wallet.id, statuses);
       await persistChainStatus(admin, wallet.id, statuses);
+
+      // Долг и HF (Фаза 4) — отдельный контур: его отказ не отменяет залог
+      try {
+        const debtStatuses = await readWalletAaveDebt(wallet.address as Address);
+        await persistAaveHealth(admin, wallet.id, debtStatuses);
+        await persistAaveDebt(admin, wallet.id, debtStatuses);
+        await persistDebtStatus(admin, wallet.id, debtStatuses);
+        for (const s of debtStatuses) {
+          for (const d of s.debts) {
+            if (d.raw > 0n && d.coingeckoId) collateralIds.add(d.coingeckoId);
+          }
+        }
+      } catch (err) {
+        console.warn(`[refresh] долг кошелька ${wallet.id} не прочитан:`, err);
+      }
+
       await supabase
         .from("wallets")
         .update({ last_refreshed_at: new Date().toISOString() })
@@ -109,6 +133,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Цены: категории всегда + токены, которые реально лежат в залоге
+  // или заняты (оценка разбивки долга на экране «Долг»)
   const priceIds = [
     CATEGORY_COINGECKO_IDS.btc,
     CATEGORY_COINGECKO_IDS.eth,

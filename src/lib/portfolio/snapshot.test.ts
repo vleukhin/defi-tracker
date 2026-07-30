@@ -276,3 +276,70 @@ describe("buildSnapshotRows: сырые количества монет", () => 
     expect(build.isPartial).toBe(true);
   });
 });
+
+/** Долг в снепшоте (Фаза 4): debt_usd и правило частичности по долгу. */
+describe("buildSnapshotRows: долг", () => {
+  const okDebtChains = [
+    { chain: "ethereum", ok: true, error: null, checked_at: "2026-07-30T03:00:00Z" },
+    { chain: "arbitrum", ok: true, error: null, checked_at: "2026-07-30T03:00:00Z" },
+  ];
+
+  it("заполняет debtUsd из кэша и не помечает полный снепшот частичным", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: true,
+      debtUsd: 12_345.67,
+      debtChains: okDebtChains,
+    });
+    expect(build.debtUsd).toBe(12_345.67);
+    expect(build.isPartial).toBe(false);
+  });
+
+  it("неизвестный долг -> debtUsd null (не ноль)", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: true,
+      debtUsd: null,
+      debtChains: okDebtChains,
+    });
+    expect(build.debtUsd).toBeNull();
+  });
+
+  it("упавшее чтение долга по сети -> частичный, залоговые сети ни при чем", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: true,
+      debtUsd: 10_000,
+      debtChains: [
+        okDebtChains[0],
+        { chain: "arbitrum", ok: false, error: "RPC down", checked_at: "2026-07-30T03:00:00Z" },
+      ],
+    });
+    expect(build.isPartial).toBe(true);
+    expect(build.partialReasons).toEqual([
+      "долг: сеть arbitrum недоступна: RPC down",
+    ]);
+  });
+
+  it("кошельки есть, а долг не читался ни разу -> частичный", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: true,
+      debtUsd: null,
+      debtChains: [],
+    });
+    expect(build.isPartial).toBe(true);
+    expect(build.partialReasons).toEqual(["долг ни разу не прочитан"]);
+  });
+
+  it("без кошельков отсутствие данных долга — норма, не частичность", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: false,
+      debtUsd: 0,
+      debtChains: [],
+    });
+    expect(build.isPartial).toBe(false);
+    expect(build.debtUsd).toBe(0);
+  });
+});

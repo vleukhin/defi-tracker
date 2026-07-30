@@ -1,6 +1,9 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AAVE_PROTOCOL, type AavePositionPayload } from "@/lib/chains/aave";
+import { AAVE_DEBT_SOURCE } from "@/lib/chains/aave-debt";
+import type { PortfolioOverviewDto } from "@/lib/api/types";
+import { computeOverview } from "./overview";
 import {
   CATEGORY_COINGECKO_IDS,
   STABLE_PRICE_USD,
@@ -61,8 +64,12 @@ export interface PortfolioRowWithLedger extends PortfolioRow {
 export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
   rows: PortfolioRowWithLedger[];
   wallets: WalletRow[];
-  /** Статус последнего чтения по сетям (агрегировано по кошелькам). */
+  /** Статус последнего чтения залога по сетям (агрегировано по кошелькам). */
   chains: ChainStatusRow[];
+  /** Статус последнего чтения долга/HF (source = aave_v3_debt, Фаза 4). */
+  debtChains: ChainStatusRow[];
+  /** Связка пяти чисел: Активы · Долг · Чистая · Внесено · Прибыль (S4.2). */
+  overview: PortfolioOverviewDto;
   oldestCollateralAt: string | null;
 }
 
@@ -148,7 +155,12 @@ export async function loadPortfolio(
       throw new Error(`protocol_positions: ${positionsError.message}`);
 
     for (const row of positions ?? []) {
-      const payload = row.payload as AavePositionPayload | null;
+      const payload = row.payload as
+        | (AavePositionPayload & { kind?: string })
+        | null;
+      // Долговые строки (payload.kind = 'debt', Фаза 4) — отдельный контур:
+      // в категории и знаменатель портфеля они не входят никогда
+      if (payload?.kind === "debt") continue;
       if (!payload?.category || !payload.coingeckoId) continue;
       const wallet = walletById.get(row.wallet_id as string);
       collateral.push({
@@ -216,6 +228,36 @@ export async function loadPortfolio(
     targets[row.category as PortfolioCategory] = Number(row.target_pct);
   }
 
+  // --- «Внесено» (Фаза 4, S4.0): подписанная сумма журнала deposits ---
+  const { data: depositRows, error: depositsError } = await scopeUser(
+    supabase.from("deposits").select("user_id, amount"),
+  );
+  if (depositsError) throw new Error(`deposits: ${depositsError.message}`);
+  assertOwned((depositRows ?? []) as { user_id?: string }[], "deposits");
+  const depositedUsd = (depositRows ?? []).reduce(
+    (sum, r) => sum + Number(r.amount),
+    0,
+  );
+
+  // --- Долг (Фаза 4): канонические totals из aave_account_health.
+  // Wallet-scoped (как protocol_positions): под RLS фильтр избыточен,
+  // но делает выборку одинаковой на обоих путях ---
+  const healthRows: { totalDebtUsd: number | null }[] = [];
+  if (wallets.length > 0) {
+    const { data: health, error: healthError } = await supabase
+      .from("aave_account_health")
+      .select("wallet_id, chain, total_debt_usd")
+      .in("wallet_id", walletIds);
+    if (healthError)
+      throw new Error(`aave_account_health: ${healthError.message}`);
+    for (const row of health ?? []) {
+      healthRows.push({
+        totalDebtUsd:
+          row.total_debt_usd === null ? null : Number(row.total_debt_usd),
+      });
+    }
+  }
+
   // --- Цены: категории + все залоговые токены ---
   const priceIds = [
     CATEGORY_COINGECKO_IDS.btc,
@@ -249,23 +291,25 @@ export async function loadPortfolio(
   }));
 
   // --- Статус чтения сетей: сеть считается деградировавшей, если упала
-  // хотя бы по одному кошельку (данные портфеля в этом случае неполные) ---
+  // хотя бы по одному кошельку (данные портфеля в этом случае неполные).
+  // Источники раздельные: залог (aave_v3) и долг/HF (aave_v3_debt) ---
   const chains: ChainStatusRow[] = [];
+  const debtChains: ChainStatusRow[] = [];
   if (wallets.length > 0) {
     const { data: statusRows, error: statusError } = await supabase
       .from("chain_read_status")
-      .select("chain, ok, error, checked_at")
-      .eq("source", AAVE_PROTOCOL)
+      .select("source, chain, ok, error, checked_at")
+      .in("source", [AAVE_PROTOCOL, AAVE_DEBT_SOURCE])
       .in("wallet_id", walletIds);
     if (statusError)
       throw new Error(`chain_read_status: ${statusError.message}`);
 
-    const byChain = new Map<string, ChainStatusRow>();
+    const bySourceChain = new Map<string, ChainStatusRow>();
     for (const row of statusRows ?? []) {
-      const chain = row.chain as string;
-      const current = byChain.get(chain);
+      const key = `${row.source}:${row.chain}`;
+      const current = bySourceChain.get(key);
       const next: ChainStatusRow = {
-        chain,
+        chain: row.chain as string,
         ok: row.ok as boolean,
         error: (row.error as string | null) ?? null,
         checked_at: row.checked_at as string,
@@ -276,13 +320,32 @@ export async function loadPortfolio(
         (current.ok && !next.ok) ||
         (current.ok === next.ok && next.checked_at > current.checked_at)
       ) {
-        byChain.set(chain, next);
+        bySourceChain.set(key, next);
       }
     }
-    chains.push(...byChain.values());
+    for (const [key, status] of bySourceChain) {
+      (key.startsWith(`${AAVE_DEBT_SOURCE}:`) ? debtChains : chains).push(
+        status,
+      );
+    }
   }
 
-  return { ...result, rows, wallets, chains, oldestCollateralAt };
+  const overview = computeOverview({
+    assetsUsd: result.totalUsd,
+    hasWallets: wallets.length > 0,
+    healthRows,
+    depositedUsd,
+  });
+
+  return {
+    ...result,
+    rows,
+    wallets,
+    chains,
+    debtChains,
+    overview,
+    oldestCollateralAt,
+  };
 }
 
 /**

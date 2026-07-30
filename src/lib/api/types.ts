@@ -80,8 +80,31 @@ export interface PortfolioRowDto {
   ledger: PortfolioRowLedgerDto;
 }
 
+/**
+ * Связка пяти чисел (Фаза 4, S4.2): Активы · Долг · Чистая · Внесено · Прибыль.
+ *
+ * Методика (утверждена): Чистая = Активы − Долг; Прибыль = Чистая − Внесено.
+ * «Внесено» — только собственные деньги, заведенные извне (журнал deposits).
+ *
+ * Null-семантика честная: если долг ни разу не прочитан (кошельки есть,
+ * а строк aave_account_health нет) — debtUsd = null, и netUsd/profitUsd
+ * каскадно null. «Нет данных о долге» НИКОГДА не выдается за «долга нет».
+ * Без кошельков on-chain долга быть не может — debtUsd = 0.
+ */
+export interface PortfolioOverviewDto {
+  /** Активы = итог портфеля (оценка CoinGecko). */
+  assetsUsd: number;
+  /** Долг по оракулу Aave (getUserAccountData); null = ни разу не прочитан. */
+  debtUsd: number | null;
+  netUsd: number | null;
+  /** Подписанная сумма журнала deposits (вывод собственных средств — минус). */
+  depositedUsd: number;
+  profitUsd: number | null;
+}
+
 export interface PortfolioDto {
   totalUsd: number;
+  overview: PortfolioOverviewDto;
   rows: PortfolioRowDto[];
   targetSumPct: number;
   freshness: {
@@ -224,6 +247,11 @@ export interface SnapshotDto {
   takenAt: string;
   totalUsd: number;
   /**
+   * Долг Aave на момент съема (Фаза 4): как и composition, задним числом
+   * невосстановим. null = долг на момент съема известен не был.
+   */
+  debtUsd: number | null;
+  /**
    * true = данные заведомо неполные: упало чтение сети либо цена
    * категории/залогового токена отсутствовала или устарела. Такую точку
    * на графике нужно помечать, а не выдавать за настоящую просадку.
@@ -253,4 +281,88 @@ export interface SnapshotResponseDto {
   snapshot: SnapshotDto;
   /** Только у POST: почему снепшот помечен частичным (пусто — не помечен). */
   partialReasons?: string[];
+}
+
+// --- Фаза 4: долг, внесенные средства, health factor ---
+
+/**
+ * Запись журнала «Внесено» (S4.0). amount ПОДПИСАННАЯ десятичная строка:
+ * положительная — пополнение собственными деньгами, отрицательная — вывод
+ * собственных средств. Заемные средства в журнал не попадают никогда.
+ */
+export interface DepositDto {
+  id: string;
+  amount: string;
+  /** Календарный день, YYYY-MM-DD. */
+  happenedOn: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** GET /api/deposits — записи новыми вперед (happened_on desc). */
+export interface DepositsResponseDto {
+  deposits: DepositDto[];
+  /** Подписанная сумма всего журнала — «Внесено» для связки пяти чисел. */
+  summary: { totalDeposited: number };
+}
+
+/** POST /api/deposits (201) и PUT /api/deposits/{id} (200). */
+export interface DepositResponseDto {
+  deposit: DepositDto;
+}
+
+/** GET/PUT /api/settings — настройки пользователя (S4.1/S4.3). */
+export interface SettingsDto {
+  /** Порог предупреждения по health factor; по умолчанию 1.5. */
+  hfWarningThreshold: number;
+}
+
+/** Долговая позиция из разбивки по v-токенам (best-effort). */
+export interface DebtItemDto {
+  symbol: string;
+  chain: string;
+  /** Количество занятого актива десятичной строкой. */
+  quantity: string;
+  /** null = coingecko id токена неизвестен или цены нет — показывать количество. */
+  valueUsd: number | null;
+}
+
+/**
+ * Долг по одной сети (S4.3): totals и HF — из оракула Aave
+ * (getUserAccountData), разбивка — по v-токенам.
+ */
+export interface DebtChainDto {
+  chain: string;
+  totalCollateralUsd: number | null;
+  totalDebtUsd: number | null;
+  /** null = долга нет («∞») либо HF неизвестен. */
+  healthFactor: number | null;
+  /** totalDebtUsd / totalCollateralUsd; null без данных или без залога. */
+  utilization: number | null;
+  items: DebtItemDto[];
+  /** Момент последнего успешного чтения getUserAccountData. */
+  checkedAt: string;
+}
+
+export interface DebtSummaryDto {
+  /** null = кошельки есть, а долг ни разу не прочитан («нет данных» ≠ 0). */
+  totalDebtUsd: number | null;
+  /**
+   * Минимальный HF среди сетей С ДОЛГОМ — связывающее ограничение:
+   * ликвидация приходит на ту сеть, где HF ниже. null = долга нет нигде.
+   */
+  minHealthFactor: number | null;
+  hfWarningThreshold: number;
+  /** true = minHealthFactor ниже порога — заметное предупреждение (S4.3). */
+  belowThreshold: boolean;
+}
+
+/**
+ * GET /api/debt — только кэш (aave_account_health + protocol_positions +
+ * coin_prices), без RPC. Пустое состояние (долга нет нигде) — это
+ * chains с нулевым долгом и totalDebtUsd 0, а не ошибка.
+ */
+export interface DebtResponseDto {
+  chains: DebtChainDto[];
+  summary: DebtSummaryDto;
 }

@@ -20,6 +20,8 @@ export async function GET() {
 
     return NextResponse.json({
       totalUsd: portfolio.totalUsd,
+      // Связка пяти чисел (S4.2): Активы · Долг · Чистая · Внесено · Прибыль
+      overview: portfolio.overview,
       rows: portfolio.rows,
       targetSumPct: portfolio.targetSumPct,
       freshness: {

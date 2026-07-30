@@ -125,6 +125,7 @@ describe("loadPortfolioAsAdmin: изоляция пользователя", () =
       "manual_positions",
       "trades",
       "portfolio_targets",
+      "deposits",
     ]) {
       expect(
         filterOn(recorded, table),
@@ -133,7 +134,11 @@ describe("loadPortfolioAsAdmin: изоляция пользователя", () =
     }
 
     // Таблицы, привязанные к кошельку, скоупятся списком кошельков юзера
-    for (const table of ["protocol_positions", "chain_read_status"]) {
+    for (const table of [
+      "protocol_positions",
+      "chain_read_status",
+      "aave_account_health",
+    ]) {
       expect(
         filterOn(recorded, table).some(
           (f) =>

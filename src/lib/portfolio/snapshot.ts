@@ -6,6 +6,12 @@ import {
   persistChainStatus,
   readWalletAaveCollateral,
 } from "@/lib/chains/aave";
+import {
+  persistAaveDebt,
+  persistAaveHealth,
+  persistDebtStatus,
+  readWalletAaveDebt,
+} from "@/lib/chains/aave-debt";
 import type { SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
 import { loadPortfolio, loadPortfolioAsAdmin } from "./load";
 import type { ChainStatusRow, LoadPortfolioResult } from "./load";
@@ -27,6 +33,14 @@ export interface SnapshotSource {
   totalUsd: number;
   rows: PortfolioRow[];
   chains: ChainStatusRow[];
+  /**
+   * Долг на момент съема (Фаза 4). Поля опциональны: снепшот собирается
+   * и без данных долга — тогда debt_usd пишется как null («не известно»).
+   */
+  hasWallets?: boolean;
+  debtUsd?: number | null;
+  /** Статус чтения долга/HF по сетям (source = aave_v3_debt). */
+  debtChains?: ChainStatusRow[];
 }
 
 /**
@@ -59,6 +73,8 @@ export interface SnapshotItemInput {
 
 export interface SnapshotBuild {
   totalUsd: number;
+  /** Долг на момент съема; null = неизвестен (невосстановим задним числом). */
+  debtUsd: number | null;
   isPartial: boolean;
   /** Человекочитаемые причины частичности — в лог cron'а и в ответ API. */
   partialReasons: string[];
@@ -78,6 +94,10 @@ export interface SnapshotBuild {
  *     цены обнуляет часть стоимости категории точно так же, как отсутствие
  *     цены ETH, — молчать об этом нельзя.
  *
+ *  4. (Фаза 4) Чтение долга/HF по любой сети не удалось, либо кошельки есть,
+ *     а долг не читался ни разу: debt_usd в такой точке опирается на
+ *     устаревший кэш или отсутствует, и это должно быть видно.
+ *
  * Почему так строго: точка истории, посчитанная по неполным данным, внешне
  * неотличима от настоящего падения портфеля. Ложная просадка на графике
  * хуже, чем разрыв или помеченная точка, — поэтому лучше пометить лишнего.
@@ -93,6 +113,20 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
         `сеть ${chain.chain} недоступна${chain.error ? `: ${chain.error}` : ""}`,
       );
     }
+  }
+
+  // Долг (Фаза 4): упавшее чтение или полное отсутствие данных при наличии
+  // кошельков делает debt_usd точки заведомо неточным — помечаем честно
+  const debtChains = portfolio.debtChains ?? [];
+  for (const chain of debtChains) {
+    if (!chain.ok) {
+      partialReasons.push(
+        `долг: сеть ${chain.chain} недоступна${chain.error ? `: ${chain.error}` : ""}`,
+      );
+    }
+  }
+  if (portfolio.hasWallets && debtChains.length === 0) {
+    partialReasons.push("долг ни разу не прочитан");
   }
 
   const items: SnapshotItemInput[] = portfolio.rows.map((row) => {
@@ -136,6 +170,7 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
 
   return {
     totalUsd: portfolio.totalUsd,
+    debtUsd: portfolio.debtUsd ?? null,
     isPartial: partialReasons.length > 0,
     partialReasons,
     items,
@@ -170,6 +205,7 @@ interface SnapshotRow {
   taken_on: string;
   taken_at: string;
   total_usd: number | string;
+  debt_usd: number | string | null;
   is_partial: boolean;
 }
 
@@ -221,7 +257,12 @@ export async function createSnapshot(
           nowMs,
         });
 
-  const build = buildSnapshotRows(portfolio);
+  const build = buildSnapshotRows({
+    ...portfolio,
+    hasWallets: portfolio.wallets.length > 0,
+    // Долг из кэша aave_account_health (Aave-оракул); null = не читался
+    debtUsd: portfolio.overview.debtUsd,
+  });
 
   const { data: snapshotRow, error: snapshotError } = await admin
     .from("snapshots")
@@ -231,11 +272,12 @@ export async function createSnapshot(
         taken_on: takenOn,
         taken_at: takenAt,
         total_usd: build.totalUsd,
+        debt_usd: build.debtUsd,
         is_partial: build.isPartial,
       },
       { onConflict: "user_id,taken_on" },
     )
-    .select("id, taken_on, taken_at, total_usd, is_partial")
+    .select("id, taken_on, taken_at, total_usd, debt_usd, is_partial")
     .single();
   if (snapshotError) throw new Error(`snapshots upsert: ${snapshotError.message}`);
   const snapshot = snapshotRow as SnapshotRow;
@@ -273,6 +315,7 @@ export async function createSnapshot(
       takenOn: snapshot.taken_on,
       takenAt: snapshot.taken_at,
       totalUsd: Number(snapshot.total_usd),
+      debtUsd: snapshot.debt_usd === null ? null : Number(snapshot.debt_usd),
       isPartial: snapshot.is_partial,
       items,
     },
@@ -315,6 +358,14 @@ export async function refreshUserWallets(
       );
       await persistAaveCollateral(admin, wallet.id as string, statuses);
       await persistChainStatus(admin, wallet.id as string, statuses);
+
+      // Долг и HF (Фаза 4): дневной снепшот должен видеть свежий долг —
+      // задним числом getUserAccountData не восстановим
+      const debtStatuses = await readWalletAaveDebt(wallet.address as Address);
+      await persistAaveHealth(admin, wallet.id as string, debtStatuses);
+      await persistAaveDebt(admin, wallet.id as string, debtStatuses);
+      await persistDebtStatus(admin, wallet.id as string, debtStatuses);
+
       await admin
         .from("wallets")
         .update({ last_refreshed_at: new Date().toISOString() })
