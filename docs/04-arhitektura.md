@@ -80,7 +80,7 @@ buckets             id, user_id?, name                   -- NULL user_id = вс�
 asset_bucket_map    asset_id, bucket_id, user_id?        -- переопределения пользователя поверх дефолтов
 manual_holdings     id, user_id, asset_or_cg_id, quantity, source_label     -- Фаза 2
 trades              id, user_id, asset_ref, side ('buy'|'sell'), quantity,
-                    price_usd, fee_usd?, traded_at, note -- Фаза 2, реплей для средней
+                    price_usd, traded_at, note -- Фаза 2, реплей для средней
 target_allocations  id, user_id, bucket_id, target_pct
 protocol_positions  id, wallet_id, protocol ('aave_v3'|'gmx_v2'|'uni_v3'), chain,
                     external_id (NPM tokenId / market addr), payload jsonb (HF, ticks...),

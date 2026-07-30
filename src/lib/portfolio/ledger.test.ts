@@ -13,7 +13,6 @@ function trade(over: Partial<LedgerTrade> = {}): LedgerTrade {
     side: "buy",
     quantity: "1",
     priceUsd: "60000",
-    feeUsd: null,
     tradedAt,
     createdAt: over.createdAt ?? tradedAt,
     ...over,
@@ -58,7 +57,6 @@ describe("replayTrades: формулы ТЗ S2.1", () => {
         ledgerQty: 0,
         avgPriceUsd: null,
         realizedPnlUsd: 0,
-        totalFeesUsd: 0,
         warnings: [],
         tradeCount: 0,
       });
@@ -130,25 +128,22 @@ describe("replayTrades: формулы ТЗ S2.1", () => {
     expect(res.btc.ledgerQty).toBe(0); // пыль срезана, следующая покупка — сброс средней
   });
 
-  it("комиссии не входят в среднюю и копятся отдельно по обеим сторонам", () => {
+  it("средняя и realized считаются по цене сделки без надбавок", () => {
     const res = replayTrades([
       trade({
         quantity: "1",
         priceUsd: "60000",
-        feeUsd: "25",
         tradedAt: "2026-07-01T00:00:00Z",
       }),
       trade({
         side: "sell",
         quantity: "0.5",
         priceUsd: "70000",
-        feeUsd: "10.5",
         tradedAt: "2026-07-02T00:00:00Z",
       }),
     ]);
-    expect(res.btc.avgPriceUsd).toBeCloseTo(60000, 8); // без комиссии
-    expect(res.btc.realizedPnlUsd).toBeCloseTo(5000, 8); // тоже без комиссии
-    expect(res.btc.totalFeesUsd).toBeCloseTo(35.5, 8);
+    expect(res.btc.avgPriceUsd).toBeCloseTo(60000, 8);
+    expect(res.btc.realizedPnlUsd).toBeCloseTo(5000, 8);
   });
 
   it("категория stable: количества в USD, цена около 1", () => {

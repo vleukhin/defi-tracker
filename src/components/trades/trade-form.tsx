@@ -19,7 +19,7 @@ import { CATEGORY_UNIT, TRADE_CATEGORIES } from "./categories";
 /**
  * Форма сделки (S2.1): категория, сторона, количество, «цена за единицу ИЛИ
  * сумма всего» (второе выводится из количества автоматически), дата (не в
- * будущем), опциональные комиссия и заметка.
+ * будущем), опциональная заметка.
  *
  * Одна форма на добавление и редактирование: «Изменить» в списке передает
  * trade — родитель перемонтирует форму через key, initializers useState
@@ -88,7 +88,6 @@ export function TradeForm({
   const [date, setDate] = useState(
     trade ? trade.tradedAt.slice(0, 10) : todayLocal(),
   );
-  const [fee, setFee] = useState(trade?.feeUsd ?? "");
   const [note, setNote] = useState(trade?.note ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +141,6 @@ export function TradeForm({
     setTotal("");
     setPriceSource("price");
     setDate(todayLocal());
-    setFee("");
     setNote("");
   }
 
@@ -156,7 +154,6 @@ export function TradeForm({
       side,
       quantity: quantity.trim(),
       priceUsd: price.trim(),
-      feeUsd: fee.trim() === "" ? null : fee.trim(),
       tradedAt: date,
       note: note.trim() === "" ? null : note.trim(),
     };
@@ -290,7 +287,7 @@ export function TradeForm({
           автоматически.
         </p>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="trade-date">Дата</Label>
             <Input
@@ -301,18 +298,6 @@ export function TradeForm({
               max={todayLocal()}
               onChange={(e) => setDate(e.target.value)}
               className="font-mono"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="trade-fee">Комиссия, $ (не обяз.)</Label>
-            <Input
-              id="trade-fee"
-              type="text"
-              inputMode="decimal"
-              value={fee}
-              onChange={(e) => setFee(e.target.value)}
-              placeholder="—"
-              className="text-right font-mono"
             />
           </div>
           <div className="space-y-1.5">

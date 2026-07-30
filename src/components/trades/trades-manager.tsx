@@ -145,8 +145,8 @@ export function TradesManager() {
 }
 
 /**
- * Сводка леджера по категориям со сделками: средняя цена покупки,
- * realized P/L (цвет по знаку, знак в тексте) и комиссии, если были.
+ * Сводка леджера по категориям со сделками: средняя цена покупки
+ * и realized P/L (цвет по знаку, знак обязательно в тексте).
  */
 function SummaryStrip({
   summary,
@@ -197,16 +197,6 @@ function SummaryStrip({
                   {formatPnl(s.realizedPnlUsd, null)}
                 </dd>
               </div>
-              {s.totalFeesUsd > 0 && (
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt className="text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground">
-                    Комиссии
-                  </dt>
-                  <dd className="font-mono text-sm text-muted-foreground">
-                    {tableUsd(s.totalFeesUsd, 2)}
-                  </dd>
-                </div>
-              )}
             </dl>
           </Card>
         );

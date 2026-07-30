@@ -121,14 +121,13 @@ export async function loadPortfolio(
   // --- Сделки (Фаза 2): реплей леджера для средней цены и P/L ---
   const { data: tradeRows, error: tradesError } = await supabase
     .from("trades")
-    .select("category, side, quantity, price_usd, fee_usd, traded_at, created_at");
+    .select("category, side, quantity, price_usd, traded_at, created_at");
   if (tradesError) throw new Error(`trades: ${tradesError.message}`);
   const ledgerTrades: LedgerTrade[] = (tradeRows ?? []).map((r) => ({
     category: r.category as PortfolioCategory,
     side: r.side as LedgerTrade["side"],
     quantity: String(r.quantity),
     priceUsd: String(r.price_usd),
-    feeUsd: r.fee_usd === null ? null : String(r.fee_usd),
     tradedAt: r.traded_at as string,
     createdAt: r.created_at as string,
   }));

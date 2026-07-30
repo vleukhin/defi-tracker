@@ -37,21 +37,6 @@ export const tradeSchema = z.object({
     (v) => Number.isFinite(Number.parseFloat(v)),
     "Цена должна быть числом",
   ),
-  // Опциональная комиссия: null / undefined / пустая строка = нет комиссии
-  feeUsd: z
-    .union([z.number(), z.string()])
-    .nullish()
-    .transform((v) => {
-      if (v === null || v === undefined) return null;
-      const s = String(v).trim().replace(",", ".");
-      return s === "" ? null : s;
-    })
-    .refine(
-      (v) =>
-        v === null ||
-        (/^\d+(\.\d+)?$/.test(v) && Number.isFinite(Number.parseFloat(v))),
-      "Комиссия должна быть неотрицательным числом",
-    ),
   tradedAt: z
     .string()
     .trim()
@@ -73,7 +58,7 @@ export type TradeInput = z.infer<typeof tradeSchema>;
 
 /** Колонки для select — единый список во всех роутах. */
 export const TRADE_COLUMNS =
-  "id, category, side, quantity, price_usd, fee_usd, traded_at, note, created_at";
+  "id, category, side, quantity, price_usd, traded_at, note, created_at";
 
 export interface TradeRow {
   id: string;
@@ -81,7 +66,6 @@ export interface TradeRow {
   side: string;
   quantity: number | string;
   price_usd: number | string;
-  fee_usd: number | string | null;
   traded_at: string;
   note: string | null;
   created_at: string;
@@ -94,7 +78,6 @@ export function mapTradeRow(row: TradeRow): TradeDto {
     side: row.side as TradeDto["side"],
     quantity: String(row.quantity),
     priceUsd: String(row.price_usd),
-    feeUsd: row.fee_usd === null ? null : String(row.fee_usd),
     tradedAt: row.traded_at,
     note: row.note,
     createdAt: row.created_at,
@@ -108,7 +91,6 @@ export function toLedgerTrade(row: TradeRow): LedgerTrade {
     side: row.side as LedgerTrade["side"],
     quantity: String(row.quantity),
     priceUsd: String(row.price_usd),
-    feeUsd: row.fee_usd === null ? null : String(row.fee_usd),
     tradedAt: row.traded_at,
     createdAt: row.created_at,
   };
@@ -121,7 +103,6 @@ export function toTradeColumns(input: TradeInput) {
     side: input.side,
     quantity: input.quantity,
     price_usd: input.priceUsd,
-    fee_usd: input.feeUsd,
     traded_at: input.tradedAt,
     note: input.note,
   };

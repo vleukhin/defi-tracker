@@ -142,8 +142,6 @@ export interface TradeDto {
   quantity: string;
   /** Цена за единицу в USD на момент сделки, строкой. */
   priceUsd: string;
-  /** Комиссия в USD строкой; null — без комиссии. */
-  feeUsd: string | null;
   tradedAt: string;
   note: string | null;
   createdAt: string;
@@ -155,8 +153,6 @@ export interface LedgerSummaryDto {
   /** null — покупок еще не было. */
   avgPriceUsd: number | null;
   realizedPnlUsd: number;
-  /** Комиссии отдельно: в среднюю цену не входят. */
-  totalFeesUsd: number;
   warnings: string[];
   /** Число сделок — отличает пустой леджер от «все продано». */
   tradeCount: number;

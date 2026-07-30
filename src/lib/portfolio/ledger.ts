@@ -10,8 +10,7 @@
  *     следствие формулы при qty = 0 (слагаемое qty × avg исчезает)
  *   oversell (q > qty): предупреждение, НЕ блокировка; qty клампится в 0
  *
- * Комиссии в среднюю НЕ входят (формула ТЗ их не содержит) — копятся
- * отдельной суммой totalFeesUsd по категории.
+ * Комиссии не учитываются вовсе: по решению пользователя поле убрано.
  */
 
 import {
@@ -27,7 +26,6 @@ export interface LedgerTrade {
   quantity: string;
   /** Цена за единицу в USD на момент сделки. */
   priceUsd: string;
-  feeUsd: string | null;
   /** ISO — определяет порядок реплея. */
   tradedAt: string;
   /** ISO — стабильный tiebreak при равных traded_at. */
@@ -41,8 +39,6 @@ export interface CategoryLedger {
   avgPriceUsd: number | null;
   /** Суммарный realized P/L по продажам. */
   realizedPnlUsd: number;
-  /** Комиссии отдельно от средней (формула ТЗ их не учитывает). */
-  totalFeesUsd: number;
   /** Oversell и прочие аномалии — предупреждения, не блокировки. */
   warnings: string[];
   /** Число сделок категории — отличает «пустой леджер» от «всё продано». */
@@ -72,7 +68,6 @@ function emptyCategoryLedger(): CategoryLedger {
     ledgerQty: 0,
     avgPriceUsd: null,
     realizedPnlUsd: 0,
-    totalFeesUsd: 0,
     warnings: [],
     tradeCount: 0,
   };
@@ -106,7 +101,6 @@ export function replayTrades(trades: LedgerTrade[]): LedgerResult {
       );
       continue;
     }
-    s.totalFeesUsd += trade.feeUsd === null ? 0 : toNumber(trade.feeUsd);
 
     if (trade.side === "buy") {
       // avg = (qty × avg + q × price) / (qty + q); при qty = 0 (в т.ч. после

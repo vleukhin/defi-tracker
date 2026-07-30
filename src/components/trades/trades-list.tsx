@@ -176,7 +176,6 @@ const COLUMNS: { label: string; align: "left" | "right" }[] = [
   { label: "Количество", align: "right" },
   { label: "Цена", align: "right" },
   { label: "Сумма", align: "right" },
-  { label: "Комиссия", align: "right" },
   { label: "Заметка", align: "left" },
 ];
 
@@ -214,7 +213,6 @@ export function TradesList({
           <TableBody>
             {trades.map((trade) => {
               const price = num(trade.priceUsd);
-              const feeNum = trade.feeUsd === null ? null : num(trade.feeUsd);
               const total = tradeTotal(trade);
               return (
                 <TableRow
@@ -245,13 +243,6 @@ export function TradesList({
                   <TableCell className={CELL}>
                     {total === null ? "—" : tableUsd(total, usdDecimals(total))}
                   </TableCell>
-                  <TableCell className={CELL}>
-                    {feeNum === null || feeNum === 0 ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      tableUsd(feeNum, 2)
-                    )}
-                  </TableCell>
                   <TableCell className="border border-border px-3 py-2 text-sm">
                     <NoteCell note={trade.note} />
                   </TableCell>
@@ -268,7 +259,7 @@ export function TradesList({
         </Table>
       </Card>
 
-      {/* Мобильный вид: девять колонок на 375 px нечитаемы — стек карточек */}
+      {/* Мобильный вид: восемь колонок на 375 px нечитаемы — стек карточек */}
       <Card className="p-0 md:hidden">
         <ul className="divide-y divide-border">
           {trades.map((trade) => (
@@ -295,7 +286,6 @@ function MobileTradeCard({
   onDeleted: () => void;
 }) {
   const price = num(trade.priceUsd);
-  const feeNum = trade.feeUsd === null ? null : num(trade.feeUsd);
   const total = tradeTotal(trade);
 
   const pairs: [string, React.ReactNode][] = [
@@ -310,9 +300,6 @@ function MobileTradeCard({
     ],
     ["Цена", price === null ? "—" : tableUsd(price, usdDecimals(price))],
   ];
-  if (feeNum !== null && feeNum !== 0) {
-    pairs.push(["Комиссия", tableUsd(feeNum, 2)]);
-  }
 
   return (
     <li className="px-4 py-3">
