@@ -5,8 +5,15 @@ import { supabaseUrl } from "./url";
 /** Пути, доступные без авторизации. */
 const PUBLIC_PATHS = ["/login", "/reset-password", "/auth"];
 
-/** API-роуты без авторизации (health-чек для мониторинга). */
-const PUBLIC_API_PATHS = ["/api/health"];
+/**
+ * API-роуты, не требующие пользовательской сессии.
+ *
+ * /api/health — health-чек для мониторинга.
+ * /api/cron/snapshot — ежедневный джоб: Vercel Cron ходит без куки, и без
+ *   этого исключения снепшоты молча не снимались бы никогда (401 от прокси).
+ *   Роут не «открытый»: он сам требует Authorization: Bearer CRON_SECRET.
+ */
+const PUBLIC_API_PATHS = ["/api/health", "/api/cron/snapshot"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some(
