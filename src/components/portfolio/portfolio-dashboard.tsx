@@ -3,12 +3,17 @@
 import { CircleAlert, RefreshCw, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatHf, formatHfThreshold } from "@/components/debt/hf";
 import { LogoMark } from "@/components/logo";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { PortfolioDto, RefreshResponseDto } from "@/lib/api/types";
+import type {
+  DebtResponseDto,
+  PortfolioDto,
+  RefreshResponseDto,
+} from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
   NBSP,
@@ -21,6 +26,7 @@ import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { AllocationBar } from "./allocation-bar";
 import { MetricCards } from "./metric-cards";
+import { OverviewStrip } from "./overview-strip";
 import { PortfolioTable } from "./portfolio-table";
 import { ValueSparkline } from "./value-sparkline";
 
@@ -36,6 +42,9 @@ const AUTO_REFRESH_MS = 15 * 60_000;
 export function PortfolioDashboard() {
   const { data, error, loading, refetch } =
     useApi<PortfolioDto>("/api/portfolio");
+  // HF-бейдж (S4.3): /api/debt — только кэш, второй запрос дешев
+  const { data: debt, refetch: refetchDebt } =
+    useApi<DebtResponseDto>("/api/debt");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [chainIssues, setChainIssues] = useState<Map<string, string>>(new Map());
@@ -62,7 +71,10 @@ export function PortfolioDashboard() {
       // Все кошельки в окне дебаунса — данные те же, перезапрос не нужен
       const allDebounced =
         res.results.length > 0 && res.results.every((r) => r.debounced);
-      if (!allDebounced) refetch();
+      if (!allDebounced) {
+        refetch();
+        void refetchDebt();
+      }
     } catch (err) {
       setRefreshError(
         err instanceof ApiError ? err.message : "Не удалось обновить данные",
@@ -71,7 +83,7 @@ export function PortfolioDashboard() {
       refreshingRef.current = false;
       setRefreshing(false);
     }
-  }, [refetch]);
+  }, [refetch, refetchDebt]);
 
   // Первое обновление — после того как кэш отрисован
   const hasWallets = (data?.wallets.length ?? 0) > 0;
@@ -154,11 +166,15 @@ export function PortfolioDashboard() {
     <div className="space-y-5">
       {/* Шапка: итог — самый крупный элемент экрана, тезис страницы (§5.1.1) */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
-          <p className="mt-2 font-mono text-3xl leading-none font-semibold tracking-tight sm:text-4xl">
-            {tableUsd(data.totalUsd)}
-          </p>
+          {/* Связка пяти чисел (S4.2) + постоянный HF-бейдж (S4.3) */}
+          <div className="mt-2">
+            <OverviewStrip
+              overview={data.overview}
+              debtSummary={debt?.summary ?? null}
+            />
+          </div>
           <p className="mt-2 text-xs text-muted-foreground">
             цены: {formatRelativeTime(data.freshness.oldestPriceAt) ?? "—"}
             {NBSP}·{NBSP}залог:{" "}
@@ -188,6 +204,30 @@ export function PortfolioDashboard() {
           </span>
         </Button>
       </div>
+
+      {/* HF ниже порога — заметное предупреждение (S4.3), первым из баннеров */}
+      {debt?.summary.belowThreshold &&
+        debt.summary.minHealthFactor !== null && (
+          <Alert variant="destructive">
+            <TriangleAlert className="size-4" />
+            <AlertTitle>
+              Health factor{" "}
+              <span className="font-mono">
+                {formatHf(debt.summary.minHealthFactor)}
+              </span>{" "}
+              ниже порога{" "}
+              <span className="font-mono">
+                {formatHfThreshold(debt.summary.hfWarningThreshold)}
+              </span>{" "}
+              — риск ликвидации
+            </AlertTitle>
+            <AlertDescription>
+              <Link href="/debt" className="underline underline-offset-4">
+                Открыть экран «Долг»
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
 
       {/* Баннеры деградации — только при проблемах, неблокирующие (§5.1.2) */}
       {refreshError && (
