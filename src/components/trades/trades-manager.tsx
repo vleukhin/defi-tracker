@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowLeftRight, CircleAlert, TriangleAlert } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowLeftRight, CircleAlert, SearchX, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CategoryDot, categoryTint } from "@/components/portfolio/category";
 import { formatPnl, pnlClass } from "@/components/pnl";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -18,6 +18,12 @@ import { tableUsd, usdDecimals } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 import { TRADE_CATEGORIES } from "./categories";
 import { TradeForm } from "./trade-form";
+import {
+  EMPTY_FILTERS,
+  TradesFilters,
+  TradesPagination,
+  type TradeFilters,
+} from "./trades-filters";
 import { TradesList } from "./trades-list";
 
 /**
@@ -25,6 +31,16 @@ import { TradesList } from "./trades-list";
  * добавления/редактирования и список сделок. Средняя и P/L считаются
  * реплеем на бэкенде — здесь только отображение summary.
  */
+
+/** Значение с задержкой: поиск по заметке не бьет в API на каждую букву. */
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 /** «1 сделка / 2 сделки / 5 сделок». */
 function tradesWord(n: number): string {
@@ -37,10 +53,32 @@ function tradesWord(n: number): string {
 }
 
 export function TradesManager() {
-  const { data, error, loading, refetch } =
-    useApi<TradesResponseDto>("/api/trades");
+  const [filters, setFilters] = useState<TradeFilters>(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
+  // Поиск по заметке дебаунсится: иначе запрос на каждое нажатие клавиши
+  const debouncedQ = useDebounced(filters.q, 300);
+
+  const url = useMemo(() => {
+    const sp = new URLSearchParams();
+    if (filters.category !== "all") sp.set("category", filters.category);
+    if (filters.from) sp.set("from", filters.from);
+    if (filters.to) sp.set("to", filters.to);
+    if (debouncedQ) sp.set("q", debouncedQ);
+    if (page > 1) sp.set("page", String(page));
+    const qs = sp.toString();
+    return qs ? `/api/trades?${qs}` : "/api/trades";
+  }, [filters.category, filters.from, filters.to, debouncedQ, page]);
+
+  const { data, error, loading, refetch } = useApi<TradesResponseDto>(url);
   const [editing, setEditing] = useState<TradeDto | null>(null);
   const formAnchorRef = useRef<HTMLDivElement>(null);
+
+  /** Смена фильтра всегда возвращает на первую страницу. */
+  function applyFilters(next: TradeFilters) {
+    setFilters(next);
+    setPage(1);
+  }
+
 
   // Экран не загрузился вовсе — Alert с повтором (§6.2)
   if (error && !data) {
@@ -62,7 +100,21 @@ export function TradesManager() {
     );
   }
 
-  const isEmpty = data !== null && data.trades.length === 0;
+  // Пустой леджер определяется по сводке (она не зависит от фильтров),
+  // иначе «ничего не найдено» выглядело бы как «сделок вообще нет».
+  const ledgerTotal =
+    data === null
+      ? 0
+      : TRADE_CATEGORIES.reduce(
+          (sum, c) => sum + data.summary[c.key].tradeCount,
+          0,
+        );
+  const isEmpty = data !== null && ledgerTotal === 0;
+  const noMatches = data !== null && !isEmpty && data.page.total === 0;
+  // Страница вышла за пределы выборки (например, сделки удалили из другой
+  // вкладки): показываем не пустоту, а возврат к первой странице
+  const pageOutOfRange =
+    data !== null && data.page.total > 0 && data.trades.length === 0;
 
   // Oversell и прочие аномалии реплея — предупреждение, не блокировка (S2.1)
   const ledgerWarnings =
@@ -125,15 +177,64 @@ export function TradesManager() {
       )}
 
       {data !== null && !isEmpty && (
-        <TradesList
-          trades={data.trades}
-          onEdit={(trade) => setEditing(trade)}
-          onDeleted={() => {
-            // Удалили редактируемую — форма не должна сохранять призрака
-            setEditing(null);
-            void refetch();
-          }}
+        <TradesFilters
+          filters={filters}
+          onChange={applyFilters}
+          onReset={() => applyFilters(EMPTY_FILTERS)}
         />
+      )}
+
+      {noMatches && (
+        <Card className="flex flex-col items-center gap-2 p-8 text-center">
+          <SearchX className="size-6 text-muted-foreground" />
+          <p className="text-sm font-medium">Ничего не найдено</p>
+          <p className="max-w-sm text-xs text-muted-foreground">
+            Под выбранные фильтры не подходит ни одна сделка. Средняя цена и
+            P/L по-прежнему считаются по всему леджеру.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => applyFilters(EMPTY_FILTERS)}
+          >
+            Сбросить фильтры
+          </Button>
+        </Card>
+      )}
+
+      {pageOutOfRange && (
+        <Card className="flex flex-col items-center gap-2 p-8 text-center">
+          <p className="text-sm font-medium">Страница пуста</p>
+          <p className="text-xs text-muted-foreground">
+            Сделок стало меньше, чем было при переходе на эту страницу.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setPage(1)}>
+            К первой странице
+          </Button>
+        </Card>
+      )}
+
+      {data !== null && !isEmpty && !noMatches && !pageOutOfRange && (
+        <>
+          <TradesList
+            trades={data.trades}
+            onEdit={(trade) => setEditing(trade)}
+            onDeleted={() => {
+              // Удалили редактируемую — форма не должна сохранять призрака
+              setEditing(null);
+              // Удалили последнюю строку страницы — уходим на предыдущую
+              if (data.trades.length === 1 && page > 1) setPage(page - 1);
+              void refetch();
+            }}
+          />
+          <TradesPagination
+            page={data.page.page}
+            pageSize={data.page.pageSize}
+            total={data.page.total}
+            totalPages={data.page.totalPages}
+            onPage={setPage}
+          />
+        </>
       )}
 
       <p className="text-xs text-muted-foreground">

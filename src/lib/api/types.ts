@@ -158,13 +158,27 @@ export interface LedgerSummaryDto {
   tradeCount: number;
 }
 
+/** Постраничная навигация списка сделок. */
+export interface PageInfoDto {
+  /** Текущая страница, 1-based. */
+  page: number;
+  pageSize: number;
+  /** Всего сделок, подходящих под фильтр (не всего в леджере). */
+  total: number;
+  totalPages: number;
+}
+
 /**
- * GET /api/trades[?category=]: сделки новыми вперед (traded_at desc);
- * summary всегда по всем трем категориям, фильтр сужает только список.
+ * GET /api/trades[?category=&from=&to=&q=&page=&pageSize=]:
+ * сделки новыми вперед (traded_at desc), постранично.
+ *
+ * summary ВСЕГДА по всем сделкам всех трех категорий и не зависит от
+ * фильтров и страницы: средняя цена — свойство всего леджера.
  */
 export interface TradesResponseDto {
   trades: TradeDto[];
   summary: Record<PortfolioCategory, LedgerSummaryDto>;
+  page: PageInfoDto;
 }
 
 /** POST /api/trades (201) и PUT /api/trades/{id} (200). */
