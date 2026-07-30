@@ -185,3 +185,61 @@ export interface TradesResponseDto {
 export interface TradeResponseDto {
   trade: TradeDto;
 }
+
+// --- Фаза 3: снепшоты и история ---
+
+/** Состав снепшота: ровно три строки, по одной на категорию. */
+export interface SnapshotItemDto {
+  category: PortfolioCategory;
+  /**
+   * Количество в единицах категории (BTC / ETH / USD).
+   * null = цены категории на момент съема не было, эквивалент не выводится.
+   */
+  quantity: number | null;
+  /** Цена категории на момент съема; null — цены не было. */
+  priceUsd: number | null;
+  valueUsd: number;
+  percent: number;
+  /** Разбивка «залог / вручную» (S3.1). */
+  collateralUsd: number;
+  manualUsd: number;
+}
+
+export interface SnapshotDto {
+  id: string;
+  /** Календарный день UTC, YYYY-MM-DD — ключ идемпотентности. */
+  takenOn: string;
+  /** Точный момент съема (ISO). */
+  takenAt: string;
+  totalUsd: number;
+  /**
+   * true = данные заведомо неполные: упало чтение сети либо цена
+   * категории/залогового токена отсутствовала или устарела. Такую точку
+   * на графике нужно помечать, а не выдавать за настоящую просадку.
+   */
+  isPartial: boolean;
+  items: SnapshotItemDto[];
+}
+
+/** Периоды графика истории (S3.2). */
+export type SnapshotPeriod = "7d" | "30d" | "90d" | "1y" | "all";
+
+/**
+ * GET /api/snapshots[?period=7d|30d|90d|1y|all] — по умолчанию 30d.
+ *
+ * Порядок: takenOn ПО ВОЗРАСТАНИЮ (график читается слева направо).
+ * Пропущенные дни не интерполируются и не добиваются нулями — в ответе
+ * только реально снятые точки, разрывы рисует клиент (S3.2).
+ */
+export interface SnapshotsResponseDto {
+  snapshots: SnapshotDto[];
+  period: SnapshotPeriod;
+  count: number;
+}
+
+/** POST /api/snapshots (201) и GET /api/snapshots/{id} (200). */
+export interface SnapshotResponseDto {
+  snapshot: SnapshotDto;
+  /** Только у POST: почему снепшот помечен частичным (пусто — не помечен). */
+  partialReasons?: string[];
+}
