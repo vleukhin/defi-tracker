@@ -16,7 +16,7 @@ export async function DELETE(
   if (!user) return unauthorized;
 
   const { id } = await params;
-  if (!z.uuid().safeParse(id).success) {
+  if (!z.guid().safeParse(id).success) {
     return apiError(400, "Невалидный id корзины");
   }
 

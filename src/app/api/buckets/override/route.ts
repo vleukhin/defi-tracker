@@ -9,8 +9,8 @@ import { apiError, requireUser } from "@/lib/api/auth";
  */
 
 const putSchema = z.object({
-  assetId: z.uuid(),
-  bucketId: z.uuid().nullable(),
+  assetId: z.guid(),
+  bucketId: z.guid().nullable(),
 });
 
 export async function PUT(request: NextRequest) {

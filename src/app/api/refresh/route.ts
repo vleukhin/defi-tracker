@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   if (!user) return unauthorized;
 
   const walletIdParam = request.nextUrl.searchParams.get("walletId");
-  if (walletIdParam && !z.uuid().safeParse(walletIdParam).success) {
+  if (walletIdParam && !z.guid().safeParse(walletIdParam).success) {
     return apiError(400, "Невалидный walletId");
   }
 

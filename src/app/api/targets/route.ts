@@ -12,7 +12,7 @@ import { validateTargets } from "@/lib/portfolio/allocation";
 const putSchema = z.object({
   targets: z.array(
     z.object({
-      bucketId: z.uuid(),
+      bucketId: z.guid(),
       targetPct: z.number().min(0).max(100),
     }),
   ),
