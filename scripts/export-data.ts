@@ -13,6 +13,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { assertRemoteIfRequired } from "./env-guard.ts";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -25,6 +26,9 @@ function requiredEnv(name: string): string {
 
 const url = requiredEnv("NEXT_PUBLIC_SUPABASE_URL");
 const serviceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+assertRemoteIfRequired(url);
+console.log(`База: ${url}\n`);
 
 const outArgIndex = process.argv.indexOf("--out");
 const outPath =

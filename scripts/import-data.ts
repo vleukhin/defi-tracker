@@ -12,6 +12,7 @@
  */
 import { readFileSync } from "node:fs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { assertRemoteIfRequired } from "./env-guard.ts";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -29,6 +30,7 @@ function arg(name: string): string | null {
 
 const url = requiredEnv("NEXT_PUBLIC_SUPABASE_URL");
 const serviceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+assertRemoteIfRequired(url);
 const filePath = arg("--file");
 const replace = process.argv.includes("--replace");
 
