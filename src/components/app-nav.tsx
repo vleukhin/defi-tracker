@@ -1,6 +1,6 @@
 "use client";
 
-import { ChartPie, Settings, Target, Wallet } from "lucide-react";
+import { ArrowLeftRight, ChartPie, Settings, Target, Wallet } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
@@ -9,6 +9,12 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Портфель", shortLabel: "Портфель", icon: ChartPie },
+  {
+    href: "/trades",
+    label: "Сделки",
+    shortLabel: "Сделки",
+    icon: ArrowLeftRight,
+  },
   { href: "/wallets", label: "Кошельки", shortLabel: "Кошельки", icon: Wallet },
   // В нижнем баре подпись сокращается до «Цели» (ТЗ §5.6.2)
   { href: "/targets", label: "Цели и записи", shortLabel: "Цели", icon: Target },
@@ -80,7 +86,7 @@ export function AppNav() {
         aria-label="Основная навигация (мобильная)"
         className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden"
       >
-        <div className="grid h-14 grid-cols-4">
+        <div className="grid h-14 grid-cols-5">
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             return (
