@@ -78,7 +78,13 @@ function MetricCard({ row }: { row: PortfolioRowDto }) {
           )}
         >
           P/L:{" "}
-          {formatPnl(row.ledger.unrealizedPnlUsd, row.ledger.unrealizedPnlPct)}
+          {/* nowrap: перенос внутри числа после «−» ломает чтение */}
+          <span className="whitespace-nowrap">
+            {formatPnl(
+              row.ledger.unrealizedPnlUsd,
+              row.ledger.unrealizedPnlPct,
+            )}
+          </span>
         </p>
       )}
     </Card>
@@ -116,10 +122,12 @@ function MiniMetricCard({ row }: { row: PortfolioRowDto }) {
           )}
         >
           P/L:{" "}
-          {tableUsdSigned(
-            row.ledger.unrealizedPnlUsd,
-            usdDecimals(row.ledger.unrealizedPnlUsd),
-          )}
+          <span className="whitespace-nowrap">
+            {tableUsdSigned(
+              row.ledger.unrealizedPnlUsd,
+              usdDecimals(row.ledger.unrealizedPnlUsd),
+            )}
+          </span>
         </p>
       )}
     </Card>

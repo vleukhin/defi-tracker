@@ -3,7 +3,7 @@
 import { ChevronRight, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
-import { formatPnl, pnlClass } from "@/components/pnl";
+import { pnlClass } from "@/components/pnl";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -23,6 +23,7 @@ import {
   tablePctSigned,
   tableSigned,
   tableUsd,
+  tableUsdSigned,
   usdDecimals,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -108,7 +109,12 @@ function AvgPriceValue({ value }: { value: number | null }) {
   return <>{tableUsd(value, usdDecimals(value))}</>;
 }
 
-/** Unrealized P/L: «+$1 234 (+5,2%)», цвет по знаку; null → «—». */
+/**
+ * Unrealized P/L: «+$1 234 (+5,2%)», цвет по знаку; null → «—».
+ * Доллары и процент — отдельные flex-элементы: при нехватке ширины
+ * (десять колонок в max-w-5xl) процент переносится на вторую строку,
+ * и таблица остается без внутреннего скролла.
+ */
 function UnrealizedPnlValue({
   usd,
   pct,
@@ -123,7 +129,17 @@ function UnrealizedPnlValue({
       </span>
     );
   }
-  return <span className={pnlClass(usd)}>{formatPnl(usd, pct)}</span>;
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full flex-wrap justify-end gap-x-1",
+        pnlClass(usd),
+      )}
+    >
+      <span>{tableUsdSigned(usd, usdDecimals(usd))}</span>
+      {pct !== null && <span>({tablePctSigned(pct, 1)})</span>}
+    </span>
+  );
 }
 
 /**
@@ -180,9 +196,11 @@ function hasRowWarnings(row: PortfolioRowDto): boolean {
 }
 
 /** Общие классы ячейки: границы сетки + числа mono по правому краю. */
-const CELL = "border border-border px-3 py-2 text-right font-mono text-sm";
+/* px-2, не px-3: с колонками «Средняя» и «P/L» таблица из десяти колонок
+   на px-3 шире контейнера max-w-5xl и получала внутренний скролл. */
+const CELL = "border border-border px-2 py-2 text-right font-mono text-sm";
 const HEAD =
-  "h-auto border border-border bg-muted/60 px-3 py-2 text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground";
+  "h-auto border border-border bg-muted/60 px-2 py-2 text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground";
 
 export function PortfolioTable({
   rows,
@@ -219,7 +237,7 @@ export function PortfolioTable({
                   <TableRow className="transition-colors duration-120 hover:bg-accent/50">
                     <th
                       scope="row"
-                      className="border border-border px-3 py-2 text-left font-normal"
+                      className="border border-border px-2 py-2 text-left font-normal"
                     >
                       <button
                         type="button"
