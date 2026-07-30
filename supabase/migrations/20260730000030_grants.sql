@@ -10,9 +10,6 @@ grant all on all tables in schema public to service_role;
 -- authenticated: CRUD на user-scoped таблицах (RLS режет по auth.uid())
 grant select, insert, update, delete on
   public.wallets,
-  public.buckets,
-  public.asset_bucket_map,
-  public.target_allocations,
   public.trades,
   public.manual_holdings,
   public.snapshots,

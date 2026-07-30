@@ -3,16 +3,26 @@ import type { Address } from "viem";
 import { z } from "zod";
 import { apiError, requireUser } from "@/lib/api/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { readWalletBalances, persistBalances } from "@/lib/chains/reader";
-import { getPrices, type AssetForPricing } from "@/lib/prices";
+import {
+  readWalletAaveCollateral,
+  persistAaveCollateral,
+  persistChainStatus,
+} from "@/lib/chains/aave";
+import { CATEGORY_COINGECKO_IDS, getCoinPrices } from "@/lib/prices/coins";
 
 /**
  * POST /api/refresh[?walletId=...] — on-demand обновление (ТЗ Часть 4 §6.1):
  * 1) debounce 60 с на кошелек (last_refreshed_at; внутри окна — debounced: true);
- * 2) один multicall на сеть: нативный + ERC-20 по allowlist;
- * 3) цены из price_cache, внешний поход только по истекшему TTL;
- * 4) запись в balances_cache; ответ — статус по сетям.
+ * 2) один multicall на сеть: aToken.balanceOf по покрываемым резервам Aave v3;
+ * 3) цены категорий и залоговых токенов — coin_prices, внешний поход только
+ *    по истекшему TTL;
+ * 4) запись в protocol_positions + chain_read_status.
  * Без walletId обновляются все кошельки пользователя.
+ *
+ * Свободные ERC-20 балансы кошелька здесь НЕ читаются: по ТЗ 02 §2а количества
+ * берутся из залога и ручных записей. Модуль chains/reader.ts сохранен для
+ * Фазы 5 (GMX GM-токены, Uniswap LP), но в пути портфеля не участвует —
+ * это экономит по одному multicall на сеть за каждое обновление.
  */
 
 export const DEBOUNCE_MS = 60_000;
@@ -26,8 +36,8 @@ interface WalletRefreshResult {
         chain: string;
         ok: boolean;
         error?: string;
-        tokensRead: number;
-        tokensFailed: number;
+        reservesRead: number;
+        reservesFailed: number;
       }[]
     | null;
 }
@@ -41,9 +51,7 @@ export async function POST(request: NextRequest) {
     return apiError(400, "Невалидный walletId");
   }
 
-  let query = supabase
-    .from("wallets")
-    .select("id, address, last_refreshed_at");
+  let query = supabase.from("wallets").select("id, address, last_refreshed_at");
   if (walletIdParam) query = query.eq("id", walletIdParam);
   const { data: wallets, error: walletsError } = await query;
   if (walletsError) return apiError(500, walletsError.message);
@@ -54,6 +62,7 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const nowMs = Date.now();
   const results: WalletRefreshResult[] = [];
+  const collateralIds = new Set<string>();
 
   for (const wallet of wallets ?? []) {
     const lastMs = wallet.last_refreshed_at
@@ -65,56 +74,57 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const statuses = await readWalletBalances(wallet.address as Address);
-    await persistBalances(admin, wallet.id, statuses);
-    await supabase
-      .from("wallets")
-      .update({ last_refreshed_at: new Date().toISOString() })
-      .eq("id", wallet.id);
+    try {
+      const statuses = await readWalletAaveCollateral(wallet.address as Address);
+      await persistAaveCollateral(admin, wallet.id, statuses);
+      await persistChainStatus(admin, wallet.id, statuses);
+      await supabase
+        .from("wallets")
+        .update({ last_refreshed_at: new Date().toISOString() })
+        .eq("id", wallet.id);
 
-    results.push({
-      walletId: wallet.id,
-      debounced: false,
-      chains: statuses.map((s) => ({
-        chain: s.chain,
-        ok: s.ok,
-        ...(s.error ? { error: s.error } : {}),
-        tokensRead: s.balances.length,
-        tokensFailed: s.failedTokens.length,
-      })),
-    });
+      for (const s of statuses) {
+        for (const c of s.collateral) {
+          if (c.raw > 0n) collateralIds.add(c.coingeckoId);
+        }
+      }
+
+      results.push({
+        walletId: wallet.id,
+        debounced: false,
+        chains: statuses.map((s) => ({
+          chain: s.chain,
+          ok: s.ok,
+          ...(s.error ? { error: s.error } : {}),
+          reservesRead: s.collateral.length,
+          reservesFailed: s.failedReserves.length,
+        })),
+      });
+    } catch (err) {
+      // Один кошелек не обновился — остальные продолжаем
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[refresh] кошелек ${wallet.id}: ${message}`);
+      results.push({ walletId: wallet.id, debounced: false, chains: [] });
+    }
   }
 
-  // Обновление цен по активам, которые пользователь реально держит
-  const walletIds = (wallets ?? []).map((w) => w.id);
-  let priceSummary = { requested: 0, priced: 0, stale: 0 };
-  if (walletIds.length > 0) {
-    const { data: held, error: heldError } = await supabase
-      .from("balances_cache")
-      .select("asset_id")
-      .in("wallet_id", walletIds);
-    if (heldError) return apiError(500, heldError.message);
-
-    const assetIds = [...new Set((held ?? []).map((r) => r.asset_id))];
-    if (assetIds.length > 0) {
-      const { data: assets, error: assetsError } = await admin
-        .from("assets")
-        .select("id, chain, contract_address, kind, coingecko_id")
-        .in("id", assetIds);
-      if (assetsError) return apiError(500, assetsError.message);
-
-      const prices = await getPrices((assets ?? []) as AssetForPricing[], {
-        admin,
-        fetchIfExpired: true,
-      });
-      let stale = 0;
-      for (const p of prices.values()) if (p.stale) stale += 1;
-      priceSummary = {
-        requested: assetIds.length,
-        priced: prices.size,
-        stale,
-      };
-    }
+  // Цены: категории всегда + токены, которые реально лежат в залоге
+  const priceIds = [
+    CATEGORY_COINGECKO_IDS.btc,
+    CATEGORY_COINGECKO_IDS.eth,
+    ...collateralIds,
+  ];
+  let priceSummary = { requested: priceIds.length, priced: 0, stale: 0 };
+  try {
+    const prices = await getCoinPrices(priceIds, {
+      admin,
+      fetchIfExpired: true,
+    });
+    let stale = 0;
+    for (const p of prices.values()) if (p.stale) stale += 1;
+    priceSummary = { requested: priceIds.length, priced: prices.size, stale };
+  } catch (err) {
+    console.warn("[refresh] цены не обновлены:", err);
   }
 
   return NextResponse.json({

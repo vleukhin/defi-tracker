@@ -13,6 +13,7 @@
     "seed:admin": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/seed-admin.ts"
   },
   "dependencies": {
+    "@bgd-labs/aave-address-book": "^4.44.22",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.111.0",
     "next": "16.2.12",
