@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui/card";
 import { NBSP } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { HfThresholdRow } from "@/components/settings/hf-threshold-row";
 import { ThemeRow } from "@/components/settings/theme-row";
 import { UsersManager } from "@/components/settings/users-manager";
 
@@ -42,6 +43,8 @@ export default async function SettingsPage() {
             Настраивается в будущих версиях.
           </p>
         </div>
+        {/* Фаза 4 (S4.3): настраиваемый порог предупреждения по HF */}
+        <HfThresholdRow />
         <div className="px-4 py-3">
           <p className="text-xs text-muted-foreground">Выход из аккаунта</p>
           <p className="mt-0.5 text-sm">Кнопка «Выйти» — в навигации сверху.</p>
