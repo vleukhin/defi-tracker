@@ -19,8 +19,8 @@ import {
 } from "./chart-geometry";
 import {
   ChartLegend,
+  ChartTimeAxis,
   ChartTooltip,
-  ChartXAxis,
   HoverLayer,
 } from "./chart-parts";
 
@@ -196,18 +196,7 @@ export function CompositionChart({
           </ChartTooltip>
         )}
 
-        <ChartXAxis
-          points={axisPoints}
-          count={3}
-          minGap={26}
-          className="sm:hidden"
-        />
-        <ChartXAxis
-          points={axisPoints}
-          count={5}
-          minGap={14}
-          className="hidden sm:block"
-        />
+        <ChartTimeAxis points={axisPoints} />
       </div>
 
       {/* Легенда категорий: доля на последнюю дату периода */}

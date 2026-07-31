@@ -130,6 +130,30 @@ export interface AxisPoint {
 }
 
 /**
+ * Ось дат в двух вариантах сразу: на узком экране подписей меньше и зазор
+ * больше. Один компонент на все графики — оси времени обязаны стоять
+ * на одной вертикали и разрежаться одинаково.
+ *
+ * Зазоры подобраны под ширину подписи «01.07.2026» (10px mono ≈ 60px):
+ * на 375px это ~24% ширины поля графика, а крайняя подпись еще и прижата
+ * к своему краю — то есть заезжает внутрь на пол-ширины. Отсюда 36%
+ * на узком экране: с 26% последние две даты налезали друг на друга.
+ */
+export function ChartTimeAxis({ points }: { points: AxisPoint[] }) {
+  return (
+    <>
+      <ChartXAxis points={points} count={3} minGap={36} className="sm:hidden" />
+      <ChartXAxis
+        points={points}
+        count={5}
+        minGap={14}
+        className="hidden sm:block"
+      />
+    </>
+  );
+}
+
+/**
  * Ось дат. Подписи разрежены по фактическим позициям точек и разведены
  * минимальным зазором — на календарной оси точки сгущаются неравномерно,
  * и равномерный шаг по индексу склеил бы соседние даты.
@@ -167,9 +191,16 @@ export function ChartXAxis({
 export function ChartLegend({
   missing,
   anyPartial,
+  /**
+   * Чем именно вызваны разрывы. На графике стоимости это дни без снепшота;
+   * на графике количества к ним добавляются дни, в которые снепшот есть,
+   * но цены категории не было и количество не выведено.
+   */
+  missingLabel = "дни без снепшота",
 }: {
   missing: number;
   anyPartial: boolean;
+  missingLabel?: string;
 }) {
   if (missing === 0 && !anyPartial) return null;
   return (
@@ -185,7 +216,7 @@ export function ChartLegend({
       )}
       {missing > 0 && (
         <span>
-          разрывы — дни без снепшота:{" "}
+          разрывы — {missingLabel}:{" "}
           <span className="font-mono">{missing}</span>
         </span>
       )}

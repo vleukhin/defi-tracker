@@ -14,8 +14,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   ChartLegend,
+  ChartTimeAxis,
   ChartTooltip,
-  ChartXAxis,
   HoverLayer,
 } from "./chart-parts";
 import {
@@ -205,13 +205,7 @@ export function ValueChart({
         </div>
 
         {/* Подписи оси X: на узких экранах их меньше — даты не наезжают */}
-        <ChartXAxis points={plot} count={3} minGap={26} className="sm:hidden" />
-        <ChartXAxis
-          points={plot}
-          count={5}
-          minGap={14}
-          className="hidden sm:block"
-        />
+        <ChartTimeAxis points={plot} />
       </div>
 
       <ChartLegend missing={missing} anyPartial={anyPartial} />
