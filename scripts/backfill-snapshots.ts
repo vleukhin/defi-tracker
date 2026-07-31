@@ -1,18 +1,23 @@
 /**
  * Восстановление истории снепшотов по журналу сделок и рыночным ценам:
- *   npm run backfill -- --from 2026-01-01 [--apply] [--replace]
+ *   npm run backfill -- --from 2026-01-01 [--apply] [--replace] [--stable N]
  *
  * Что реконструируется и откуда:
  *   * количество BTC и ETH на каждую дату — реплеем журнала сделок
  *     (покупка прибавляет, продажа вычитает);
  *   * цена на каждую дату — CoinGecko /market_chart/range, реальные
- *     дневные котировки, ничего не интерполируется.
+ *     дневные котировки, ничего не интерполируется;
+ *   * стейблкоины — ДОПУЩЕНИЕ по решению пользователя: принимаются
+ *     неизменными на всем периоде и равными текущей сумме ручных записей
+ *     (переопределяется флагом --stable). Истории ручных записей не
+ *     существует, поэтому это единственная величина здесь, которая не
+ *     опирается на данные. Без нее на стыке с первым измерением возникала
+ *     ступенька в размере стейблов, читавшаяся как скачок доходности.
  *
- * Чего в восстановленных точках НЕТ и быть не может:
- *   * стейблкоинов — истории ручных записей не существует;
- *   * долга и health factor — позиции Aave задним числом не прочитать.
- * Поэтому каждая такая точка помечается is_partial = true: это штатный
- * признак неполных данных, и на графиках она получает свой маркер.
+ * Долг и health factor не восстанавливаются вовсе: позиции Aave задним
+ * числом не прочитать. Точки пишутся как обычные (is_partial = false) —
+ * по решению пользователя маркер частичных данных на графике не нужен;
+ * сам механизм пометки остается рабочим для настоящих неполных снепшотов.
  *
  * Безопасность:
  *   * без --apply только показывает план (dry-run по умолчанию);
@@ -43,6 +48,7 @@ assertRemoteIfRequired(url);
 const apply = process.argv.includes("--apply");
 const replace = process.argv.includes("--replace");
 const from = arg("--from") ?? "2026-01-01";
+const stableOverride = arg("--stable");
 const email = arg("--email") ?? process.env.ADMIN_EMAIL;
 if (!email) {
   console.error("Укажите --email или задайте ADMIN_EMAIL");
@@ -132,6 +138,19 @@ async function main() {
     process.exit(1);
   }
 
+  // Стейблы: допущение «неизменны на всем периоде». Берем текущую сумму
+  // ручных записей, если не задано явно флагом.
+  let stableUsd = stableOverride === null ? 0 : Number(stableOverride);
+  if (stableOverride === null) {
+    const { data: manualRows, error: manualError } = await admin
+      .from("manual_positions")
+      .select("amount")
+      .eq("user_id", userId)
+      .eq("category", "stable");
+    if (manualError) throw new Error(`manual_positions: ${manualError.message}`);
+    stableUsd = (manualRows ?? []).reduce((sum, r) => sum + Number(r.amount), 0);
+  }
+
   const lastTradeDay = String(trades[trades.length - 1].traded_at).slice(0, 10);
   // Верхняя граница — вчера: сегодняшняя точка снимается по-настоящему
   const yesterday = isoDay(new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000));
@@ -140,7 +159,10 @@ async function main() {
   console.log(`База:     ${url}`);
   console.log(`Владелец: ${email}`);
   console.log(`Сделок:   ${trades.length} (последняя ${lastTradeDay})`);
-  console.log(`Период:   ${from} … ${to}${apply ? "" : "   [dry-run]"}\n`);
+  console.log(`Период:   ${from} … ${to}${apply ? "" : "   [dry-run]"}`);
+  console.log(
+    `Стейблы:  $${stableUsd.toFixed(0)} — ДОПУЩЕНИЕ: приняты неизменными на всем периоде\n`,
+  );
 
   // --- Цены ---
   const prices: Record<Cat, Map<string, number>> = {
@@ -151,13 +173,28 @@ async function main() {
     `Цены: BTC ${prices.btc.size} дней, ETH ${prices.eth.size} дней\n`,
   );
 
-  // --- Уже существующие снепшоты: их не трогаем без --replace ---
+  // --- Уже существующие снепшоты ---
+  // Измеренные точки (снятые с реального залога) НЕ перезаписываются никогда,
+  // даже с --replace: реконструкция поверх измерения — потеря данных, которую
+  // нечем откатить. Признак измерения — непустой состав залога.
   const { data: existingRows, error: existingError } = await admin
     .from("snapshots")
-    .select("taken_on")
+    .select("taken_on, snapshot_items (composition)")
     .eq("user_id", userId);
   if (existingError) throw new Error(`snapshots: ${existingError.message}`);
-  const existing = new Set((existingRows ?? []).map((r) => String(r.taken_on)));
+
+  const existing = new Set<string>();
+  const measured = new Set<string>();
+  for (const row of existingRows ?? []) {
+    const day = String((row as { taken_on: string }).taken_on);
+    existing.add(day);
+    const items =
+      (row as { snapshot_items?: { composition?: { collateral?: unknown[] } | null }[] })
+        .snapshot_items ?? [];
+    if (items.some((it) => (it.composition?.collateral?.length ?? 0) > 0)) {
+      measured.add(day);
+    }
+  }
 
   // --- Реплей журнала по дням ---
   const days = eachDay(from, to);
@@ -182,6 +219,7 @@ async function main() {
 
   let planned = 0;
   let skipped = 0;
+  let protectedDays = 0;
   let noPrice = 0;
   const preview: string[] = [];
 
@@ -197,6 +235,11 @@ async function main() {
       ti += 1;
     }
 
+    if (measured.has(day)) {
+      // Измерение важнее реконструкции — пропускаем даже с --replace
+      protectedDays += 1;
+      continue;
+    }
     if (existing.has(day) && !replace) {
       skipped += 1;
       continue;
@@ -211,14 +254,14 @@ async function main() {
 
     const valueBtc = qty.btc * pBtc;
     const valueEth = qty.eth * pEth;
-    const total = valueBtc + valueEth;
+    const total = valueBtc + valueEth + stableUsd;
     planned += 1;
 
     if (preview.length < 3 || day === days[days.length - 1]) {
       preview.push(
         `  ${day}  BTC ${qty.btc.toFixed(4)} × $${pBtc.toFixed(0)} = $${valueBtc.toFixed(0)}` +
           `   ETH ${qty.eth.toFixed(4)} × $${pEth.toFixed(0)} = $${valueEth.toFixed(0)}` +
-          `   итого $${total.toFixed(0)}`,
+          `   стейблы $${stableUsd.toFixed(0)}   итого $${total.toFixed(0)}`,
       );
     }
 
@@ -232,8 +275,10 @@ async function main() {
           taken_on: day,
           taken_at: `${day}T00:00:00.000Z`,
           total_usd: total,
-          // Восстановленная точка неполна по определению: нет стейблов и долга
-          is_partial: true,
+          // Обычная точка: маркер частичных данных на графике не нужен
+          // (решение пользователя). Механизм пометки продолжает работать
+          // для настоящих неполных снепшотов — упавших сетей и старых цен.
+          is_partial: false,
         },
         { onConflict: "user_id,taken_on" },
       )
@@ -241,21 +286,23 @@ async function main() {
       .single();
     if (snapError) throw new Error(`${day} snapshots: ${snapError.message}`);
 
-    const items = (["btc", "eth"] as Cat[]).map((cat) => {
-      const price = cat === "btc" ? pBtc : pEth;
-      const value = cat === "btc" ? valueBtc : valueEth;
-      return {
-        snapshot_id: (snapRow as { id: string }).id,
-        category: cat,
-        quantity: qty[cat],
-        price_usd: price,
-        value_usd: value,
-        percent: total > 0 ? (value / total) * 100 : 0,
-        // Источник — журнал сделок, а не залог и не ручные записи
-        collateral_usd: 0,
-        manual_usd: 0,
-      };
-    });
+    const snapshotId = (snapRow as { id: string }).id;
+    const items = [
+      { category: "btc", quantity: qty.btc, price: pBtc, value: valueBtc, manual: 0 },
+      { category: "eth", quantity: qty.eth, price: pEth, value: valueEth, manual: 0 },
+      // Стейблы: цена $1, количество равно сумме — как в настоящих снепшотах
+      { category: "stable", quantity: stableUsd, price: 1, value: stableUsd, manual: stableUsd },
+    ].map((it) => ({
+      snapshot_id: snapshotId,
+      category: it.category,
+      quantity: it.quantity,
+      price_usd: it.price,
+      value_usd: it.value,
+      percent: total > 0 ? (it.value / total) * 100 : 0,
+      // Источник BTC/ETH — журнал сделок, а не залог; стейблы — ручная сумма
+      collateral_usd: 0,
+      manual_usd: it.manual,
+    }));
     const { error: itemsError } = await admin
       .from("snapshot_items")
       .upsert(items, { onConflict: "snapshot_id,category" });
@@ -267,13 +314,16 @@ async function main() {
   console.log();
   console.log(`К записи:  ${planned}`);
   if (skipped) console.log(`Пропущено: ${skipped} (снепшот уже есть; --replace перезапишет)`);
+  if (protectedDays)
+    console.log(`Защищено:  ${protectedDays} (настоящее измерение — не перезаписывается)`);
   if (noPrice) console.log(`Без цены:  ${noPrice} (день не покрыт котировками — точка не создается)`);
 
   if (!apply) {
     console.log("\nЭто предпросмотр. Для записи добавьте --apply");
   } else {
-    console.log("\nГотово. Восстановленные точки помечены как частичные:");
-    console.log("в них нет стейблкоинов и долга — только BTC и ETH по журналу сделок.");
+    console.log("\nГотово. Точки записаны как обычные снепшоты.");
+    console.log(`BTC и ETH — по журналу сделок и рыночным ценам; стейблы \$${stableUsd.toFixed(0)}`);
+    console.log("приняты неизменными (допущение); долг за прошлые даты не восстановлен.");
   }
 }
 
