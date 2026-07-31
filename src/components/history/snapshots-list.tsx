@@ -2,6 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { Fragment, useState } from "react";
+import { Pagination } from "@/components/pagination";
 import { CATEGORY_VAR, CategoryDot } from "@/components/portfolio/category";
 import {
   CATEGORY_LABEL,
@@ -84,10 +85,20 @@ function amountDecimals(unit: string): number {
   return unit === "USD" ? 0 : 4;
 }
 
+/** Снепшотов на странице: за год их сотни, весь список нечитаем. */
+const PAGE_SIZE = 20;
+
 export function SnapshotsList({ snapshots }: { snapshots: SnapshotDto[] }) {
   // Новые сверху: список читается «что было вчера», в отличие от графика
-  const rows = [...snapshots].reverse();
+  const all = [...snapshots].reverse();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+
+  // Нарезка на клиенте: графикам нужен весь ряд, поэтому данные уже
+  // загружены целиком — второй запрос за страницей был бы лишним.
+  const totalPages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const rows = all.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <div className="space-y-2">
@@ -230,6 +241,14 @@ export function SnapshotsList({ snapshots }: { snapshots: SnapshotDto[] }) {
           })}
         </ul>
       </Card>
+
+      <Pagination
+        page={safePage}
+        pageSize={PAGE_SIZE}
+        total={all.length}
+        totalPages={totalPages}
+        onPage={setPage}
+      />
     </div>
   );
 }

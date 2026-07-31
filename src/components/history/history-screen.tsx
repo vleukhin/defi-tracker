@@ -146,7 +146,8 @@ export function HistoryScreen() {
             snapshots={snapshots}
             periodLabel={periodFull(period)}
           />
-          <SnapshotsList snapshots={snapshots} />
+          {/* key по периоду: смена периода возвращает список на первую страницу */}
+          <SnapshotsList key={period} snapshots={snapshots} />
         </>
       )}
 
