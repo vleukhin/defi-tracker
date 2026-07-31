@@ -15,7 +15,9 @@
     "data:import": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/import-data.ts",
     "seed:admin:prod": "node --env-file=.env.production.local scripts/seed-admin.ts --remote",
     "data:export:prod": "node --env-file=.env.production.local scripts/export-data.ts --remote",
-    "data:import:prod": "node --env-file=.env.production.local scripts/import-data.ts --remote"
+    "data:import:prod": "node --env-file=.env.production.local scripts/import-data.ts --remote",
+    "backfill": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/backfill-snapshots.ts",
+    "backfill:prod": "node --env-file=.env.production.local scripts/backfill-snapshots.ts --remote"
   },
   "dependencies": {
     "@bgd-labs/aave-address-book": "^4.44.22",
