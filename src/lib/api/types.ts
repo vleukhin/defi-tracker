@@ -386,6 +386,15 @@ export interface DebtResponseDto {
 
 export type PositionProtocol = "fluid" | "gmx_v2" | "uni_v3";
 
+/**
+ * Зоны стратегии Capital Growth (docs/07-strategia-capital-growth.md).
+ *
+ * НЕ то же самое, что три категории портфеля: категория отвечает «в чем
+ * лежит» (BTC / ETH / стейблы), зона — «какую задачу решает». Стейблкоины
+ * есть и в Stability, и в Yield, поэтому одно через другое не выражается.
+ */
+export type StrategyZone = "growth" | "yield" | "stability";
+
 /** Составляющая позиции: во что она разложена (S5.1/S5.2). */
 export interface PositionComponentDto {
   symbol: string;
@@ -407,6 +416,17 @@ export interface PositionDto {
   protocol: PositionProtocol;
   protocolLabel: string;
   chain: string;
+  /** Зона стратегии; по умолчанию Yield, размечается пользователем (Фаза 6). */
+  zone: StrategyZone;
+  /** Натуральный ключ разметки: переживает пересоздание строки читателем. */
+  zoneKey: string;
+  /**
+   * Сколько собственных средств в позиции; остальное заемное.
+   * null = НЕ РАЗМЕЧЕНО (не ноль). В расчет такая позиция идет как целиком
+   * заемная, но помечается: после перезаливки диапазона CLMM разметка
+   * не переносится, и молчать об этом нельзя.
+   */
+  ownUsd: number | null;
   /** «fUSDC», «GM ETH/USD», «WETH/USDC 0,05%». */
   title: string;
   subtitle: string | null;
@@ -426,29 +446,24 @@ export interface PositionDto {
 }
 
 /**
- * Сверка Fluid с ручными записями категории «Стейблы».
+ * Вклад позиций в «Активы» и учет собственного капитала внутри них.
  *
- * На блокчейне собственные и заемные стейблы неразличимы, а собственные уже
- * учтены ручной записью портфеля. Поэтому в «Активы» Fluid добавляет только
- * разницу — иначе собственная часть посчиталась бы дважды.
+ * Фаза 5 вычитала собственные стейблы только из депозита Fluid. Это оказалось
+ * неверно, как только свои деньги переехали с Fluid в CLMM-позицию: своя часть
+ * попадала в Активы дважды. Теперь вычитается явно объявленная величина —
+ * журнал размещений, — и от протокола она не зависит.
  */
-export interface FluidReconciliationDto {
-  /** Депозит Fluid в стейблах; null = часть позиций не оценена. */
-  stableUsd: number | null;
-  /** Сумма ручных записей категории «Стейблы». */
-  manualStableUsd: number;
-  /** max(0, stableUsd − manualStableUsd) — заемная часть. */
-  nettedUsd: number | null;
-  /** true = ручных записей больше, чем лежит на Fluid: стоит перепроверить. */
-  manualExceedsDeposit: boolean;
-}
-
 export interface PositionsSummaryDto {
-  /** Вклад позиций в «Активы» (Fluid — после неттинга). */
+  /** Вклад позиций в «Активы»: стоимость позиций МИНУС свои внутри них. */
   positionsUsd: number | null;
+  /** Стоимость всех позиций как есть, до вычета своих средств. */
+  grossUsd: number | null;
+  /** Сумма собственных долей по позициям (неразмеченные считаются нулем). */
+  ownUsd: number;
   /** Сколько позиций осталось без оценки — из-за них positionsUsd может быть null. */
   unpricedCount: number;
-  fluid: FluidReconciliationDto;
+  /** Позиции без разметки собственной доли — их видно в интерфейсе. */
+  unmarkedCount: number;
 }
 
 /** Займ и профинансированные им позиции (S5.3). */
@@ -492,4 +507,42 @@ export interface BorrowLinkDto {
   borrowId: string;
   positionId: string;
   createdAt: string;
+}
+
+// --- Фаза 6: зоны стратегии и собственный капитал в позициях ---
+
+/** Одна зона: из чего сложилась и сколько стоит. */
+export interface ZoneBreakdownDto {
+  zone: StrategyZone;
+  label: string;
+  /** Задача зоны по стратегии — подпись под заголовком. */
+  purpose: string;
+  /** Залог BTC/ETH — всегда Growth. */
+  collateralUsd: number;
+  /** Ручные записи, отнесенные к зоне. */
+  manualUsd: number;
+  /** Читаемые позиции зоны; null = стоимость части неизвестна. */
+  positionsUsd: number | null;
+  /** collateral + manual + positions; null при неизвестных позициях. */
+  valueUsd: number | null;
+  /** Доля от суммы зон; null пока знаменатель неизвестен. */
+  percent: number | null;
+  positionCount: number;
+}
+
+/**
+ * GET /api/zones — разрез портфеля по зонам стратегии.
+ *
+ * Инвариант: сумма зон равна «Активам» из связки пяти чисел.
+ * Вычитать здесь ничего не нужно — позиции входят целиком, а собственные
+ * стейблы внутри них в зонах отдельной строкой не появляются.
+ */
+export interface ZonesSummaryDto {
+  zones: ZoneBreakdownDto[];
+  totalUsd: number | null;
+  /** Сумма собственных долей по позициям — для сверки с категорией «Стейблы». */
+  ownInPositionsUsd: number;
+  unpricedPositions: number;
+  /** Позиции без разметки собственной доли. */
+  unmarkedPositions: number;
 }

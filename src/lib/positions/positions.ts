@@ -1,12 +1,12 @@
 import type {
-  FluidReconciliationDto,
   PositionComponentDto,
   PositionDto,
   PositionProtocol,
   PositionsSummaryDto,
+  StrategyZone,
 } from "@/lib/api/types";
-import { isStableCoingeckoId } from "@/lib/prices/symbol-coingecko";
 import { POSITION_SOURCES, PROTOCOL_LABELS } from "./sources";
+import { DEFAULT_POSITION_ZONE } from "./zones";
 
 /**
  * Сборка размещенных позиций (Фаза 5) — чистая функция без I/O.
@@ -21,12 +21,21 @@ import { POSITION_SOURCES, PROTOCOL_LABELS } from "./sources";
  *     занижена ровно на размещенную заемную сумму: деньги ушли в пул, долг
  *     остался в формуле, а актива, в который они превратились, нет.
  *
- *  3. Неттинг Fluid. Собственные стейблы на Fluid уже посчитаны ручной
- *     записью категории «Стейблы» (пользователь ведет их вручную осознанно).
- *     Депозит Fluid содержит и их, и заемные, а на блокчейне они неразличимы.
- *     Поэтому в «Активы» Fluid добавляет max(0, депозит − ручные записи) —
- *     ту самую «разницу = заемную часть». Иначе собственная часть попадет
- *     в Активы дважды и Прибыль окажется завышенной.
+ *  3. Собственная доля указывается У ПОЗИЦИИ (Фаза 6). По стратегии свои
+ *     стейблы всегда распределены по позициям зон Yield и Stability, и
+ *     категория «Стейблы» складывается именно из этих долей. Раз своя часть
+ *     попадает в категорию, стоимость позиций входит в «Активы» за ее
+ *     вычетом — иначе те же деньги посчитались бы дважды.
+ *
+ *     Фаза 5 угадывала эту величину, вычитая ручные записи из депозита
+ *     Fluid. Допущение сломалось сразу же: собственные стейблы уехали
+ *     с Fluid в CLMM-позицию (docs/07 §9.4). Теперь это данные, а не
+ *     догадка, и к протоколу они не привязаны.
+ *
+ *     null в ownUsd = «не размечено», и это НЕ ноль: после перезаливки
+ *     диапазона CLMM позиция приходит без разметки. В расчет она идет как
+ *     целиком заемная, но считается отдельно (unmarkedCount) и помечается
+ *     в интерфейсе — молча занижать собственные средства нельзя.
  *
  * Null-пропагация как везде в проекте: неизвестная стоимость слагаемого
  * делает неизвестной сумму. Ноль вместо «нет данных» не подставляется.
@@ -91,8 +100,28 @@ export interface BuildPositionsInput {
   rows: PositionRowInput[];
   /** Цены по coingecko id (только кэш). */
   pricesUsd: Map<string, number>;
-  /** Сумма ручных записей категории «Стейблы» — база неттинга Fluid. */
-  manualStableUsd: number;
+  /** Разметка по натуральному ключу позиции; отсутствие = умолчания. */
+  marksByKey?: Map<string, PositionMark>;
+}
+
+/** Пользовательская разметка позиции. */
+export interface PositionMark {
+  /** null = зона не задана, берется умолчание. */
+  zone: StrategyZone | null;
+  /** null = собственная доля не размечена (не ноль). */
+  ownUsd: number | null;
+}
+
+/**
+ * Натуральный ключ разметки позиции. Не id строки: читатель пересоздает
+ * строки, а CLMM при перезаливке диапазона выдает новый tokenId.
+ */
+export function zoneKeyOf(row: {
+  protocol: string;
+  chain: string;
+  externalId: string;
+}): string {
+  return `${row.protocol}:${row.chain}:${row.externalId}`;
 }
 
 export interface BuildPositionsResult {
@@ -131,7 +160,8 @@ function buildFluid(
   row: PositionRowInput,
   payload: FluidPayload,
   prices: Map<string, number>,
-): { dto: PositionDto; isStable: boolean } {
+  mark: PositionMark | undefined,
+): PositionDto {
   const quantity = row.quantity === null ? null : Number(row.quantity);
   const price =
     payload.coingeckoId !== null ? prices.get(payload.coingeckoId) : undefined;
@@ -144,36 +174,33 @@ function buildFluid(
       : row.valueUsd;
 
   return {
-    dto: {
-      id: row.id,
-      protocol: "fluid",
-      protocolLabel: PROTOCOL_LABELS.fluid,
-      chain: row.chain,
-      title: payload.fTokenSymbol,
-      subtitle: `Депозит ${payload.symbol}`,
-      quantity: row.quantity,
-      valueUsd,
-      components: [
-        {
-          symbol: payload.symbol,
-          quantity: quantity ?? 0,
-          valueUsd,
-          side: null,
-        },
-      ],
-      feesUsd: null,
-      inRange: null,
-      walletId: row.walletId,
-      walletLabel: row.walletLabel,
-      updatedAt: row.updatedAt,
-    },
-    // Стейбл ли актив — решает, участвует ли депозит в неттинге против
-    // ручных записей категории «Стейблы». ETH на Fluid неттингу не подлежит.
-    isStable: isStableCoingeckoId(payload.coingeckoId),
+    id: row.id,
+    protocol: "fluid",
+    protocolLabel: PROTOCOL_LABELS.fluid,
+    chain: row.chain,
+    zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
+    zoneKey: zoneKeyOf(row),
+    ownUsd: mark?.ownUsd ?? null,
+    title: payload.fTokenSymbol,
+    subtitle: `Депозит ${payload.symbol}`,
+    quantity: row.quantity,
+    valueUsd,
+    components: [
+      { symbol: payload.symbol, quantity: quantity ?? 0, valueUsd, side: null },
+    ],
+    feesUsd: null,
+    inRange: null,
+    walletId: row.walletId,
+    walletLabel: row.walletLabel,
+    updatedAt: row.updatedAt,
   };
 }
 
-function buildGm(row: PositionRowInput, payload: GmPayload): PositionDto {
+function buildGm(
+  row: PositionRowInput,
+  payload: GmPayload,
+  mark: PositionMark | undefined,
+): PositionDto {
   const components: PositionComponentDto[] = payload.components.map((c) => ({
     symbol: c.symbol,
     quantity: c.quantity,
@@ -185,6 +212,9 @@ function buildGm(row: PositionRowInput, payload: GmPayload): PositionDto {
     protocol: "gmx_v2",
     protocolLabel: PROTOCOL_LABELS.gmx_v2,
     chain: row.chain,
+    zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
+    zoneKey: zoneKeyOf(row),
+    ownUsd: mark?.ownUsd ?? null,
     title: `GM ${payload.marketName.split(" ")[0]}`,
     subtitle: payload.marketName,
     quantity: row.quantity,
@@ -204,6 +234,7 @@ function buildLp(
   row: PositionRowInput,
   payload: UniV3Payload,
   prices: Map<string, number>,
+  mark: PositionMark | undefined,
 ): PositionDto {
   const priceOf = (t: LpToken) =>
     t.coingeckoId !== null ? (prices.get(t.coingeckoId) ?? null) : null;
@@ -236,6 +267,9 @@ function buildLp(
     protocol: "uni_v3",
     protocolLabel: PROTOCOL_LABELS.uni_v3,
     chain: row.chain,
+    zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
+    zoneKey: zoneKeyOf(row),
+    ownUsd: mark?.ownUsd ?? null,
     title: `${payload.token0.symbol}/${payload.token1.symbol} ${feeLabel(payload.fee)}`,
     subtitle: payload.inRange
       ? `Тики ${payload.tickLower}…${payload.tickUpper}`
@@ -277,27 +311,24 @@ export function buildPositions(
   input: BuildPositionsInput,
 ): BuildPositionsResult {
   const positions: PositionDto[] = [];
-  const fluidStableValues: (number | null)[] = [];
-  const otherValues: (number | null)[] = [];
+  const values: (number | null)[] = [];
 
   for (const row of input.rows) {
     if (!isProtocol(row.protocol)) continue;
     const payload = payloadOf(row.payload);
     if (payload === null) continue;
 
-    if (payload.kind === "fluid_supply") {
-      const { dto, isStable } = buildFluid(row, payload, input.pricesUsd);
-      positions.push(dto);
-      (isStable ? fluidStableValues : otherValues).push(dto.valueUsd);
-    } else if (payload.kind === "gmx_gm") {
-      const dto = buildGm(row, payload);
-      positions.push(dto);
-      otherValues.push(dto.valueUsd);
-    } else {
-      const dto = buildLp(row, payload, input.pricesUsd);
-      positions.push(dto);
-      otherValues.push(dto.valueUsd);
-    }
+    const mark = input.marksByKey?.get(zoneKeyOf(row));
+
+    const dto =
+      payload.kind === "fluid_supply"
+        ? buildFluid(row, payload, input.pricesUsd, mark)
+        : payload.kind === "gmx_gm"
+          ? buildGm(row, payload, mark)
+          : buildLp(row, payload, input.pricesUsd, mark);
+
+    positions.push(dto);
+    values.push(dto.valueUsd);
   }
 
   // Крупные позиции сверху; неоцененные — в конец, но не теряются
@@ -306,32 +337,22 @@ export function buildPositions(
       (b.valueUsd ?? -1) - (a.valueUsd ?? -1) || a.title.localeCompare(b.title),
   );
 
-  const fluidStableUsd = sumOrNull(fluidStableValues);
-  const nettedUsd =
-    fluidStableUsd === null
-      ? null
-      : Math.max(0, fluidStableUsd - input.manualStableUsd);
-
-  const otherUsd = sumOrNull(otherValues);
-  const positionsUsd =
-    nettedUsd === null || otherUsd === null ? null : nettedUsd + otherUsd;
-
-  const fluid: FluidReconciliationDto = {
-    stableUsd: fluidStableUsd,
-    manualStableUsd: input.manualStableUsd,
-    nettedUsd,
-    // Ручных записей больше, чем лежит на Fluid: либо стейблы есть где-то еще,
-    // либо запись устарела. Не ошибка, но повод перепроверить.
-    manualExceedsDeposit:
-      fluidStableUsd !== null && input.manualStableUsd > fluidStableUsd,
-  };
+  const grossUsd = sumOrNull(values);
+  // Неразмеченная позиция считается целиком заемной — решение принято
+  // осознанно: иначе до первой разметки дашборд был бы пустым. Ее видно
+  // по unmarkedCount и по пометке на карточке.
+  const ownUsd = positions.reduce((s, p) => s + (p.ownUsd ?? 0), 0);
 
   return {
     positions,
     summary: {
-      positionsUsd,
+      // Вклад в Активы = стоимость позиций минус своя доля внутри них:
+      // та уже посчитана категорией «Стейблы»
+      positionsUsd: grossUsd === null ? null : grossUsd - ownUsd,
+      grossUsd,
+      ownUsd,
       unpricedCount: positions.filter((p) => p.valueUsd === null).length,
-      fluid,
+      unmarkedCount: positions.filter((p) => p.ownUsd === null).length,
     },
   };
 }

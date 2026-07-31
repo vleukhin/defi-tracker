@@ -6,13 +6,18 @@ import type {
   PortfolioOverviewDto,
   PositionDto,
   PositionsSummaryDto,
+  StrategyZone,
+  ZonesSummaryDto,
 } from "@/lib/api/types";
 import {
   POSITION_PROTOCOLS,
   buildPositions,
   positionPriceIds,
+  zoneKeyOf,
+  type PositionMark,
   type PositionRowInput,
 } from "@/lib/positions/positions";
+import { buildZones, type ManualAtom } from "@/lib/positions/zones";
 import { computeOverview } from "./overview";
 import {
   CATEGORY_COINGECKO_IDS,
@@ -82,8 +87,10 @@ export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
   overview: PortfolioOverviewDto;
   /** Размещенные позиции (Фаза 5): Fluid, GM-пулы, LP. */
   positions: PositionDto[];
-  /** Вклад позиций в Активы и сверка Fluid с ручными записями. */
+  /** Вклад позиций в Активы и учет собственного капитала внутри них. */
   positionsSummary: PositionsSummaryDto;
+  /** Разрез по зонам стратегии Capital Growth (Фаза 6). */
+  zones: ZonesSummaryDto;
   oldestCollateralAt: string | null;
 }
 
@@ -197,7 +204,7 @@ export async function loadPortfolio(
   const { data: manualRows, error: manualError } = await scopeUser(
     supabase
       .from("manual_positions")
-      .select("id, user_id, category, label, amount"),
+      .select("id, user_id, category, label, amount, zone"),
   ).order("created_at", { ascending: true });
   if (manualError) throw new Error(`manual_positions: ${manualError.message}`);
   assertOwned((manualRows ?? []) as { user_id?: string }[], "manual_positions");
@@ -207,6 +214,13 @@ export async function loadPortfolio(
     label: r.label as string,
     amount: String(r.amount),
   }));
+  // Зона ручной записи: NULL = не размечена, выводится из категории
+  const manualZones = new Map<string, StrategyZone | null>(
+    (manualRows ?? []).map((r) => [
+      r.id as string,
+      (r.zone as StrategyZone | null) ?? null,
+    ]),
+  );
 
   // --- Сделки (Фаза 2): реплей леджера для средней цены и P/L ---
   const { data: tradeRows, error: tradesError } = await scopeUser(
@@ -299,6 +313,31 @@ export async function loadPortfolio(
     }
   }
 
+  // --- Разметка позиций (Фаза 6): зона и доля собственных средств.
+  // Живет отдельно от строк читателя и адресуется натуральным ключом —
+  // при перезаливке диапазона CLMM выдает новый tokenId ---
+  const { data: markRows, error: marksError } = await scopeUser(
+    supabase
+      .from("position_marks")
+      .select("user_id, protocol, chain, external_id, zone, own_usd"),
+  );
+  if (marksError) throw new Error(`position_marks: ${marksError.message}`);
+  assertOwned((markRows ?? []) as { user_id?: string }[], "position_marks");
+  const marksByKey = new Map<string, PositionMark>(
+    (markRows ?? []).map((r) => [
+      zoneKeyOf({
+        protocol: r.protocol as string,
+        chain: r.chain as string,
+        externalId: r.external_id as string,
+      }),
+      {
+        zone: (r.zone as StrategyZone | null) ?? null,
+        // NULL = не размечено, и это не ноль
+        ownUsd: r.own_usd === null ? null : Number(r.own_usd),
+      } satisfies PositionMark,
+    ]),
+  );
+
   // --- Цены: категории, залоговые токены и компоненты позиций ---
   const priceIds = [
     CATEGORY_COINGECKO_IDS.btc,
@@ -312,9 +351,32 @@ export async function loadPortfolio(
     nowMs: opts.nowMs,
   });
 
+  // Позиции считаются ДО портфеля: их собственные доли и образуют
+  // категорию «Стейблы» (по стратегии свои стейблы всегда лежат в позициях)
+  const pricesUsd = new Map(
+    [...prices.entries()].map(([id, p]) => [id, p.priceUsd]),
+  );
+  const positions = buildPositions({
+    rows: positionRows,
+    pricesUsd,
+    marksByKey,
+  });
+
+  // Синтетические записи категории «Стейблы» из собственных долей позиций.
+  // Префикс pos: отличает их от настоящих ручных записей — в зонах позиция
+  // уже учтена целиком, и второй раз считать ее нельзя.
+  const ownEntries: ManualInput[] = positions.positions
+    .filter((p) => (p.ownUsd ?? 0) > 0)
+    .map((p) => ({
+      id: `pos:${p.zoneKey}`,
+      category: "stable" as PortfolioCategory,
+      label: `${p.title} · ${p.protocolLabel}`,
+      amount: String(p.ownUsd),
+    }));
+
   const result = computePortfolio({
     collateral,
-    manual,
+    manual: [...manual, ...ownEntries],
     targets,
     prices,
     stablePriceUsd: STABLE_PRICE_USD,
@@ -372,19 +434,37 @@ export async function loadPortfolio(
     }
   }
 
-  // Позиции Фазы 5. Неттинг Fluid идет против ручных записей категории
-  // «Стейблы»: собственные стейблы на Fluid уже учтены ими, и без вычета
-  // они попали бы в Активы дважды.
-  const manualStableUsd = manual
-    .filter((m) => m.category === "stable")
-    .reduce((sum, m) => sum + Number(m.amount), 0);
-  const pricesUsd = new Map(
-    [...prices.entries()].map(([id, p]) => [id, p.priceUsd]),
+  // --- Зоны стратегии (Фаза 6). Считаются по атомам, поэтому сумма зон
+  // сходится с «Активами»: залог + свободные стейблы + позиции ЦЕЛИКОМ.
+  // Синтетические записи (pos:) исключаются — позиция уже учтена полностью,
+  // и второй раз ее собственная доля в зонах появиться не должна ---
+  const manualAtoms: ManualAtom[] = result.rows.flatMap((row) =>
+    row.manualEntries
+      .filter((e) => !e.id.startsWith("pos:"))
+      .map((e) => ({
+        id: e.id,
+        category: row.category,
+        label: e.label,
+        valueUsd: e.valueUsd,
+        zone: manualZones.get(e.id) ?? null,
+      })),
   );
-  const positions = buildPositions({
-    rows: positionRows,
-    pricesUsd,
-    manualStableUsd,
+  const zones = buildZones({
+    collateral: result.rows.flatMap((row) =>
+      row.collateralDetail.map((c) => ({
+        category: row.category,
+        valueUsd: c.valueUsd,
+      })),
+    ),
+    manual: manualAtoms,
+    positions: positions.positions.map((p) => ({
+      id: p.id,
+      protocol: p.protocol,
+      title: p.title,
+      valueUsd: p.valueUsd,
+      zone: p.zone,
+      ownUsd: p.ownUsd,
+    })),
   });
 
   const overview = computeOverview({
@@ -404,6 +484,7 @@ export async function loadPortfolio(
     overview,
     positions: positions.positions,
     positionsSummary: positions.summary,
+    zones,
     oldestCollateralAt,
   };
 }

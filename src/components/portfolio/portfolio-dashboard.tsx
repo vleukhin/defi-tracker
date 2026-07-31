@@ -32,6 +32,8 @@ import { ValueSparkline } from "./value-sparkline";
 
 /**
  * Дашборд портфеля — «30-секундная проверка» (S1.7).
+ * Заголовок экрана рисует PortfolioTabs: рядом живет вкладка «Зоны»
+ * (Фаза 6) — тот же портфель в разрезе стратегии, а не другой набор данных.
  * Stale-while-revalidate: GET /api/portfolio (только кэш) рисуется сразу,
  * POST /api/refresh уходит фоном; экран «только спиннер» запрещен.
  * Автообновление раз в 15 минут; отказ сети — неблокирующий баннер.
@@ -108,7 +110,6 @@ export function PortfolioDashboard() {
   if (loading && !data) {
     return (
       <div className="space-y-5">
-        <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
         <div className="space-y-2">
           <Skeleton className="h-9 w-44" />
           <Skeleton className="h-4 w-64" />
@@ -127,7 +128,6 @@ export function PortfolioDashboard() {
   if (error && !data) {
     return (
       <div className="space-y-5">
-        <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
         <Alert variant="destructive">
           <CircleAlert className="size-4" />
           <AlertTitle>Не удалось загрузить портфель: {error}</AlertTitle>
@@ -167,7 +167,6 @@ export function PortfolioDashboard() {
       {/* Шапка: итог — самый крупный элемент экрана, тезис страницы (§5.1.1) */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
           {/* Связка пяти чисел (S4.2) + постоянный HF-бейдж (S4.3) */}
           <div className="mt-2">
             <OverviewStrip
@@ -316,7 +315,6 @@ export function PortfolioDashboard() {
 function EmptyState() {
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Портфель</h1>
       <Card className="p-6 text-center">
         <div className="mb-3 flex justify-center">
           <LogoMark size="lg" className="opacity-60" />

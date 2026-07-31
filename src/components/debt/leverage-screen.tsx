@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
  *
  * Три блока:
  *  1. Сводка — сколько размещено и как привязанные позиции соотносятся с долгом;
- *  2. Сверка Fluid — почему в Активы вошла не вся сумма депозита;
+ *  2. Собственные средства — почему в Активы вошла не вся стоимость позиций;
  *  3. Позиции и займы со связками.
  *
  * Привязка — бухгалтерская метка: ни на портфель, ни на пять чисел она
@@ -192,8 +192,8 @@ export function LeverageScreen() {
 
       <SummaryCard summary={summary} />
 
-      {summary.fluid.stableUsd !== null && summary.fluid.stableUsd > 0 && (
-        <FluidCard fluid={summary.fluid} />
+      {(summary.ownUsd !== 0 || summary.grossUsd !== null) && (
+        <OwnCapitalCard summary={summary} />
       )}
 
       {positions.length === 0 ? (
@@ -308,48 +308,50 @@ function SummaryCard({ summary }: { summary: LeverageResponseDto["summary"] }) {
 }
 
 /**
- * Сверка Fluid: почему в Активы вошла не вся сумма депозита.
- * Без этого объяснения два числа выглядели бы ошибкой.
+ * Почему в «Активы» вошла не вся стоимость позиций.
+ *
+ * Собственные средства внутри позиций уже посчитаны ручными записями
+ * портфеля, поэтому вычитаются — иначе своя часть попадает в Активы дважды.
+ * До Фазы 6 вычиталось только из Fluid, и это ломалось, как только свои
+ * деньги переезжали в другой протокол.
  */
-function FluidCard({
-  fluid,
+function OwnCapitalCard({
+  summary,
 }: {
-  fluid: LeverageResponseDto["summary"]["fluid"];
+  summary: LeverageResponseDto["summary"];
 }) {
   return (
     <Card className="p-4">
-      <h2 className="text-sm font-semibold">Сверка Fluid</h2>
+      <h2 className="text-sm font-semibold">Собственные средства в позициях</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Собственные и заемные стейблы на блокчейне неразличимы. Собственные уже
-        учтены ручными записями категории «Стейблы», поэтому в «Активы»
-        добавляется только разница.
+        Своя доля уже посчитана категорией «Стейблы», поэтому в «Активы»
+        позиции входят за ее вычетом — иначе те же деньги вошли бы дважды.
       </p>
       <dl className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 font-mono text-sm">
-        <dt className="sr-only">На Fluid</dt>
-        <dd>{tableUsd(fluid.stableUsd ?? 0)}</dd>
+        <dt className="sr-only">Стоимость позиций</dt>
+        <dd>{summary.grossUsd === null ? "—" : tableUsd(summary.grossUsd)}</dd>
         <span aria-hidden="true" className="text-muted-foreground">
           −
         </span>
-        <dt className="sr-only">Ручные записи</dt>
-        <dd>{tableUsd(fluid.manualStableUsd)}</dd>
+        <dt className="sr-only">Своих внутри</dt>
+        <dd>{tableUsd(summary.ownUsd)}</dd>
         <span aria-hidden="true" className="text-muted-foreground">
           =
         </span>
-        <dt className="sr-only">Заемная часть</dt>
+        <dt className="sr-only">Вклад в Активы</dt>
         <dd className="font-semibold">
-          {fluid.nettedUsd === null ? "—" : tableUsd(fluid.nettedUsd)}
+          {summary.positionsUsd === null ? "—" : tableUsd(summary.positionsUsd)}
         </dd>
         <span className="font-sans text-xs text-muted-foreground">
-          на{NBSP}Fluid − вручную = заемная{NBSP}часть
+          позиции − свои{NBSP}внутри = вклад{NBSP}в{NBSP}Активы
         </span>
       </dl>
-
-      {fluid.manualExceedsDeposit && (
-        <p className="mt-2 text-xs text-warning">
-          Ручных записей больше, чем лежит на Fluid. Это не ошибка, если часть
-          стейблов хранится в другом месте, — иначе стоит поправить записи.
-        </p>
-      )}
+      <p className="mt-2 text-xs text-muted-foreground">
+        Своя доля указывается у каждой позиции на экране «Зоны» — из этих
+        сумм складывается категория «Стейблы».
+        {summary.unmarkedCount > 0 &&
+          ` Без разметки: ${summary.unmarkedCount} — считаются целиком заемными.`}
+      </p>
     </Card>
   );
 }

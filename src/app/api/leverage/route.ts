@@ -7,11 +7,13 @@ import {
   POSITION_PROTOCOLS,
   buildPositions,
   positionPriceIds,
+  zoneKeyOf,
+  type PositionMark,
   type PositionRowInput,
 } from "@/lib/positions/positions";
 import { buildLeverage, type BorrowInput } from "@/lib/positions/leverage";
 import { getCoinPrices } from "@/lib/prices/coins";
-import type { LeverageResponseDto } from "@/lib/api/types";
+import type { LeverageResponseDto, StrategyZone } from "@/lib/api/types";
 
 /**
  * GET /api/leverage — вкладка «Левередж» экрана «Долг» (Фаза 5).
@@ -37,16 +39,23 @@ export async function GET() {
     );
     const walletIds = [...walletById.keys()];
 
-    // Ручные записи «Стейблов» — база неттинга Fluid: собственные стейблы
-    // на Fluid уже учтены ими, иначе они попали бы в Активы дважды
-    const { data: manualRows, error: manualError } = await supabase
-      .from("manual_positions")
-      .select("category, amount")
-      .eq("category", "stable");
-    if (manualError) return apiError(500, manualError.message);
-    const manualStableUsd = (manualRows ?? []).reduce(
-      (sum, r) => sum + Number(r.amount),
-      0,
+    // Разметка живет отдельно от строк читателя: тот их пересоздает
+    const { data: markRows, error: marksError } = await supabase
+      .from("position_marks")
+      .select("protocol, chain, external_id, zone, own_usd");
+    if (marksError) return apiError(500, marksError.message);
+    const marksByKey = new Map<string, PositionMark>(
+      (markRows ?? []).map((r) => [
+        zoneKeyOf({
+          protocol: r.protocol as string,
+          chain: r.chain as string,
+          externalId: r.external_id as string,
+        }),
+        {
+          zone: (r.zone as StrategyZone | null) ?? null,
+          ownUsd: r.own_usd === null ? null : Number(r.own_usd),
+        } satisfies PositionMark,
+      ]),
     );
 
     const positionRows: PositionRowInput[] = [];
@@ -134,7 +143,7 @@ export async function GET() {
     const { positions, summary } = buildPositions({
       rows: positionRows,
       pricesUsd,
-      manualStableUsd,
+      marksByKey,
     });
 
     const { data: linkRows, error: linksError } = await supabase

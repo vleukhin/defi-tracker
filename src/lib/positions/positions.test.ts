@@ -4,9 +4,9 @@ import { buildPositions, positionPriceIds, type PositionRowInput } from "./posit
 /**
  * Сборка размещенных позиций (Фаза 5).
  *
- * Главное, что здесь проверяется, — неттинг Fluid. Собственные стейблы на
- * Fluid уже учтены ручной записью портфеля; если добавить депозит целиком,
- * своя часть попадет в Активы дважды и Прибыль окажется завышенной.
+ * Главное, что здесь проверяется, — учет собственной доли. Она указывается
+ * у позиции и образует категорию «Стейблы»; раз так, стоимость позиций
+ * входит в Активы за ее вычетом, иначе те же деньги посчитались бы дважды.
  */
 
 const BASE = {
@@ -99,64 +99,98 @@ const PRICES = new Map<string, number>([
   ["ethereum", 1900],
 ]);
 
-describe("неттинг Fluid против ручных записей", () => {
-  it("в Активы попадает только разница — заемная часть", () => {
+const marks = (key: string, ownUsd: number | null, zone: "growth" | "yield" | "stability" | null = null) =>
+  new Map([[key, { zone, ownUsd }]]);
+
+describe("собственная доля указывается у позиции", () => {
+  it("вклад в Активы = стоимость позиций минус свои внутри них", () => {
     const r = buildPositions({
       rows: [fluidRow("a", "100000", "usd-coin")],
       pricesUsd: PRICES,
-      manualStableUsd: 70_000,
+      marksByKey: marks("fluid:arbitrum:0xa", 70_000),
     });
-    expect(r.summary.fluid.stableUsd).toBe(100_000);
-    expect(r.summary.fluid.manualStableUsd).toBe(70_000);
-    expect(r.summary.fluid.nettedUsd).toBe(30_000);
+    expect(r.summary.grossUsd).toBe(100_000);
+    expect(r.summary.ownUsd).toBe(70_000);
     expect(r.summary.positionsUsd).toBe(30_000);
-    // Сама позиция при этом показывается целиком — пользователь видит факт
+    // Сама позиция показывается целиком — пользователь видит факт
     expect(r.positions[0].valueUsd).toBe(100_000);
+    expect(r.positions[0].ownUsd).toBe(70_000);
   });
 
-  it("без ручных записей депозит входит целиком", () => {
+  it("вычет не привязан к протоколу: свои в LP учитываются так же", () => {
+    // Ровно случай, на котором сломалась Фаза 5: свои уехали с Fluid в CLMM
+    const r = buildPositions({
+      rows: [lpRow("42")],
+      pricesUsd: PRICES,
+      marksByKey: marks("uni_v3:arbitrum:42", 1_000),
+    });
+    expect(r.summary.grossUsd).toBe(4800);
+    expect(r.summary.positionsUsd).toBe(3800);
+  });
+
+  it("доли складываются по всем позициям", () => {
+    const r = buildPositions({
+      rows: [fluidRow("a", "50000", "usd-coin"), lpRow("42")],
+      pricesUsd: PRICES,
+      marksByKey: new Map([
+        ["fluid:arbitrum:0xa", { zone: null, ownUsd: 20_000 }],
+        ["uni_v3:arbitrum:42", { zone: null, ownUsd: 1_000 }],
+      ]),
+    });
+    expect(r.summary.ownUsd).toBe(21_000);
+    expect(r.summary.positionsUsd).toBe(50_000 + 4800 - 21_000);
+  });
+});
+
+describe("неразмеченная позиция", () => {
+  it("считается целиком заемной, но помечается", () => {
+    // Иначе до первой разметки дашборд был бы пустым; забытую после
+    // перезаливки CLMM позицию видно по счетчику
     const r = buildPositions({
       rows: [fluidRow("a", "50000", "usd-coin")],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
+    expect(r.positions[0].ownUsd).toBeNull();
+    expect(r.summary.ownUsd).toBe(0);
+    expect(r.summary.unmarkedCount).toBe(1);
     expect(r.summary.positionsUsd).toBe(50_000);
   });
 
-  it("ручных записей больше, чем на Fluid: вклад ноль, поднят флаг сверки", () => {
-    // Отрицательный вклад означал бы, что часть портфеля «не существует»
+  it("ноль своих — это утверждение, а не отсутствие разметки", () => {
     const r = buildPositions({
-      rows: [fluidRow("a", "40000", "usd-coin")],
+      rows: [fluidRow("a", "50000", "usd-coin")],
       pricesUsd: PRICES,
-      manualStableUsd: 60_000,
+      marksByKey: marks("fluid:arbitrum:0xa", 0),
     });
-    expect(r.summary.fluid.nettedUsd).toBe(0);
-    expect(r.summary.positionsUsd).toBe(0);
-    expect(r.summary.fluid.manualExceedsDeposit).toBe(true);
+    expect(r.positions[0].ownUsd).toBe(0);
+    expect(r.summary.unmarkedCount).toBe(0);
+  });
+});
+
+describe("разметка зон", () => {
+  it("по умолчанию позиция попадает в Yield", () => {
+    const r = buildPositions({ rows: [gmRow("g", 100)], pricesUsd: PRICES });
+    expect(r.positions[0].zone).toBe("yield");
   });
 
-  it("нестейблы на Fluid неттингу не подлежат", () => {
-    // ETH на Fluid ручными записями «Стейблов» не покрыт
+  it("разметка применяется по натуральному ключу, а не по id строки", () => {
+    const row = fluidRow("a", "1000", "usd-coin");
     const r = buildPositions({
-      rows: [fluidRow("a", "10", "ethereum", "WETH")],
+      rows: [row],
       pricesUsd: PRICES,
-      manualStableUsd: 70_000,
+      marksByKey: marks("fluid:arbitrum:0xa", null, "stability"),
     });
-    expect(r.summary.fluid.stableUsd).toBe(0);
-    expect(r.summary.positionsUsd).toBe(19_000);
+    expect(r.positions[0].zone).toBe("stability");
+    expect(r.positions[0].zoneKey).toBe("fluid:arbitrum:0xa");
   });
 
-  it("неттинг применяется к сумме депозитов по всем сетям", () => {
-    const r = buildPositions({
-      rows: [
-        fluidRow("a", "60000", "usd-coin"),
-        { ...fluidRow("b", "40000", "tether", "USDT"), chain: "base" },
-      ],
-      pricesUsd: new Map([...PRICES, ["tether", 1]]),
-      manualStableUsd: 70_000,
+  it("ключ переживает пересоздание строки: id другой, ключ тот же", () => {
+    const first = buildPositions({ rows: [gmRow("g", 100)], pricesUsd: PRICES });
+    const again = buildPositions({
+      rows: [{ ...gmRow("g", 100), id: "совсем-другой-id" }],
+      pricesUsd: PRICES,
     });
-    expect(r.summary.fluid.stableUsd).toBe(100_000);
-    expect(r.summary.positionsUsd).toBe(30_000);
+    expect(again.positions[0].zoneKey).toBe(first.positions[0].zoneKey);
   });
 });
 
@@ -166,7 +200,6 @@ describe("оценка позиций", () => {
     const r = buildPositions({
       rows: [gmRow("g", 1550)],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.positions[0].valueUsd).toBe(1550);
     expect(r.summary.positionsUsd).toBe(1550);
@@ -176,7 +209,6 @@ describe("оценка позиций", () => {
     const r = buildPositions({
       rows: [lpRow("42")],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     // 2 WETH * 1900 + 1000 USDC * 1
     expect(r.positions[0].valueUsd).toBe(4800);
@@ -188,7 +220,6 @@ describe("оценка позиций", () => {
     const r = buildPositions({
       rows: [lpRow("42", { inRange: false })],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.positions[0].inRange).toBe(false);
     expect(r.positions[0].subtitle).toContain("Вне диапазона");
@@ -198,7 +229,6 @@ describe("оценка позиций", () => {
     const r = buildPositions({
       rows: [lpRow("42", { fees: null })],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.positions[0].feesUsd).toBeNull();
     // На стоимость самой позиции это не влияет
@@ -212,7 +242,6 @@ describe("null-пропагация", () => {
     const r = buildPositions({
       rows: [gmRow("g", null), fluidRow("a", "1000", "usd-coin")],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.summary.positionsUsd).toBeNull();
     expect(r.summary.unpricedCount).toBe(1);
@@ -222,7 +251,6 @@ describe("null-пропагация", () => {
     const r = buildPositions({
       rows: [lpRow("42", { price1: null })],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.positions[0].valueUsd).toBeNull();
     expect(r.positions[0].components[1].quantity).toBe(1000);
@@ -233,7 +261,6 @@ describe("null-пропагация", () => {
     const r = buildPositions({
       rows: [],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.summary.positionsUsd).toBe(0);
     expect(r.positions).toHaveLength(0);
@@ -243,7 +270,6 @@ describe("null-пропагация", () => {
     const r = buildPositions({
       rows: [fluidRow("a", "1000", null)],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     // coingecko id нет -> цены нет -> стоимость неизвестна
     expect(r.positions[0].valueUsd).toBeNull();
@@ -259,7 +285,6 @@ describe("прочее", () => {
         { ...BASE, id: "y", protocol: "fluid", quantity: "1", valueUsd: 1, payload: null },
       ],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.positions).toHaveLength(0);
   });
@@ -268,7 +293,6 @@ describe("прочее", () => {
     const r = buildPositions({
       rows: [gmRow("g1", 100), gmRow("g2", null), gmRow("g3", 5000)],
       pricesUsd: PRICES,
-      manualStableUsd: 0,
     });
     expect(r.positions.map((p) => p.valueUsd)).toEqual([5000, 100, null]);
   });
