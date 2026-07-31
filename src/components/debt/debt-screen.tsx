@@ -109,6 +109,10 @@ export function DebtScreen() {
   if (!data) return null;
 
   const { summary, chains } = data;
+  // На экране про долг сети без долга — шум: залог по ним виден на дашборде,
+  // а строка «занято $0 · HF ∞» ничего не сообщает. Показываем только те,
+  // где действительно есть заем.
+  const chainsWithDebt = chains.filter((c) => (c.totalDebtUsd ?? 0) > 0);
   const status = summary.totalDebtUsd === null
     ? null
     : hfStatus(summary.minHealthFactor, summary.hfWarningThreshold);
@@ -245,7 +249,7 @@ export function DebtScreen() {
         </Card>
       )}
 
-      {chains.map((chain) => (
+      {chainsWithDebt.map((chain) => (
         <ChainCard
           key={chain.chain}
           chain={chain}
