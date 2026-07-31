@@ -112,6 +112,8 @@ export interface PositionMark {
   ownPrincipalUsd: number | null;
   /** Вложено заемных; null = не размечено. */
   borrowedPrincipalUsd: number | null;
+  /** Выведено из позиции по стоимости на момент вывода; null = ноль. */
+  withdrawnUsd: number | null;
 }
 
 /**
@@ -120,6 +122,13 @@ export interface PositionMark {
  * Вычитанием «стоимость − свое» обойтись нельзя: остаток бывает и заемной
  * частью, и начисленными процентами, и убытком пула. На депозите Fluid
  * такой остаток целиком был доходом, а показывался как долг.
+ *
+ * Доход считается денежно-взвешенно, с учетом выводов:
+ *
+ *   доход = стоимость + выведено − вложено
+ *
+ * Иначе продажа части GM с переводом BTC/ETH в залог выглядела бы убытком,
+ * хотя капитал не потерян, а переехал в Growth Zone.
  *
  * Доход относится на свое и заемное ПРОПОРЦИОНАЛЬНО вложенному — капитал
  * в позиции работает одинаково, чей бы он ни был.
@@ -130,19 +139,25 @@ export function splitPosition(
 ): {
   ownPrincipalUsd: number | null;
   borrowedPrincipalUsd: number | null;
+  withdrawnUsd: number | null;
   ownCurrentUsd: number | null;
   profitUsd: number | null;
   profitPct: number | null;
 } {
   const own = mark?.ownPrincipalUsd ?? null;
   const borrowed = mark?.borrowedPrincipalUsd ?? null;
+  const withdrawn = mark?.withdrawnUsd ?? null;
 
   // Вложенное известно только когда размечены ОБЕ части: иначе непонятно,
   // доход перед нами или незаявленная заемная доля
   const principal = own !== null && borrowed !== null ? own + borrowed : null;
 
+  // Отсутствие выводов — обычное состояние, поэтому null здесь равен нулю
+  // (в отличие от вложенного, где null означает «не сказали»)
   const profitUsd =
-    valueUsd !== null && principal !== null ? valueUsd - principal : null;
+    valueUsd !== null && principal !== null
+      ? valueUsd + (withdrawn ?? 0) - principal
+      : null;
   const profitPct =
     profitUsd !== null && principal !== null && principal > 0
       ? (profitUsd / principal) * 100
@@ -162,6 +177,7 @@ export function splitPosition(
   return {
     ownPrincipalUsd: own,
     borrowedPrincipalUsd: borrowed,
+    withdrawnUsd: withdrawn,
     ownCurrentUsd,
     profitUsd,
     profitPct,

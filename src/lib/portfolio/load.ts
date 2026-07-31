@@ -319,7 +319,7 @@ export async function loadPortfolio(
   const { data: markRows, error: marksError } = await scopeUser(
     supabase
       .from("position_marks")
-      .select("user_id, protocol, chain, external_id, zone, own_principal_usd, borrowed_principal_usd"),
+      .select("user_id, protocol, chain, external_id, zone, own_principal_usd, borrowed_principal_usd, withdrawn_usd"),
   );
   if (marksError) throw new Error(`position_marks: ${marksError.message}`);
   assertOwned((markRows ?? []) as { user_id?: string }[], "position_marks");
@@ -339,6 +339,7 @@ export async function loadPortfolio(
           r.borrowed_principal_usd === null
             ? null
             : Number(r.borrowed_principal_usd),
+        withdrawnUsd: r.withdrawn_usd === null ? null : Number(r.withdrawn_usd),
       } satisfies PositionMark,
     ]),
   );

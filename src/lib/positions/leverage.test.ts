@@ -19,6 +19,7 @@ function position(id: string, valueUsd: number | null): PositionDto {
     zoneKey: `gmx_v2:arbitrum:${id}`,
     ownPrincipalUsd: null,
     borrowedPrincipalUsd: null,
+    withdrawnUsd: null,
     ownCurrentUsd: 0,
     profitUsd: null,
     profitPct: null,

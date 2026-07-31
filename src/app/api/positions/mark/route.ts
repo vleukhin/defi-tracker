@@ -31,13 +31,15 @@ const bodySchema = z
     zone: z.enum(ZONES).nullish(),
     ownPrincipalUsd: z.number().min(0).nullish(),
     borrowedPrincipalUsd: z.number().min(0).nullish(),
+    withdrawnUsd: z.number().min(0).nullish(),
   })
   // Пустая правка бессмысленна: хотя бы одно поле должно быть задано
   .refine(
     (v) =>
       v.zone !== undefined ||
       v.ownPrincipalUsd !== undefined ||
-      v.borrowedPrincipalUsd !== undefined,
+      v.borrowedPrincipalUsd !== undefined ||
+      v.withdrawnUsd !== undefined,
     { message: "Нужно задать зону или вложенные суммы" },
   );
 
@@ -59,14 +61,21 @@ export async function PUT(request: NextRequest) {
       parsed.error.issues[0]?.message ?? "Неверные данные разметки",
     );
   }
-  const { protocol, chain, externalId, zone, ownPrincipalUsd, borrowedPrincipalUsd } =
-    parsed.data;
+  const {
+    protocol,
+    chain,
+    externalId,
+    zone,
+    ownPrincipalUsd,
+    borrowedPrincipalUsd,
+    withdrawnUsd,
+  } = parsed.data;
 
   // Читаем текущую строку: PUT правит только переданные поля и не затирает
   // соседнее — зону и долю пользователь задает по отдельности
   const { data: existing, error: readError } = await supabase
     .from("position_marks")
-    .select("zone, own_principal_usd, borrowed_principal_usd")
+    .select("zone, own_principal_usd, borrowed_principal_usd, withdrawn_usd")
     .eq("protocol", protocol)
     .eq("chain", chain)
     .eq("external_id", externalId)
@@ -88,6 +97,10 @@ export async function PUT(request: NextRequest) {
         borrowedPrincipalUsd === undefined
           ? ((existing?.borrowed_principal_usd as number | null) ?? null)
           : borrowedPrincipalUsd,
+      withdrawn_usd:
+        withdrawnUsd === undefined
+          ? ((existing?.withdrawn_usd as number | null) ?? null)
+          : withdrawnUsd,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id,protocol,chain,external_id" },

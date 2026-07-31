@@ -66,6 +66,7 @@ interface MarkPatch {
   zone?: StrategyZone;
   ownPrincipalUsd?: number | null;
   borrowedPrincipalUsd?: number | null;
+  withdrawnUsd?: number | null;
 }
 
 interface ZonesResponse {
@@ -199,10 +200,12 @@ export function ZonesScreen() {
         <Card className="p-4">
           <h2 className="text-sm font-semibold">Разметка позиций</h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Укажите, сколько в позицию вложено своих и сколько заемных.
-            Доход считается как «стоимость − вложено» и делится между ними
-            пропорционально. Из текущих собственных долей складывается
-            категория «Стейблы» — вводить ее отдельно не нужно.
+            Укажите, сколько в позицию вложено своих и сколько заемных, а в
+            «Выведено» — стоимость того, что из нее забрали. Доход считается
+            как «стоимость + выведено − вложено»: иначе продажа части GM
+            с переводом BTC/ETH в залог выглядела бы убытком, хотя капитал
+            просто переехал в Growth. Из текущих собственных долей
+            складывается категория «Стейблы».
           </p>
           <ul className="mt-3 divide-y divide-border">
             {positions.map((p) => (
@@ -358,6 +361,14 @@ function PositionRow({
           busy={busy}
           onSave={(v) => onMark(position, { borrowedPrincipalUsd: v })}
         />
+        <PrincipalInput
+          id={`out-${position.id}`}
+          label="Выведено, $"
+          value={position.withdrawnUsd}
+          busy={busy}
+          onSave={(v) => onMark(position, { withdrawnUsd: v })}
+          hint="Стоимость того, что забрали из позиции: BTC/ETH с продажи GM, ушедшие в залог"
+        />
 
         {/* Доход = стоимость − вложено. Пока размечена лишь часть, показать
             его нельзя: остаток мог бы оказаться незаявленной заемной долей */}
@@ -404,12 +415,14 @@ function PrincipalInput({
   value,
   busy,
   onSave,
+  hint,
 }: {
   id: string;
   label: string;
   value: number | null;
   busy: boolean;
   onSave: (value: number | null) => void;
+  hint?: string;
 }) {
   const saved = value === null ? "" : String(value);
   const [draft, setDraft] = useState(saved);
@@ -431,7 +444,7 @@ function PrincipalInput({
 
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className={LABEL}>
+      <label htmlFor={id} className={LABEL} title={hint}>
         {label}
       </label>
       <div className="flex items-center gap-1">

@@ -103,8 +103,12 @@ const marks = (
   key: string,
   ownPrincipalUsd: number | null,
   borrowedPrincipalUsd: number | null = null,
+  withdrawnUsd: number | null = null,
   zone: "growth" | "yield" | "stability" | null = null,
-) => new Map([[key, { zone, ownPrincipalUsd, borrowedPrincipalUsd }]]);
+) =>
+  new Map([
+    [key, { zone, ownPrincipalUsd, borrowedPrincipalUsd, withdrawnUsd }],
+  ]);
 
 describe("вложенное указывается двумя числами", () => {
   it("своя доля растет вместе со стоимостью позиции", () => {
@@ -156,6 +160,42 @@ describe("вложенное указывается двумя числами", 
     expect(r.summary.ownUsd).toBe(25_243);
     expect(r.summary.positionsUsd).toBe(0);
     expect(r.summary.profitUsd).toBe(295);
+  });
+});
+
+describe("выводы из позиции", () => {
+  it("продажа части GM с переводом BTC/ETH в залог — не убыток", () => {
+    // Вложено 20 800 заемных, выведено 12 000 (ушли в Growth как BTC/ETH),
+    // осталось на 8 046. Без учета вывода это выглядело бы минусом 12 754
+    const r = buildPositions({
+      rows: [gmRow("g", 8_046)],
+      pricesUsd: PRICES,
+      marksByKey: marks("gmx_v2:arbitrum:0xg", 0, 20_800, 12_000),
+    });
+    const p = r.positions[0];
+    expect(p.profitUsd).toBeCloseTo(8_046 + 12_000 - 20_800, 6);
+    expect(p.withdrawnUsd).toBe(12_000);
+  });
+
+  it("без выводов формула прежняя", () => {
+    const r = buildPositions({
+      rows: [gmRow("g", 22_000)],
+      pricesUsd: PRICES,
+      marksByKey: marks("gmx_v2:arbitrum:0xg", 0, 20_800),
+    });
+    expect(r.positions[0].profitUsd).toBe(1_200);
+    expect(r.positions[0].withdrawnUsd).toBeNull();
+  });
+
+  it("вывод не меняет текущую собственную долю", () => {
+    // Доля считается от стоимости по пропорции вложенного
+    const r = buildPositions({
+      rows: [gmRow("g", 10_000)],
+      pricesUsd: PRICES,
+      marksByKey: marks("gmx_v2:arbitrum:0xg", 5_000, 5_000, 8_000),
+    });
+    expect(r.positions[0].ownCurrentUsd).toBe(5_000);
+    expect(r.positions[0].profitUsd).toBe(8_000);
   });
 });
 
@@ -217,7 +257,7 @@ describe("разметка зон", () => {
     const r = buildPositions({
       rows: [row],
       pricesUsd: PRICES,
-      marksByKey: marks("fluid:arbitrum:0xa", null, null, "stability"),
+      marksByKey: marks("fluid:arbitrum:0xa", null, null, null, "stability"),
     });
     expect(r.positions[0].zone).toBe("stability");
     expect(r.positions[0].zoneKey).toBe("fluid:arbitrum:0xa");
