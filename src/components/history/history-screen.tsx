@@ -19,6 +19,7 @@ import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { CompositionChart } from "./composition-chart";
 import { PeriodSwitcher, periodFull } from "./period-switcher";
+import { QuantityCharts } from "./quantity-charts";
 import { SnapshotsList } from "./snapshots-list";
 import { ValueChart } from "./value-chart";
 
@@ -133,8 +134,14 @@ export function HistoryScreen() {
         <ValueChart snapshots={snapshots} periodLabel={periodFull(period)} />
       )}
 
+      {/* Порядок: стоимость → количество → пропорции → список. Две
+          динамики (доллары и монеты) идут первыми, пропорции — контекст */}
       {data !== null && snapshots.length >= 1 && (
         <>
+          <QuantityCharts
+            snapshots={snapshots}
+            periodLabel={periodFull(period)}
+          />
           <CompositionChart
             snapshots={snapshots}
             periodLabel={periodFull(period)}
