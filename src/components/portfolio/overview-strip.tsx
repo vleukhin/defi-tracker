@@ -16,7 +16,15 @@ import { cn } from "@/lib/utils";
  * остальные четыре — компактной группой рядом + постоянный HF-бейдж (S4.3).
  * null (долг ни разу не прочитан) рисуется «—» с подсказкой — не нулем.
  * На 375px группа сворачивается в сетку 2×2 без горизонтального скролла.
+ *
+ * Фаза 5: Активы = портфель + размещенные позиции, поэтому под главным числом
+ * идет расшифровка. Итог таблицы портфеля ниже по странице — это по-прежнему
+ * ТОЛЬКО портфель (три категории ведутся по собственным средствам), и без
+ * расшифровки два числа выглядели бы противоречащими друг другу.
  */
+
+const ASSETS_UNKNOWN_HINT =
+  "Стоимость части размещенных позиций неизвестна — сумма не выводится";
 
 export function OverviewStrip({
   overview,
@@ -31,9 +39,25 @@ export function OverviewStrip({
         <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
           Активы
         </p>
-        <p className="mt-1 font-mono text-3xl leading-none font-semibold tracking-tight sm:text-4xl">
-          {tableUsd(overview.assetsUsd)}
+        <p
+          className={cn(
+            "mt-1 font-mono text-3xl leading-none font-semibold tracking-tight sm:text-4xl",
+            overview.assetsUsd === null && "text-muted-foreground",
+          )}
+          title={overview.assetsUsd === null ? ASSETS_UNKNOWN_HINT : undefined}
+        >
+          {overview.assetsUsd === null ? "—" : tableUsd(overview.assetsUsd)}
         </p>
+        {/* Расшифровка появляется только когда есть что расшифровывать:
+            без позиций Активы равны портфелю, и строка была бы шумом */}
+        {overview.positionsUsd !== null && overview.positionsUsd !== 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            портфель{" "}
+            <span className="font-mono">{tableUsd(overview.portfolioUsd)}</span>
+            {" · размещено "}
+            <span className="font-mono">{tableUsd(overview.positionsUsd)}</span>
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-end gap-x-6 gap-y-2">

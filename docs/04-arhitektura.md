@@ -26,7 +26,7 @@
 | dRPC / publicnode | Публичные fallback-RPC | только фолбэк | $0 |
 | Zerion API (discovery) | Free Developer: 2 000 req/день, 3 RPS | ~50–100 req/день | $0 |
 | CoinGecko | Demo: 10 000 вызовов/мес, ~30/мин (закладываться на 30, не на заявленные 100) | ~3 000 вызовов/мес | $0 |
-| GMX prices API (gmxinfra.io) | Публичный | ~50 вызовов/день | $0 |
+| GMX prices API (gmxinfra.io) | Публичный, без ключа | 3 вызова на обновление, кэш 5 мин | $0 |
 | Vercel | Hobby | 1 проект, дневной cron | $0 |
 | Supabase | Free | < 100 МБ | $0 |
 | **Итого** | | | **$0** (бюджет $50 — запас) |
@@ -51,14 +51,26 @@
 - `UiPoolDataProvider.getUserReservesData(poolAddressesProvider, user)` → по-активные aToken/долговые балансы.
 - Адреса деплоев по сетям — из `@bgd-labs/aave-address-book` (пулы различаются между сетями).
 
-### 3.4. GMX v2 (Фаза 5, Arbitrum)
-- GM-балансы — обычные ERC-20 (multicall).
-- Цена GM-токена: REST `https://arbitrum-api.gmxinfra.io/prices/tickers` и `/markets/info` (подписанные оракульные цены, бесплатно). Ончейн-альтернатива — Reader `getMarketTokenPrice(...)`, требует оракульные цены на вход. Цены GMX — фикс-поинт **1e30**.
-- Декомпозиция на long/short-компоненты — по весам пула из `/markets/info`.
+### 3.4. GMX v2 (Фаза 5, Arbitrum) — реализовано
+- GM-балансы — обычные ERC-20 (один multicall по списку рынков из `/markets/info`).
+- Оракульные цены базовых токенов: REST `https://arbitrum-api.gmxinfra.io/prices/tickers`, справочник decimals — `/tokens`, список рынков — `/markets/info` (все бесплатно).
+- **Масштаб цен — `raw / 10^(30 − decimals токена)`, а не `1e30`.** Проверено: ETH (18 знаков) `1885767504879115` → $1885,77; USDC (6 знаков) `999757390000000000000000` → $0,99976. Деление на `1e30` без учета decimals ошибается на порядки.
+- Стоимость позиции — ончейн `Reader.getMarketTokenPrice`, а не сумма компонентов: в стоимость пула входит незакрытый PnL трейдеров, контрагентом которых выступает держатель GM. Возвращаемая цена GM — фикс-поинт `1e30`, сам GM-токен 18 знаков.
+- Адреса (Arbitrum, из `gmx-io/gmx-synthetics/deployments`): Reader `0x470fbC46bcC0f16532691Df360A07d8Bf5ee0789`, DataStore `0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8`.
+- `pnlFactorType` = `keccak256(abi.encode("MAX_PNL_FACTOR_FOR_TRADERS"))` — именно `abi.encode`, не `encodePacked`.
+- Декомпозиция на long/short — по `longTokenAmount`/`shortTokenAmount` из того же вызова, пропорционально доле в `totalSupply`.
 
-### 3.5. Uniswap v3 (Фаза 5)
-- Перечисление позиций: `NonfungiblePositionManager.balanceOf` + `tokenOfOwnerByIndex` + `positions(tokenId)`. Адрес NPM на Base отличается от остальных сетей — адреса задаются per-chain конфигом.
-- Количества токенов из `slot0().sqrtPriceX96` + tick math (`@uniswap/v3-sdk`); несобранные комиссии — static call `collect`.
+### 3.5. Uniswap v3 (Фаза 5) — реализовано
+- Перечисление позиций: `NonfungiblePositionManager.balanceOf` + `tokenOfOwnerByIndex` + `positions(tokenId)`, затем `factory.getPool` и `slot0()`. Пять зависимых батчей — меньше не выходит, каждый следующий опирается на предыдущий.
+- Адреса per-chain: NPM `0xC36442b4a4522E871399CD717aBDD847Ab11FE88` и фабрика `0x1F98431c8aD98523631AE4a59f267346ea31F984` на ethereum/arbitrum/optimism; на **Base** — NPM `0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1`, фабрика `0x33128a8fC17869897dcE68Ed026d694621f6FDfD` (подтверждено вызовом `NPM.factory()`).
+- Tick math — свой модуль на нативных bigint (`chains/uniswap-math.ts`), без `@uniswap/v3-sdk`: он тянет JSBI ради двух формул. Константы сверены с `MIN_SQRT_RATIO`/`MAX_SQRT_RATIO` контрактов и с живыми пулами.
+- Несобранные комиссии — симуляция `collect` с `account = владелец`. `tokensOwed` из `positions()` не годится: обновляется только при действиях с позицией.
+
+### 3.6. Fluid Lending (Фаза 5) — в исходном ТЗ отсутствовал
+- Один вызов на сеть: `FluidLendingResolver.getUserPositions(user)` отдает и справочник fToken'ов, и позицию пользователя по каждому.
+- Адрес резолвера детерминированный и **одинаков на всех сетях**: `0x48D32f49aFeAEC7AE66ad7B9264f446fc11a1569` (mainnet / arbitrum / base / polygon). На **Optimism Fluid не развернут** — сеть в список не входит.
+- `decimals` берется из ответа; проверено на живых контрактах, что у Fluid они совпадают с decimals базового актива, а `underlyingAssets` номинирован именно в нем.
+- Оценка — по свежей цене базового токена из `coin_prices` (депозит есть обычный баланс токена), в отличие от GM, где цену дает сам протокол.
 
 ## 4. Цены и кэширование
 

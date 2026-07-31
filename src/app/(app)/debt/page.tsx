@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { DebtScreen } from "@/components/debt/debt-screen";
+import { DebtTabs } from "@/components/debt/debt-tabs";
 
 export const metadata: Metadata = { title: "Долг" };
 
 export default function DebtPage() {
-  return <DebtScreen />;
+  return <DebtTabs />;
 }

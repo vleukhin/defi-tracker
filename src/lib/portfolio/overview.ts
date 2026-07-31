@@ -5,11 +5,17 @@ import type { PortfolioOverviewDto } from "@/lib/api/types";
  * null-семантика тестируется офлайн.
  *
  * Методика (утверждена, docs/03-fazy-2-6.md):
+ *   Активы  = портфель + размещенные позиции   (Фаза 5)
  *   Чистая  = Активы − Долг
  *   Прибыль = Чистая − Внесено
  * «Внесено» — только собственные деньги извне; вычитание долга само
  * корректно обрабатывает любые случаи с плечом, происхождение отдельных
  * монет не отслеживается.
+ *
+ * Оговорка к последнему утверждению, найденная в Фазе 5: оно верно ТОЛЬКО
+ * когда Активы содержат все, во что превратились заемные деньги. До Фазы 5
+ * позиции в пулах и на Fluid в Активы не входили, и Чистая была занижена
+ * ровно на размещенную заемную сумму.
  *
  * Null-пропагация ЧЕСТНАЯ:
  *  * кошельков нет — on-chain долга быть не может: debtUsd = 0;
@@ -26,8 +32,14 @@ export interface HealthDebtInput {
 }
 
 export interface OverviewInput {
-  /** Итог портфеля (оценка CoinGecko). */
-  assetsUsd: number;
+  /** Итог трех категорий портфеля — только собственные средства. */
+  portfolioUsd: number;
+  /**
+   * Размещенные позиции Фазы 5 (Fluid после неттинга + GM + LP).
+   * null = стоимость части позиций неизвестна. Пустой список дает 0:
+   * «позиций нет» — честный ноль, в отличие от «долг ни разу не прочитан».
+   */
+  positionsUsd: number | null;
   hasWallets: boolean;
   /** Все строки aave_account_health по кошелькам пользователя. */
   healthRows: HealthDebtInput[];
@@ -47,11 +59,20 @@ export function computeOverview(input: OverviewInput): PortfolioOverviewDto {
     debtUsd = input.healthRows.reduce((sum, r) => sum + r.totalDebtUsd!, 0);
   }
 
-  const netUsd = debtUsd === null ? null : input.assetsUsd - debtUsd;
+  // Активы = портфель + размещенные позиции (Фаза 5). Считать Активы одним
+  // портфелем нельзя: заемные деньги, ушедшие в пул, из Активов выпадали бы,
+  // а Долг вычитался целиком — Чистая занижалась ровно на эту сумму.
+  const assetsUsd =
+    input.positionsUsd === null ? null : input.portfolioUsd + input.positionsUsd;
+
+  const netUsd =
+    assetsUsd === null || debtUsd === null ? null : assetsUsd - debtUsd;
   const profitUsd = netUsd === null ? null : netUsd - input.depositedUsd;
 
   return {
-    assetsUsd: input.assetsUsd,
+    assetsUsd,
+    portfolioUsd: input.portfolioUsd,
+    positionsUsd: input.positionsUsd,
     debtUsd,
     netUsd,
     depositedUsd: input.depositedUsd,

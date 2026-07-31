@@ -38,7 +38,7 @@ import {
 } from "./hf";
 
 /**
- * Экран «Долг» (Фаза 4, S4.1/S4.3): сводка (общий долг, минимальный HF,
+ * Вкладка «Долг» (Фаза 4, S4.1/S4.3), заголовок экрана рисует DebtTabs: сводка (общий долг, минимальный HF,
  * порог), по каждой сети — залог, занято, HF, утилизация и раскрываемая
  * разбивка долга по токенам. Данные — только кэш /api/debt; «Обновить»
  * гонит POST /api/refresh (тот же пайплайн, что на дашборде).
@@ -76,7 +76,6 @@ export function DebtScreen() {
   if (loading && !data) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Долг</h1>
         <Skeleton className="h-24 rounded-xl" />
         <Skeleton className="h-40 rounded-xl" />
         <Skeleton className="h-40 rounded-xl" />
@@ -87,7 +86,6 @@ export function DebtScreen() {
   if (error && !data) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Долг</h1>
         <Alert variant="destructive">
           <CircleAlert className="size-4" />
           <AlertTitle>Не удалось загрузить данные о долге: {error}</AlertTitle>
@@ -128,8 +126,7 @@ export function DebtScreen() {
       {/* Шапка: заголовок + свежесть + «Обновить», как на дашборде */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Долг</h1>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             данные: {formatRelativeTime(oldestCheckedAt) ?? "нет данных"}
             {refreshing && (
               <span className="ml-2 inline-flex items-baseline gap-1.5">

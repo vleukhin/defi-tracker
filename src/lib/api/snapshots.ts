@@ -47,7 +47,7 @@ export function periodCutoff(
 
 /** Колонки снепшота вместе с составом (embedded resource PostgREST). */
 export const SNAPSHOT_COLUMNS =
-  "id, taken_on, taken_at, total_usd, debt_usd, is_partial, " +
+  "id, taken_on, taken_at, total_usd, debt_usd, positions_usd, is_partial, " +
   "snapshot_items (category, quantity, composition, price_usd, value_usd, percent, collateral_usd, manual_usd)";
 
 export interface SnapshotItemRow {
@@ -69,6 +69,7 @@ export interface SnapshotRow {
   total_usd: number | string;
   /** Долг на момент съема (Фаза 4); null у старых снепшотов = «неизвестен». */
   debt_usd?: number | string | null;
+  positions_usd?: number | string | null;
   is_partial: boolean;
   snapshot_items: SnapshotItemRow[] | null;
 }
@@ -113,6 +114,7 @@ export function mapSnapshotRow(row: SnapshotRow): SnapshotDto {
     takenAt: row.taken_at,
     totalUsd: num(row.total_usd),
     debtUsd: nullableNum(row.debt_usd ?? null),
+    positionsUsd: nullableNum(row.positions_usd ?? null),
     isPartial: row.is_partial,
     items,
   };

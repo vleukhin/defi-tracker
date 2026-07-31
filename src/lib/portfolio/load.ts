@@ -2,7 +2,17 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AAVE_PROTOCOL, type AavePositionPayload } from "@/lib/chains/aave";
 import { AAVE_DEBT_SOURCE } from "@/lib/chains/aave-debt";
-import type { PortfolioOverviewDto } from "@/lib/api/types";
+import type {
+  PortfolioOverviewDto,
+  PositionDto,
+  PositionsSummaryDto,
+} from "@/lib/api/types";
+import {
+  POSITION_PROTOCOLS,
+  buildPositions,
+  positionPriceIds,
+  type PositionRowInput,
+} from "@/lib/positions/positions";
 import { computeOverview } from "./overview";
 import {
   CATEGORY_COINGECKO_IDS,
@@ -70,6 +80,10 @@ export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
   debtChains: ChainStatusRow[];
   /** Связка пяти чисел: Активы · Долг · Чистая · Внесено · Прибыль (S4.2). */
   overview: PortfolioOverviewDto;
+  /** Размещенные позиции (Фаза 5): Fluid, GM-пулы, LP. */
+  positions: PositionDto[];
+  /** Вклад позиций в Активы и сверка Fluid с ручными записями. */
+  positionsSummary: PositionsSummaryDto;
   oldestCollateralAt: string | null;
 }
 
@@ -258,11 +272,39 @@ export async function loadPortfolio(
     }
   }
 
-  // --- Цены: категории + все залоговые токены ---
+  // --- Размещенные позиции (Фаза 5): Fluid, GM-пулы, LP ---
+  const positionRows: PositionRowInput[] = [];
+  if (wallets.length > 0) {
+    const { data: rows, error: rowsError } = await supabase
+      .from("protocol_positions")
+      .select("id, wallet_id, protocol, chain, external_id, quantity, value_usd, payload, updated_at")
+      .in("protocol", POSITION_PROTOCOLS)
+      .in("wallet_id", walletIds);
+    if (rowsError)
+      throw new Error(`protocol_positions (позиции): ${rowsError.message}`);
+    for (const row of rows ?? []) {
+      const wallet = walletById.get(row.wallet_id as string);
+      positionRows.push({
+        id: row.id as string,
+        protocol: row.protocol as string,
+        chain: row.chain as string,
+        externalId: row.external_id as string,
+        quantity: row.quantity === null ? null : String(row.quantity),
+        valueUsd: row.value_usd === null ? null : Number(row.value_usd),
+        payload: row.payload,
+        updatedAt: row.updated_at as string,
+        walletId: row.wallet_id as string,
+        walletLabel: wallet?.label ?? null,
+      });
+    }
+  }
+
+  // --- Цены: категории, залоговые токены и компоненты позиций ---
   const priceIds = [
     CATEGORY_COINGECKO_IDS.btc,
     CATEGORY_COINGECKO_IDS.eth,
     ...collateral.map((c) => c.coingeckoId),
+    ...positionPriceIds(positionRows),
   ];
   const prices = await getCoinPrices(priceIds, {
     admin: opts.admin,
@@ -330,8 +372,24 @@ export async function loadPortfolio(
     }
   }
 
+  // Позиции Фазы 5. Неттинг Fluid идет против ручных записей категории
+  // «Стейблы»: собственные стейблы на Fluid уже учтены ими, и без вычета
+  // они попали бы в Активы дважды.
+  const manualStableUsd = manual
+    .filter((m) => m.category === "stable")
+    .reduce((sum, m) => sum + Number(m.amount), 0);
+  const pricesUsd = new Map(
+    [...prices.entries()].map(([id, p]) => [id, p.priceUsd]),
+  );
+  const positions = buildPositions({
+    rows: positionRows,
+    pricesUsd,
+    manualStableUsd,
+  });
+
   const overview = computeOverview({
-    assetsUsd: result.totalUsd,
+    portfolioUsd: result.totalUsd,
+    positionsUsd: positions.summary.positionsUsd,
     hasWallets: wallets.length > 0,
     healthRows,
     depositedUsd,
@@ -344,6 +402,8 @@ export async function loadPortfolio(
     chains,
     debtChains,
     overview,
+    positions: positions.positions,
+    positionsSummary: positions.summary,
     oldestCollateralAt,
   };
 }

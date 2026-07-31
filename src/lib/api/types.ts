@@ -92,8 +92,18 @@ export interface PortfolioRowDto {
  * Без кошельков on-chain долга быть не может — debtUsd = 0.
  */
 export interface PortfolioOverviewDto {
-  /** Активы = итог портфеля (оценка CoinGecko). */
-  assetsUsd: number;
+  /**
+   * Активы = портфель + размещенные позиции (Фаза 5).
+   *
+   * До Фазы 5 здесь был только итог портфеля, и это занижало Чистую: заемные
+   * деньги, ушедшие в пулы и на Fluid, из Активов выпадали, а Долг вычитался
+   * целиком. null = стоимость части позиций неизвестна.
+   */
+  assetsUsd: number | null;
+  /** Итог трех категорий — только собственные средства (S5.1: пулы сюда не входят). */
+  portfolioUsd: number;
+  /** Размещенные позиции с неттингом Fluid; null = оценка части позиций неизвестна. */
+  positionsUsd: number | null;
   /** Долг по оракулу Aave (getUserAccountData); null = ни разу не прочитан. */
   debtUsd: number | null;
   netUsd: number | null;
@@ -252,6 +262,11 @@ export interface SnapshotDto {
    */
   debtUsd: number | null;
   /**
+   * Размещенные позиции (Фаза 5) на момент съема. totalUsd — это ТОЛЬКО
+   * портфель; Активы точки = totalUsd + positionsUsd. null = не было известно.
+   */
+  positionsUsd: number | null;
+  /**
    * true = данные заведомо неполные: упало чтение сети либо цена
    * категории/залогового токена отсутствовала или устарела. Такую точку
    * на графике нужно помечать, а не выдавать за настоящую просадку.
@@ -365,4 +380,116 @@ export interface DebtSummaryDto {
 export interface DebtResponseDto {
   chains: DebtChainDto[];
   summary: DebtSummaryDto;
+}
+
+// --- Фаза 5: размещение заемных средств ---
+
+export type PositionProtocol = "fluid" | "gmx_v2" | "uni_v3";
+
+/** Составляющая позиции: во что она разложена (S5.1/S5.2). */
+export interface PositionComponentDto {
+  symbol: string;
+  quantity: number;
+  /** null = цены компонента нет — показываем количество, не ноль. */
+  valueUsd: number | null;
+  /** «long» / «short» для GM, иначе null. */
+  side: "long" | "short" | null;
+}
+
+/**
+ * Размещенная позиция. В три категории портфеля НЕ входит (решение S5.1):
+ * портфель ведется по собственным средствам, а здесь лежат преимущественно
+ * заемные. В «Активы» пяти чисел входит — иначе Чистая занижена.
+ */
+export interface PositionDto {
+  /** protocol_positions.id — им же оперируют связки «займ → позиция». */
+  id: string;
+  protocol: PositionProtocol;
+  protocolLabel: string;
+  chain: string;
+  /** «fUSDC», «GM ETH/USD», «WETH/USDC 0,05%». */
+  title: string;
+  subtitle: string | null;
+  /** Количество в единицах позиции; у LP это ликвидность, поэтому строкой. */
+  quantity: string | null;
+  /** null = оценка неизвестна (не ноль). */
+  valueUsd: number | null;
+  components: PositionComponentDto[];
+  /** Несобранные комиссии LP в долларах; null — неизвестны или неприменимо. */
+  feesUsd: number | null;
+  /** false = LP вне диапазона (позиция целиком в одном активе); null — неприменимо. */
+  inRange: boolean | null;
+  walletId: string;
+  walletLabel: string | null;
+  /** Момент чтения: стоимость позиции — на ЭТУ дату, не на момент показа. */
+  updatedAt: string;
+}
+
+/**
+ * Сверка Fluid с ручными записями категории «Стейблы».
+ *
+ * На блокчейне собственные и заемные стейблы неразличимы, а собственные уже
+ * учтены ручной записью портфеля. Поэтому в «Активы» Fluid добавляет только
+ * разницу — иначе собственная часть посчиталась бы дважды.
+ */
+export interface FluidReconciliationDto {
+  /** Депозит Fluid в стейблах; null = часть позиций не оценена. */
+  stableUsd: number | null;
+  /** Сумма ручных записей категории «Стейблы». */
+  manualStableUsd: number;
+  /** max(0, stableUsd − manualStableUsd) — заемная часть. */
+  nettedUsd: number | null;
+  /** true = ручных записей больше, чем лежит на Fluid: стоит перепроверить. */
+  manualExceedsDeposit: boolean;
+}
+
+export interface PositionsSummaryDto {
+  /** Вклад позиций в «Активы» (Fluid — после неттинга). */
+  positionsUsd: number | null;
+  /** Сколько позиций осталось без оценки — из-за них positionsUsd может быть null. */
+  unpricedCount: number;
+  fluid: FluidReconciliationDto;
+}
+
+/** Займ и профинансированные им позиции (S5.3). */
+export interface LeverageBorrowDto {
+  /** protocol_positions.id долговой строки Aave. */
+  id: string;
+  chain: string;
+  symbol: string;
+  quantity: string;
+  debtUsd: number | null;
+  /** id связанных позиций. */
+  linkedPositionIds: string[];
+  linkedUsd: number | null;
+  /** Связанные позиции минус долг: выигрывает ли связка. */
+  deltaUsd: number | null;
+  deltaPct: number | null;
+}
+
+/**
+ * GET /api/leverage — только кэш, без RPC.
+ *
+ * Привязка «займ → позиция» — бухгалтерская метка: на портфель и на пять
+ * чисел она не влияет, влияет только на этот экран (S5.3).
+ */
+export interface LeverageResponseDto {
+  positions: PositionDto[];
+  borrows: LeverageBorrowDto[];
+  summary: PositionsSummaryDto & {
+    /** Долг, по которому есть привязки. */
+    linkedDebtUsd: number | null;
+    /** Суммарная стоимость привязанных позиций. */
+    linkedPositionsUsd: number | null;
+    linkedDeltaUsd: number | null;
+  };
+  chains: { chain: string; source: string; ok: boolean; error?: string }[];
+}
+
+/** POST /api/borrow-links (201). */
+export interface BorrowLinkDto {
+  id: string;
+  borrowId: string;
+  positionId: string;
+  createdAt: string;
 }

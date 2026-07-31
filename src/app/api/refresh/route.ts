@@ -14,6 +14,21 @@ import {
   persistDebtStatus,
   readWalletAaveDebt,
 } from "@/lib/chains/aave-debt";
+import {
+  persistFluidPositions,
+  persistFluidStatus,
+  readWalletFluid,
+} from "@/lib/chains/fluid";
+import {
+  persistGmxPositions,
+  persistGmxStatus,
+  readWalletGmx,
+} from "@/lib/chains/gmx";
+import {
+  persistUniswapV3Positions,
+  persistUniswapV3Status,
+  readWalletUniswapV3,
+} from "@/lib/chains/uniswap-v3";
 import { CATEGORY_COINGECKO_IDS, getCoinPrices } from "@/lib/prices/coins";
 
 /**
@@ -22,15 +37,17 @@ import { CATEGORY_COINGECKO_IDS, getCoinPrices } from "@/lib/prices/coins";
  * 2) один multicall на сеть: aToken.balanceOf по покрываемым резервам Aave v3;
  * 3) второй multicall на сеть (Фаза 4): Pool.getUserAccountData (Долг и HF,
  *    оракул Aave) + vToken.balanceOf по всем резервам (разбивка долга);
- * 4) цены категорий, залоговых и долговых токенов — coin_prices, внешний
- *    поход только по истекшему TTL;
- * 5) запись в protocol_positions + aave_account_health + chain_read_status.
+ * 4) размещение заемных средств (Фаза 5): депозиты Fluid (один вызов
+ *    резолвера на сеть), GM-пулы GMX (Arbitrum) и LP-позиции Uniswap v3;
+ * 5) цены категорий, залоговых, долговых токенов и компонентов позиций —
+ *    coin_prices, внешний поход только по истекшему TTL;
+ * 6) запись в protocol_positions + aave_account_health + chain_read_status.
  * Без walletId обновляются все кошельки пользователя.
  *
  * Свободные ERC-20 балансы кошелька здесь НЕ читаются: по ТЗ 02 §2а количества
- * берутся из залога и ручных записей. Модуль chains/reader.ts сохранен для
- * Фазы 5 (GMX GM-токены, Uniswap LP), но в пути портфеля не участвует —
- * это экономит по одному multicall на сеть за каждое обновление.
+ * берутся из залога и ручных записей. Модуль chains/reader.ts закладывался под
+ * Фазу 5, но не понадобился и ей: GM-балансы перечисляются по списку рынков
+ * GMX, а LP — через NPM, и курируемый allowlist для этого не нужен.
  */
 
 export const DEBOUNCE_MS = 60_000;
@@ -100,6 +117,45 @@ export async function POST(request: NextRequest) {
         }
       } catch (err) {
         console.warn(`[refresh] долг кошелька ${wallet.id} не прочитан:`, err);
+      }
+
+      // Размещение заемных средств (Фаза 5). Три независимых контура: падение
+      // GMX API не должно уносить с собой депозиты Fluid и LP-позиции,
+      // поэтому у каждого свой try/catch.
+      try {
+        const fluidStatuses = await readWalletFluid(wallet.address as Address);
+        await persistFluidPositions(admin, wallet.id, fluidStatuses);
+        await persistFluidStatus(admin, wallet.id, fluidStatuses);
+        for (const s of fluidStatuses) {
+          for (const p of s.positions) {
+            if (p.coingeckoId) collateralIds.add(p.coingeckoId);
+          }
+        }
+      } catch (err) {
+        console.warn(`[refresh] Fluid кошелька ${wallet.id} не прочитан:`, err);
+      }
+
+      try {
+        const gmxStatus = await readWalletGmx(wallet.address as Address);
+        await persistGmxPositions(admin, wallet.id, gmxStatus);
+        await persistGmxStatus(admin, wallet.id, gmxStatus);
+      } catch (err) {
+        console.warn(`[refresh] GM-пулы кошелька ${wallet.id} не прочитаны:`, err);
+      }
+
+      try {
+        const lpStatuses = await readWalletUniswapV3(wallet.address as Address);
+        await persistUniswapV3Positions(admin, wallet.id, lpStatuses);
+        await persistUniswapV3Status(admin, wallet.id, lpStatuses);
+        for (const s of lpStatuses) {
+          for (const p of s.positions) {
+            for (const t of [p.token0, p.token1]) {
+              if (t.coingeckoId) collateralIds.add(t.coingeckoId);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[refresh] LP-позиции кошелька ${wallet.id} не прочитаны:`, err);
       }
 
       await supabase

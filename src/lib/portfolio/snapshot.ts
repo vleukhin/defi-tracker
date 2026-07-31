@@ -12,6 +12,21 @@ import {
   persistDebtStatus,
   readWalletAaveDebt,
 } from "@/lib/chains/aave-debt";
+import {
+  persistFluidPositions,
+  persistFluidStatus,
+  readWalletFluid,
+} from "@/lib/chains/fluid";
+import {
+  persistGmxPositions,
+  persistGmxStatus,
+  readWalletGmx,
+} from "@/lib/chains/gmx";
+import {
+  persistUniswapV3Positions,
+  persistUniswapV3Status,
+  readWalletUniswapV3,
+} from "@/lib/chains/uniswap-v3";
 import type { SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
 import { loadPortfolio, loadPortfolioAsAdmin } from "./load";
 import type { ChainStatusRow, LoadPortfolioResult } from "./load";
@@ -41,6 +56,13 @@ export interface SnapshotSource {
   debtUsd?: number | null;
   /** Статус чтения долга/HF по сетям (source = aave_v3_debt). */
   debtChains?: ChainStatusRow[];
+  /**
+   * Вклад размещенных позиций в Активы на момент съема (Фаза 5).
+   * Пишется по той же причине, что и debtUsd: стоимость GM-пула или LP
+   * на прошлую дату задним числом не восстановить — ни оракул GMX, ни тик
+   * пула в прошлом нам недоступны.
+   */
+  positionsUsd?: number | null;
 }
 
 /**
@@ -75,6 +97,8 @@ export interface SnapshotBuild {
   totalUsd: number;
   /** Долг на момент съема; null = неизвестен (невосстановим задним числом). */
   debtUsd: number | null;
+  /** Размещенные позиции на момент съема; null = стоимость неизвестна. */
+  positionsUsd: number | null;
   isPartial: boolean;
   /** Человекочитаемые причины частичности — в лог cron'а и в ответ API. */
   partialReasons: string[];
@@ -168,9 +192,16 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
     };
   });
 
+  // Позиции (Фаза 5): неизвестная стоимость размещенных средств делает
+  // точку неполной так же, как неизвестный долг — Активы в ней занижены
+  if (portfolio.positionsUsd === null) {
+    partialReasons.push("стоимость размещенных позиций неизвестна");
+  }
+
   return {
     totalUsd: portfolio.totalUsd,
     debtUsd: portfolio.debtUsd ?? null,
+    positionsUsd: portfolio.positionsUsd ?? null,
     isPartial: partialReasons.length > 0,
     partialReasons,
     items,
@@ -206,6 +237,7 @@ interface SnapshotRow {
   taken_at: string;
   total_usd: number | string;
   debt_usd: number | string | null;
+  positions_usd: number | string | null;
   is_partial: boolean;
 }
 
@@ -262,6 +294,8 @@ export async function createSnapshot(
     hasWallets: portfolio.wallets.length > 0,
     // Долг из кэша aave_account_health (Aave-оракул); null = не читался
     debtUsd: portfolio.overview.debtUsd,
+    // Размещенные позиции (Фаза 5) — вторая половина Активов
+    positionsUsd: portfolio.overview.positionsUsd,
   });
 
   const { data: snapshotRow, error: snapshotError } = await admin
@@ -273,11 +307,12 @@ export async function createSnapshot(
         taken_at: takenAt,
         total_usd: build.totalUsd,
         debt_usd: build.debtUsd,
+        positions_usd: build.positionsUsd,
         is_partial: build.isPartial,
       },
       { onConflict: "user_id,taken_on" },
     )
-    .select("id, taken_on, taken_at, total_usd, debt_usd, is_partial")
+    .select("id, taken_on, taken_at, total_usd, debt_usd, positions_usd, is_partial")
     .single();
   if (snapshotError) throw new Error(`snapshots upsert: ${snapshotError.message}`);
   const snapshot = snapshotRow as SnapshotRow;
@@ -316,6 +351,8 @@ export async function createSnapshot(
       takenAt: snapshot.taken_at,
       totalUsd: Number(snapshot.total_usd),
       debtUsd: snapshot.debt_usd === null ? null : Number(snapshot.debt_usd),
+      positionsUsd:
+        snapshot.positions_usd === null ? null : Number(snapshot.positions_usd),
       isPartial: snapshot.is_partial,
       items,
     },
@@ -365,6 +402,31 @@ export async function refreshUserWallets(
       await persistAaveHealth(admin, wallet.id as string, debtStatuses);
       await persistAaveDebt(admin, wallet.id as string, debtStatuses);
       await persistDebtStatus(admin, wallet.id as string, debtStatuses);
+
+      // Размещение заемных средств (Фаза 5). Каждый протокол в своем
+      // try/catch: недоступность GMX API не должна лишать снепшот депозитов
+      // Fluid — и уж тем более не должна ронять обновление кошелька целиком.
+      try {
+        const fluidStatuses = await readWalletFluid(wallet.address as Address);
+        await persistFluidPositions(admin, wallet.id as string, fluidStatuses);
+        await persistFluidStatus(admin, wallet.id as string, fluidStatuses);
+      } catch (err) {
+        console.warn(`[snapshot] Fluid ${wallet.address}:`, err);
+      }
+      try {
+        const gmxStatus = await readWalletGmx(wallet.address as Address);
+        await persistGmxPositions(admin, wallet.id as string, gmxStatus);
+        await persistGmxStatus(admin, wallet.id as string, gmxStatus);
+      } catch (err) {
+        console.warn(`[snapshot] GM-пулы ${wallet.address}:`, err);
+      }
+      try {
+        const lpStatuses = await readWalletUniswapV3(wallet.address as Address);
+        await persistUniswapV3Positions(admin, wallet.id as string, lpStatuses);
+        await persistUniswapV3Status(admin, wallet.id as string, lpStatuses);
+      } catch (err) {
+        console.warn(`[snapshot] LP-позиции ${wallet.address}:`, err);
+      }
 
       await admin
         .from("wallets")

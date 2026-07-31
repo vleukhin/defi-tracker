@@ -7,7 +7,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * сбой логирования никогда не роняет основной пайплайн.
  */
 
-export type ApiProvider = "coingecko" | "alchemy" | "rpc" | "zerion";
+export type ApiProvider =
+  | "coingecko"
+  | "alchemy"
+  | "rpc"
+  | "zerion"
+  // Фаза 5: цены GM-токенов и состав пулов (arbitrum-api.gmxinfra.io)
+  | "gmx";
 
 export async function logApiCall(
   provider: ApiProvider,
