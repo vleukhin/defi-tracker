@@ -319,7 +319,7 @@ export async function loadPortfolio(
   const { data: markRows, error: marksError } = await scopeUser(
     supabase
       .from("position_marks")
-      .select("user_id, protocol, chain, external_id, zone, own_usd"),
+      .select("user_id, protocol, chain, external_id, zone, own_principal_usd, borrowed_principal_usd"),
   );
   if (marksError) throw new Error(`position_marks: ${marksError.message}`);
   assertOwned((markRows ?? []) as { user_id?: string }[], "position_marks");
@@ -333,7 +333,12 @@ export async function loadPortfolio(
       {
         zone: (r.zone as StrategyZone | null) ?? null,
         // NULL = не размечено, и это не ноль
-        ownUsd: r.own_usd === null ? null : Number(r.own_usd),
+        ownPrincipalUsd:
+          r.own_principal_usd === null ? null : Number(r.own_principal_usd),
+        borrowedPrincipalUsd:
+          r.borrowed_principal_usd === null
+            ? null
+            : Number(r.borrowed_principal_usd),
       } satisfies PositionMark,
     ]),
   );
@@ -366,12 +371,12 @@ export async function loadPortfolio(
   // Префикс pos: отличает их от настоящих ручных записей — в зонах позиция
   // уже учтена целиком, и второй раз считать ее нельзя.
   const ownEntries: ManualInput[] = positions.positions
-    .filter((p) => (p.ownUsd ?? 0) > 0)
+    .filter((p) => (p.ownCurrentUsd ?? 0) > 0)
     .map((p) => ({
       id: `pos:${p.zoneKey}`,
       category: "stable" as PortfolioCategory,
       label: `${p.title} · ${p.protocolLabel}`,
-      amount: String(p.ownUsd),
+      amount: String(p.ownCurrentUsd),
     }));
 
   const result = computePortfolio({
@@ -463,7 +468,7 @@ export async function loadPortfolio(
       title: p.title,
       valueUsd: p.valueUsd,
       zone: p.zone,
-      ownUsd: p.ownUsd,
+      ownUsd: p.ownCurrentUsd,
     })),
   });
 

@@ -108,8 +108,64 @@ export interface BuildPositionsInput {
 export interface PositionMark {
   /** null = зона не задана, берется умолчание. */
   zone: StrategyZone | null;
-  /** null = собственная доля не размечена (не ноль). */
-  ownUsd: number | null;
+  /** Вложено своих; null = не размечено (не ноль). */
+  ownPrincipalUsd: number | null;
+  /** Вложено заемных; null = не размечено. */
+  borrowedPrincipalUsd: number | null;
+}
+
+/**
+ * Разложение позиции на свое, заемное и доход.
+ *
+ * Вычитанием «стоимость − свое» обойтись нельзя: остаток бывает и заемной
+ * частью, и начисленными процентами, и убытком пула. На депозите Fluid
+ * такой остаток целиком был доходом, а показывался как долг.
+ *
+ * Доход относится на свое и заемное ПРОПОРЦИОНАЛЬНО вложенному — капитал
+ * в позиции работает одинаково, чей бы он ни был.
+ */
+export function splitPosition(
+  valueUsd: number | null,
+  mark: PositionMark | undefined,
+): {
+  ownPrincipalUsd: number | null;
+  borrowedPrincipalUsd: number | null;
+  ownCurrentUsd: number | null;
+  profitUsd: number | null;
+  profitPct: number | null;
+} {
+  const own = mark?.ownPrincipalUsd ?? null;
+  const borrowed = mark?.borrowedPrincipalUsd ?? null;
+
+  // Вложенное известно только когда размечены ОБЕ части: иначе непонятно,
+  // доход перед нами или незаявленная заемная доля
+  const principal = own !== null && borrowed !== null ? own + borrowed : null;
+
+  const profitUsd =
+    valueUsd !== null && principal !== null ? valueUsd - principal : null;
+  const profitPct =
+    profitUsd !== null && principal !== null && principal > 0
+      ? (profitUsd / principal) * 100
+      : null;
+
+  let ownCurrentUsd: number | null;
+  if (own === null) {
+    // Не размечено — считаем целиком заемной, но позиция помечена в интерфейсе
+    ownCurrentUsd = 0;
+  } else if (principal === null || principal === 0) {
+    // Заемная часть неизвестна: доход не распределяем, берем вложенное как есть
+    ownCurrentUsd = own;
+  } else {
+    ownCurrentUsd = valueUsd === null ? null : (valueUsd * own) / principal;
+  }
+
+  return {
+    ownPrincipalUsd: own,
+    borrowedPrincipalUsd: borrowed,
+    ownCurrentUsd,
+    profitUsd,
+    profitPct,
+  };
 }
 
 /**
@@ -180,7 +236,7 @@ function buildFluid(
     chain: row.chain,
     zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
     zoneKey: zoneKeyOf(row),
-    ownUsd: mark?.ownUsd ?? null,
+    ...splitPosition(valueUsd, mark),
     title: payload.fTokenSymbol,
     subtitle: `Депозит ${payload.symbol}`,
     quantity: row.quantity,
@@ -201,6 +257,9 @@ function buildGm(
   payload: GmPayload,
   mark: PositionMark | undefined,
 ): PositionDto {
+  // Оценка — из оракула GMX (Reader.getMarketTokenPrice): включает
+  // незакрытый PnL трейдеров, чего сумма компонентов не показывает
+  const valueUsd = row.valueUsd;
   const components: PositionComponentDto[] = payload.components.map((c) => ({
     symbol: c.symbol,
     quantity: c.quantity,
@@ -214,13 +273,11 @@ function buildGm(
     chain: row.chain,
     zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
     zoneKey: zoneKeyOf(row),
-    ownUsd: mark?.ownUsd ?? null,
+    ...splitPosition(valueUsd, mark),
     title: `GM ${payload.marketName.split(" ")[0]}`,
     subtitle: payload.marketName,
     quantity: row.quantity,
-    // Оценка — из оракула GMX (Reader.getMarketTokenPrice): включает
-    // незакрытый PnL трейдеров, чего сумма компонентов не показывает
-    valueUsd: row.valueUsd,
+    valueUsd,
     components,
     feesUsd: null,
     inRange: null,
@@ -269,7 +326,7 @@ function buildLp(
     chain: row.chain,
     zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
     zoneKey: zoneKeyOf(row),
-    ownUsd: mark?.ownUsd ?? null,
+    ...splitPosition(valueUsd, mark),
     title: `${payload.token0.symbol}/${payload.token1.symbol} ${feeLabel(payload.fee)}`,
     subtitle: payload.inRange
       ? `Тики ${payload.tickLower}…${payload.tickUpper}`
@@ -341,7 +398,10 @@ export function buildPositions(
   // Неразмеченная позиция считается целиком заемной — решение принято
   // осознанно: иначе до первой разметки дашборд был бы пустым. Ее видно
   // по unmarkedCount и по пометке на карточке.
-  const ownUsd = positions.reduce((s, p) => s + (p.ownUsd ?? 0), 0);
+  const ownUsd = positions.reduce((s, p) => s + (p.ownCurrentUsd ?? 0), 0);
+  // Доход по портфелю позиций известен, только если размечены все:
+  // частичная сумма выглядела бы как маленький доход, а это ложь
+  const profitUsd = sumOrNull(positions.map((p) => p.profitUsd));
 
   return {
     positions,
@@ -351,8 +411,11 @@ export function buildPositions(
       positionsUsd: grossUsd === null ? null : grossUsd - ownUsd,
       grossUsd,
       ownUsd,
+      profitUsd,
       unpricedCount: positions.filter((p) => p.valueUsd === null).length,
-      unmarkedCount: positions.filter((p) => p.ownUsd === null).length,
+      unmarkedCount: positions.filter(
+        (p) => p.ownPrincipalUsd === null || p.borrowedPrincipalUsd === null,
+      ).length,
     },
   };
 }

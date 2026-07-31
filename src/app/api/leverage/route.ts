@@ -42,7 +42,7 @@ export async function GET() {
     // Разметка живет отдельно от строк читателя: тот их пересоздает
     const { data: markRows, error: marksError } = await supabase
       .from("position_marks")
-      .select("protocol, chain, external_id, zone, own_usd");
+      .select("protocol, chain, external_id, zone, own_principal_usd, borrowed_principal_usd");
     if (marksError) return apiError(500, marksError.message);
     const marksByKey = new Map<string, PositionMark>(
       (markRows ?? []).map((r) => [
@@ -53,7 +53,12 @@ export async function GET() {
         }),
         {
           zone: (r.zone as StrategyZone | null) ?? null,
-          ownUsd: r.own_usd === null ? null : Number(r.own_usd),
+          ownPrincipalUsd:
+            r.own_principal_usd === null ? null : Number(r.own_principal_usd),
+          borrowedPrincipalUsd:
+            r.borrowed_principal_usd === null
+              ? null
+              : Number(r.borrowed_principal_usd),
         } satisfies PositionMark,
       ]),
     );

@@ -99,71 +99,110 @@ const PRICES = new Map<string, number>([
   ["ethereum", 1900],
 ]);
 
-const marks = (key: string, ownUsd: number | null, zone: "growth" | "yield" | "stability" | null = null) =>
-  new Map([[key, { zone, ownUsd }]]);
+const marks = (
+  key: string,
+  ownPrincipalUsd: number | null,
+  borrowedPrincipalUsd: number | null = null,
+  zone: "growth" | "yield" | "stability" | null = null,
+) => new Map([[key, { zone, ownPrincipalUsd, borrowedPrincipalUsd }]]);
 
-describe("собственная доля указывается у позиции", () => {
-  it("вклад в Активы = стоимость позиций минус свои внутри них", () => {
+describe("вложенное указывается двумя числами", () => {
+  it("своя доля растет вместе со стоимостью позиции", () => {
+    // Депозит Fluid: вложено 24 948 своих, заемных нет, стоит 25 243.
+    // 295 — это начисленные проценты, и они ТОЖЕ свои, а не долг
     const r = buildPositions({
-      rows: [fluidRow("a", "100000", "usd-coin")],
+      rows: [fluidRow("a", "25243", "usd-coin")],
       pricesUsd: PRICES,
-      marksByKey: marks("fluid:arbitrum:0xa", 70_000),
+      marksByKey: marks("fluid:arbitrum:0xa", 24_948, 0),
     });
-    expect(r.summary.grossUsd).toBe(100_000);
-    expect(r.summary.ownUsd).toBe(70_000);
-    expect(r.summary.positionsUsd).toBe(30_000);
-    // Сама позиция показывается целиком — пользователь видит факт
-    expect(r.positions[0].valueUsd).toBe(100_000);
-    expect(r.positions[0].ownUsd).toBe(70_000);
+    const p = r.positions[0];
+    expect(p.valueUsd).toBe(25_243);
+    expect(p.profitUsd).toBe(295);
+    expect(p.ownCurrentUsd).toBe(25_243);
+    expect(p.borrowedPrincipalUsd).toBe(0);
   });
 
-  it("вычет не привязан к протоколу: свои в LP учитываются так же", () => {
-    // Ровно случай, на котором сломалась Фаза 5: свои уехали с Fluid в CLMM
+  it("доход делится между своим и заемным пропорционально вложенному", () => {
+    // Вложено 10 000 своих и 30 000 заемных, стоит 44 000: доход 4 000,
+    // из них своими заработана четверть
     const r = buildPositions({
-      rows: [lpRow("42")],
+      rows: [{ ...gmRow("g", 44_000) }],
       pricesUsd: PRICES,
-      marksByKey: marks("uni_v3:arbitrum:42", 1_000),
+      marksByKey: marks("gmx_v2:arbitrum:0xg", 10_000, 30_000),
     });
-    expect(r.summary.grossUsd).toBe(4800);
-    expect(r.summary.positionsUsd).toBe(3800);
+    const p = r.positions[0];
+    expect(p.profitUsd).toBe(4_000);
+    expect(p.profitPct).toBeCloseTo(10, 9);
+    expect(p.ownCurrentUsd).toBe(11_000);
   });
 
-  it("доли складываются по всем позициям", () => {
+  it("убыток тоже делится пропорционально", () => {
     const r = buildPositions({
-      rows: [fluidRow("a", "50000", "usd-coin"), lpRow("42")],
+      rows: [{ ...gmRow("g", 36_000) }],
       pricesUsd: PRICES,
-      marksByKey: new Map([
-        ["fluid:arbitrum:0xa", { zone: null, ownUsd: 20_000 }],
-        ["uni_v3:arbitrum:42", { zone: null, ownUsd: 1_000 }],
-      ]),
+      marksByKey: marks("gmx_v2:arbitrum:0xg", 10_000, 30_000),
     });
-    expect(r.summary.ownUsd).toBe(21_000);
-    expect(r.summary.positionsUsd).toBe(50_000 + 4800 - 21_000);
+    expect(r.positions[0].profitUsd).toBe(-4_000);
+    expect(r.positions[0].ownCurrentUsd).toBe(9_000);
+  });
+
+  it("вклад в Активы = стоимость минус текущая своя доля", () => {
+    const r = buildPositions({
+      rows: [fluidRow("a", "25243", "usd-coin")],
+      pricesUsd: PRICES,
+      marksByKey: marks("fluid:arbitrum:0xa", 24_948, 0),
+    });
+    expect(r.summary.grossUsd).toBe(25_243);
+    expect(r.summary.ownUsd).toBe(25_243);
+    expect(r.summary.positionsUsd).toBe(0);
+    expect(r.summary.profitUsd).toBe(295);
   });
 });
 
-describe("неразмеченная позиция", () => {
-  it("считается целиком заемной, но помечается", () => {
-    // Иначе до первой разметки дашборд был бы пустым; забытую после
-    // перезаливки CLMM позицию видно по счетчику
+describe("неполная разметка", () => {
+  it("без заемной части доход не выводится — остаток неоднозначен", () => {
+    // Это и была ошибка предыдущей версии: 295 выдавались за долг
     const r = buildPositions({
-      rows: [fluidRow("a", "50000", "usd-coin")],
+      rows: [fluidRow("a", "25243", "usd-coin")],
       pricesUsd: PRICES,
+      marksByKey: marks("fluid:arbitrum:0xa", 24_948, null),
     });
-    expect(r.positions[0].ownUsd).toBeNull();
-    expect(r.summary.ownUsd).toBe(0);
+    const p = r.positions[0];
+    expect(p.profitUsd).toBeNull();
+    // Своя доля падает обратно на вложенное: доход не распределяем
+    expect(p.ownCurrentUsd).toBe(24_948);
     expect(r.summary.unmarkedCount).toBe(1);
-    expect(r.summary.positionsUsd).toBe(50_000);
   });
 
-  it("ноль своих — это утверждение, а не отсутствие разметки", () => {
+  it("совсем без разметки позиция считается целиком заемной, но помечается", () => {
     const r = buildPositions({
       rows: [fluidRow("a", "50000", "usd-coin")],
       pricesUsd: PRICES,
-      marksByKey: marks("fluid:arbitrum:0xa", 0),
     });
-    expect(r.positions[0].ownUsd).toBe(0);
+    expect(r.positions[0].ownPrincipalUsd).toBeNull();
+    expect(r.positions[0].ownCurrentUsd).toBe(0);
+    expect(r.summary.ownUsd).toBe(0);
+    expect(r.summary.unmarkedCount).toBe(1);
+  });
+
+  it("ноль своих — утверждение «все заемное», а не отсутствие разметки", () => {
+    const r = buildPositions({
+      rows: [fluidRow("a", "50000", "usd-coin")],
+      pricesUsd: PRICES,
+      marksByKey: marks("fluid:arbitrum:0xa", 0, 48_000),
+    });
+    expect(r.positions[0].ownCurrentUsd).toBe(0);
+    expect(r.positions[0].profitUsd).toBe(2_000);
     expect(r.summary.unmarkedCount).toBe(0);
+  });
+
+  it("суммарный доход неизвестен, пока размечены не все позиции", () => {
+    const r = buildPositions({
+      rows: [fluidRow("a", "1000", "usd-coin"), gmRow("g", 500)],
+      pricesUsd: PRICES,
+      marksByKey: marks("fluid:arbitrum:0xa", 900, 0),
+    });
+    expect(r.summary.profitUsd).toBeNull();
   });
 });
 
@@ -178,7 +217,7 @@ describe("разметка зон", () => {
     const r = buildPositions({
       rows: [row],
       pricesUsd: PRICES,
-      marksByKey: marks("fluid:arbitrum:0xa", null, "stability"),
+      marksByKey: marks("fluid:arbitrum:0xa", null, null, "stability"),
     });
     expect(r.positions[0].zone).toBe("stability");
     expect(r.positions[0].zoneKey).toBe("fluid:arbitrum:0xa");

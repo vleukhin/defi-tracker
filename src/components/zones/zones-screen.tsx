@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, TriangleAlert, X } from "lucide-react";
+import { CircleAlert, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -16,7 +16,14 @@ import type {
   ZoneBreakdownDto,
   ZonesSummaryDto,
 } from "@/lib/api/types";
-import { tablePct, tableUsd } from "@/lib/format";
+import { pnlClass } from "@/components/pnl";
+import {
+  tablePct,
+  tablePctSigned,
+  tableUsd,
+  tableUsdSigned,
+  usdDecimals,
+} from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 
@@ -31,8 +38,11 @@ import { cn } from "@/lib/utils";
  * Внизу — разметка позиций. По стратегии собственные стейблы всегда
  * распределены по позициям зон Yield и Stability, поэтому категория
  * «Стейблы» складывается именно из этих пометок, а не вводится одним числом.
- * Неразмеченная позиция считается целиком заемной и помечается: после
- * перезаливки диапазона CLMM разметка не переносится.
+ *
+ * Вложенное задается ДВУМЯ числами — своим и заемным. Одной величиной
+ * не обойтись: остаток «стоимость − свое» бывает и заемной частью, и
+ * начисленным доходом. На депозите Fluid такой остаток был доходом,
+ * а показывался как долг.
  */
 
 const LABEL =
@@ -51,6 +61,13 @@ const ZONE_OPTIONS: { value: StrategyZone; label: string }[] = [
   { value: "stability", label: "Stability" },
 ];
 
+/** Что можно поправить у позиции за один запрос. */
+interface MarkPatch {
+  zone?: StrategyZone;
+  ownPrincipalUsd?: number | null;
+  borrowedPrincipalUsd?: number | null;
+}
+
 interface ZonesResponse {
   zones: ZonesSummaryDto;
   positions: PositionDto[];
@@ -63,10 +80,7 @@ export function ZonesScreen() {
   const { data, error, loading, refetch } = useApi<ZonesResponse>("/api/zones");
   const [busy, setBusy] = useState(false);
 
-  async function mark(
-    position: PositionDto,
-    patch: { zone?: StrategyZone; ownUsd?: number | null },
-  ) {
+  async function mark(position: PositionDto, patch: MarkPatch) {
     setBusy(true);
     try {
       const [protocol, chain, externalId] = splitKey(position.zoneKey);
@@ -126,9 +140,9 @@ export function ZonesScreen() {
             Позиций без разметки: {zones.unmarkedPositions}
           </AlertTitle>
           <AlertDescription>
-            Пока доля собственных средств не указана, позиция считается целиком
-            заемной, и категория «Стейблы» занижена. После перезаливки
-            диапазона CLMM разметку нужно проставить заново.
+            Пока не указаны обе вложенные суммы, доход позиции не считается,
+            а неразмеченная собственная часть занижает категорию «Стейблы».
+            После перезаливки диапазона CLMM разметку нужно проставить заново.
           </AlertDescription>
         </Alert>
       )}
@@ -185,9 +199,10 @@ export function ZonesScreen() {
         <Card className="p-4">
           <h2 className="text-sm font-semibold">Разметка позиций</h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Укажите, сколько в каждой позиции ваших собственных средств —
-            остальное считается заемным. Из этих сумм складывается категория
-            «Стейблы», поэтому вводить ее отдельно не нужно.
+            Укажите, сколько в позицию вложено своих и сколько заемных.
+            Доход считается как «стоимость − вложено» и делится между ними
+            пропорционально. Из текущих собственных долей складывается
+            категория «Стейблы» — вводить ее отдельно не нужно.
           </p>
           <ul className="mt-3 divide-y divide-border">
             {positions.map((p) => (
@@ -273,7 +288,7 @@ function Row({
   );
 }
 
-/** Одна позиция: зона кнопками и поле собственной доли. */
+/** Одна позиция: зона кнопками, два поля вложенного и доход. */
 function PositionRow({
   position,
   busy,
@@ -281,89 +296,157 @@ function PositionRow({
 }: {
   position: PositionDto;
   busy: boolean;
-  onMark: (
-    p: PositionDto,
-    patch: { zone?: StrategyZone; ownUsd?: number | null },
-  ) => void;
+  onMark: (p: PositionDto, patch: MarkPatch) => void;
 }) {
-  const [own, setOwn] = useState(
-    position.ownUsd === null ? "" : String(position.ownUsd),
+  const unmarked =
+    position.ownPrincipalUsd === null || position.borrowedPrincipalUsd === null;
+
+  return (
+    <li className="space-y-2 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="truncate text-sm">{position.title}</span>
+            {unmarked && <Badge variant="warning">не размечено</Badge>}
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {position.protocolLabel}
+            {" · стоит "}
+            {position.valueUsd === null ? "—" : tableUsd(position.valueUsd)}
+            {position.ownCurrentUsd !== null && !unmarked && (
+              <>
+                {" · своих сейчас "}
+                {tableUsd(position.ownCurrentUsd)}
+              </>
+            )}
+          </span>
+        </span>
+
+        <span className="flex gap-1">
+          {ZONE_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              disabled={busy}
+              onClick={() => onMark(position, { zone: o.value })}
+              aria-pressed={position.zone === o.value}
+              className={cn(
+                "rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                position.zone === o.value
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-accent/60",
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <PrincipalInput
+          id={`own-${position.id}`}
+          label="Вложено своих, $"
+          value={position.ownPrincipalUsd}
+          busy={busy}
+          onSave={(v) => onMark(position, { ownPrincipalUsd: v })}
+        />
+        <PrincipalInput
+          id={`brw-${position.id}`}
+          label="Вложено заемных, $"
+          value={position.borrowedPrincipalUsd}
+          busy={busy}
+          onSave={(v) => onMark(position, { borrowedPrincipalUsd: v })}
+        />
+
+        {/* Доход = стоимость − вложено. Пока размечена лишь часть, показать
+            его нельзя: остаток мог бы оказаться незаявленной заемной долей */}
+        <div className="pb-1">
+          <span className={LABEL}>Доход</span>
+          <span
+            className={cn(
+              "ml-2 font-mono text-sm font-semibold",
+              position.profitUsd === null
+                ? "text-muted-foreground"
+                : pnlClass(position.profitUsd),
+            )}
+            title={
+              position.profitUsd === null
+                ? "Размечены не обе вложенные суммы — доход не выводится"
+                : undefined
+            }
+          >
+            {position.profitUsd === null
+              ? "—"
+              : tableUsdSigned(
+                  position.profitUsd,
+                  usdDecimals(position.profitUsd),
+                )}
+            {position.profitPct !== null && (
+              <span className="ml-1.5 text-xs font-normal">
+                ({tablePctSigned(position.profitPct, 1)})
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+    </li>
   );
-  const saved = position.ownUsd === null ? "" : String(position.ownUsd);
-  const dirty = own.trim() !== saved;
+}
+
+/**
+ * Поле вложенной суммы. Пустое значение = «не размечено», и это не ноль:
+ * ноль означал бы «вложено ничего» и объявил бы доходом всю стоимость.
+ */
+function PrincipalInput({
+  id,
+  label,
+  value,
+  busy,
+  onSave,
+}: {
+  id: string;
+  label: string;
+  value: number | null;
+  busy: boolean;
+  onSave: (value: number | null) => void;
+}) {
+  const saved = value === null ? "" : String(value);
+  const [draft, setDraft] = useState(saved);
+  const dirty = draft.trim() !== saved;
 
   function save() {
-    const raw = own.trim().replace(",", ".");
+    const raw = draft.trim().replace(",", ".");
     if (raw === "") {
-      onMark(position, { ownUsd: null });
+      onSave(null);
       return;
     }
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value < 0) {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) {
       toast.error("Сумма должна быть неотрицательным числом");
       return;
     }
-    onMark(position, { ownUsd: value });
+    onSave(parsed);
   }
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm">{position.title}</span>
-          {position.ownUsd === null && (
-            <Badge variant="warning">не размечено</Badge>
-          )}
-        </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {position.protocolLabel}
-          {" · "}
-          {position.valueUsd === null ? "—" : tableUsd(position.valueUsd)}
-          {position.ownUsd !== null && position.valueUsd !== null && (
-            <>
-              {" · заемных "}
-              {tableUsd(Math.max(0, position.valueUsd - position.ownUsd))}
-            </>
-          )}
-        </span>
-      </span>
-
-      <span className="flex gap-1">
-        {ZONE_OPTIONS.map((o) => (
-          <button
-            key={o.value}
-            type="button"
-            disabled={busy}
-            onClick={() => onMark(position, { zone: o.value })}
-            aria-pressed={position.zone === o.value}
-            className={cn(
-              "rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
-              position.zone === o.value
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent/60",
-            )}
-          >
-            {o.label}
-          </button>
-        ))}
-      </span>
-
-      <span className="flex items-center gap-1">
-        <label className="sr-only" htmlFor={`own-${position.id}`}>
-          Своих средств в позиции {position.title}
-        </label>
+    <div className="space-y-1">
+      <label htmlFor={id} className={LABEL}>
+        {label}
+      </label>
+      <div className="flex items-center gap-1">
         <Input
-          id={`own-${position.id}`}
-          value={own}
-          onChange={(e) => setOwn(e.target.value)}
+          id={id}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") save();
           }}
           inputMode="decimal"
-          placeholder="своих, $"
-          className="h-8 w-28 font-mono"
+          placeholder="не указано"
+          className="h-8 w-32 font-mono"
         />
-        {dirty ? (
+        {dirty && (
           <Button
             type="button"
             size="sm"
@@ -371,28 +454,10 @@ function PositionRow({
             onClick={save}
             className="h-8"
           >
-            Сохранить
+            OK
           </Button>
-        ) : (
-          position.ownUsd !== null && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                setOwn("");
-                onMark(position, { ownUsd: null });
-              }}
-              aria-label="Снять разметку"
-              title="Снять разметку"
-              className="h-8 px-1.5 text-muted-foreground"
-            >
-              <X className="size-3.5" />
-            </Button>
-          )
         )}
-      </span>
-    </li>
+      </div>
+    </div>
   );
 }
