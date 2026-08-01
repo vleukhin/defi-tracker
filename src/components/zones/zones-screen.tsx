@@ -202,6 +202,7 @@ export function ZonesScreen() {
               <PositionCard
                 key={p.id}
                 position={p}
+                positions={positions}
                 busy={busy}
                 onMark={mark}
                 stableBorrow={stableBorrow}

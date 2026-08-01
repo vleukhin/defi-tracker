@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { PositionDto } from "@/lib/api/types";
-import { tablePct, tableUsd } from "@/lib/format";
+import { tableNumber, tablePct, tableUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { MarkPopover } from "./mark-popover";
 import { LABEL, ZoneChip, type MarkFn } from "./shared";
@@ -158,6 +158,22 @@ export function CardFooter({
       <p className="mt-1 text-xs text-muted-foreground">{children}</p>
     </div>
   );
+}
+
+/**
+ * Количество токена в легенде: чем меньше число, тем больше знаков, но
+ * хвостовые нули отбрасываются — «800,2000 USDC» читается хуже, чем
+ * «800,2», а точности не добавляет.
+ */
+export function tokenQuantity(value: number): string {
+  const decimals = value >= 1000 ? 0 : value >= 1 ? 4 : 6;
+  const trimmed = tableNumber(value, decimals)
+    .replace(/(,\d*?)0+$/, "$1")
+    .replace(/,$/, "");
+  // Пыль, округлившаяся до нуля: ноль сказал бы «ничего нет», а это не так
+  return value > 0 && Number(trimmed.replace(/\s/g, "").replace(",", ".")) === 0
+    ? "<0,000001"
+    : trimmed;
 }
 
 export interface BarSegment {

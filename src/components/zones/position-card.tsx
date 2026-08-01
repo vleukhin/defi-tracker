@@ -11,6 +11,7 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { FluidCard } from "./fluid-card";
+import { GmxCard } from "./gmx-card";
 import { UniswapCard } from "./uniswap-card";
 import { MarkPopover } from "./mark-popover";
 import { LABEL, ZoneChip, type MarkFn } from "./shared";
@@ -20,17 +21,21 @@ import { LABEL, ZoneChip, type MarkFn } from "./shared";
  * ликвидности разные вопросы к позиции, и общая строка отвечала на них
  * одинаково плохо — Fluid живет ставкой, а GM переоценкой.
  *
- * Свои карточки есть у Fluid и Uniswap v3; остальные протоколы показываются
- * общей карточкой, из которой они и вырастут.
+ * Карточки есть у всех трех протоколов размещения — Fluid, Uniswap v3 и
+ * GMX v2. Общая карточка остается запасным вариантом: строка читателя
+ * с незнакомым протоколом должна показываться, а не пропадать.
  */
 export function PositionCard({
   position,
+  positions,
   busy,
   onMark,
   stableBorrow,
   nowMs,
 }: {
   position: PositionDto;
+  /** Все позиции экрана: доля GM-пула считается относительно соседей. */
+  positions: PositionDto[];
   busy: boolean;
   onMark: MarkFn;
   stableBorrow: StableBorrowRateDto;
@@ -54,6 +59,16 @@ export function PositionCard({
         busy={busy}
         onMark={onMark}
         nowMs={nowMs}
+      />
+    );
+  }
+  if (position.protocol === "gmx_v2") {
+    return (
+      <GmxCard
+        position={position}
+        positions={positions}
+        busy={busy}
+        onMark={onMark}
       />
     );
   }

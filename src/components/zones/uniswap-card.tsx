@@ -5,7 +5,6 @@ import type { PositionComponentDto, PositionDto } from "@/lib/api/types";
 import {
   chainLabel,
   formatRelativeTime,
-  tableNumber,
   tablePct,
   tableUsd,
 } from "@/lib/format";
@@ -21,6 +20,7 @@ import {
   ProtocolCard,
   ProtocolMark,
   SplitBar,
+  tokenQuantity,
   UnmarkedBadge,
 } from "./card-parts";
 import { ProfitValue } from "./position-card";
@@ -161,7 +161,7 @@ function CompositionBar({
         {components.map((c, i) => (
           <span key={c.symbol}>
             {i > 0 && " · "}
-            <span className="font-mono">{quantity(c.quantity)}</span>
+            <span className="font-mono">{tokenQuantity(c.quantity)}</span>
             {` ${c.symbol}`}
           </span>
         ))}
@@ -175,7 +175,7 @@ function CompositionBar({
   const segments = components
     .map((c) => ({
       label: c.symbol,
-      value: quantity(c.quantity),
+      value: tokenQuantity(c.quantity),
       percent: ((c.valueUsd ?? 0) / total) * 100,
       color: categoryColor(c.symbol),
     }))
@@ -285,13 +285,6 @@ function exitSide(components: PositionComponentDto[]): "up" | "down" | null {
   if (category === "stable") return "up";
   if (category === "btc" || category === "eth") return "down";
   return null;
-}
-
-/** Количество токена: чем меньше число, тем больше знаков после запятой. */
-function quantity(value: number): string {
-  if (value >= 1000) return tableNumber(value, 0);
-  if (value >= 1) return tableNumber(value, 4);
-  return tableNumber(value, 6);
 }
 
 /** Знак Uniswap — стрелки обмена на фирменном розовом. */
