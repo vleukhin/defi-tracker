@@ -23,6 +23,9 @@ export async function GET() {
       zones: portfolio.zones,
       positions: portfolio.positions,
       positionsSummary: portfolio.positionsSummary,
+      // Ставки позиций сравниваются не с нулем, а со стоимостью заемных
+      // стейблов: депозит держат, только пока он дороже займа (docs/07 §3)
+      stableBorrow: portfolio.stableBorrow,
       // Для сверки на экране: сумма зон обязана совпасть с Активами
       assetsUsd: portfolio.overview.assetsUsd,
       stableCategoryUsd:

@@ -9,6 +9,7 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CHAIN_IDS, getChainClients, type ChainId } from "./config";
 import { COVERED_RESERVES } from "./aave";
+import { isStableSymbol } from "@/lib/stables";
 import { logApiCall } from "@/lib/metrics";
 
 /**
@@ -26,6 +27,10 @@ import { logApiCall } from "@/lib/metrics";
  *  2. Best-effort разбивка: V_TOKEN.balanceOf по ВСЕМ резервам address book
  *     (долг может быть в стейблах — курируемый список залога его не покроет).
  *     allowFailure: true; упавший вызов = «неизвестно», НЕ ноль.
+ *
+ *  3. Ставка variable-займа по стейбл-резервам (Pool.getReserveData): сколько
+ *     стоят заемные деньги. По стратегии это порог, ниже которого депозит
+ *     на стороннем лендинге держать незачем.
  *
  * Адреса Pool и v-токенов — только из @bgd-labs/aave-address-book.
  * Отказ сети изолирован и НЕ стирает последние известные строки здоровья.
@@ -56,7 +61,79 @@ export const getUserAccountDataAbi = [
   },
 ] as const;
 
+/**
+ * Pool.getReserveData(asset) — ставки рынка. Нужна одна величина,
+ * currentVariableBorrowRate: по стратегии (docs/07 §3) депозит на стороннем
+ * лендинге держат, только пока его ставка выше ставки по займу, а значит
+ * стоимость заемных стейблов должна быть в приложении числом, а не в голове.
+ *
+ * Кортеж — устаревшая форма ReserveDataLegacy, которую Pool отдает ради
+ * совместимости. Если на каком-то рынке форма разъедется, вызов упадет на
+ * декодировании: allowFailure оставит ставку «неизвестной», и экран честно
+ * покажет прочерк вместо выдуманного числа. Остальное чтение долга при этом
+ * не страдает — оно идет отдельными вызовами того же multicall.
+ */
+export const getReserveDataAbi = [
+  {
+    name: "getReserveData",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          {
+            name: "configuration",
+            type: "tuple",
+            components: [{ name: "data", type: "uint256" }],
+          },
+          { name: "liquidityIndex", type: "uint128" },
+          { name: "currentLiquidityRate", type: "uint128" },
+          { name: "variableBorrowIndex", type: "uint128" },
+          { name: "currentVariableBorrowRate", type: "uint128" },
+          { name: "currentStableBorrowRate", type: "uint128" },
+          { name: "lastUpdateTimestamp", type: "uint40" },
+          { name: "id", type: "uint16" },
+          { name: "aTokenAddress", type: "address" },
+          { name: "stableDebtTokenAddress", type: "address" },
+          { name: "variableDebtTokenAddress", type: "address" },
+          { name: "interestRateStrategyAddress", type: "address" },
+          { name: "accruedToTreasury", type: "uint128" },
+          { name: "unbacked", type: "uint128" },
+          { name: "isolationModeTotalDebt", type: "uint128" },
+        ],
+      },
+    ],
+  },
+] as const;
+
 export const MAX_UINT256 = 2n ** 256n - 1n;
+
+/**
+ * Ставки Aave — ray (1e27) и годовые БЕЗ капитализации (APR): 1e25 = 1%.
+ * Интерфейс самого Aave показывает APY с ежесекундной капитализацией,
+ * поэтому наше число у высоких ставок будет чуть ниже — это не расхождение
+ * данных, а разные величины, и на экране так и подписано.
+ */
+const RAY_PER_PERCENT = 1e25;
+
+/** Потолок правдоподобия: выше — признак не ставки, а мусора в декодировании. */
+const MAX_PLAUSIBLE_RATE_PERCENT = 1000;
+
+/** currentVariableBorrowRate из кортежа резерва; null = форма не та. */
+export function borrowRatePercent(result: unknown): number | null {
+  if (result === null || typeof result !== "object") return null;
+  const raw = (result as { currentVariableBorrowRate?: unknown })
+    .currentVariableBorrowRate;
+  if (typeof raw !== "bigint" || raw < 0n) return null;
+  const percent = Number(raw) / RAY_PER_PERCENT;
+  if (!Number.isFinite(percent) || percent > MAX_PLAUSIBLE_RATE_PERCENT) {
+    return null;
+  }
+  return percent;
+}
 
 /** База рынков Aave v3 — USD с 8 знаками (BASE_CURRENCY_UNIT = 1e8). */
 const BASE_DECIMALS = 8;
@@ -193,6 +270,12 @@ export interface DebtReading {
   decimals: number;
   /** Сырое значение vToken.balanceOf (в decimals базового токена). */
   raw: bigint;
+  /**
+   * Ставка variable-займа на момент чтения, % годовых (APR). Читается только
+   * для стейблов — ими и финансируется Yield-зона; null у остальных резервов
+   * и там, где вызов не прошел.
+   */
+  borrowRatePercent: number | null;
 }
 
 export interface AaveDebtChainStatus {
@@ -220,8 +303,11 @@ export interface AaveDebtRpcClient {
   multicall(args: {
     contracts: readonly {
       address: Address;
-      abi: typeof getUserAccountDataAbi | typeof erc20Abi;
-      functionName: "getUserAccountData" | "balanceOf";
+      abi:
+        | typeof getUserAccountDataAbi
+        | typeof erc20Abi
+        | typeof getReserveDataAbi;
+      functionName: "getUserAccountData" | "balanceOf" | "getReserveData";
       args: readonly [Address];
     }[];
     allowFailure: true;
@@ -249,8 +335,13 @@ function isAccountTuple(value: unknown): value is readonly bigint[] {
 
 /**
  * Один multicall на сеть: getUserAccountData + vToken.balanceOf по всем
- * резервам. Упавший getUserAccountData оставляет account = null (health-строки
- * не перезаписываются), упавший balanceOf — «неизвестно», не ноль.
+ * резервам + getReserveData по стейблам (ставка займа). Упавший
+ * getUserAccountData оставляет account = null (health-строки не
+ * перезаписываются), упавший balanceOf — «неизвестно», не ноль.
+ *
+ * Ставки добираются тем же multicall, а не вторым запросом: счетчик квоты
+ * считает запросы, а не вызовы внутри них, и лишний round-trip на каждую
+ * сеть при каждом обновлении не нужен.
  */
 export async function readChainAaveDebt(
   client: AaveDebtRpcClient,
@@ -259,6 +350,9 @@ export async function readChainAaveDebt(
   logCall: typeof logApiCall = logApiCall,
 ): Promise<AaveDebtChainStatus> {
   const reserves = AAVE_DEBT_RESERVES[chain];
+  // Ставка нужна только по стейблам: ими финансируется Yield-зона, и только
+  // с ними сравнима ставка стейбл-депозита
+  const rateReserves = reserves.filter((r) => isStableSymbol(r.symbol));
 
   try {
     const results = await client.multicall({
@@ -275,6 +369,12 @@ export async function readChainAaveDebt(
           functionName: "balanceOf" as const,
           args: [wallet] as const,
         })),
+        ...rateReserves.map((r) => ({
+          address: AAVE_POOLS[chain],
+          abi: getReserveDataAbi,
+          functionName: "getReserveData" as const,
+          args: [r.underlying] as const,
+        })),
       ],
       allowFailure: true,
     });
@@ -282,7 +382,17 @@ export async function readChainAaveDebt(
     // Один multicall = один RPC-запрос в счетчике квоты
     void logCall("alchemy", `aave-debt:${chain}`, { units: 1 });
 
-    const [accountRes, ...debtRes] = results;
+    const [accountRes, ...rest] = results;
+    const debtRes = rest.slice(0, reserves.length);
+    const rateRes = rest.slice(reserves.length);
+
+    // Ставки по символу резерва: упавший вызов = «неизвестно», не ноль
+    const ratesBySymbol = new Map<string, number>();
+    rateRes.forEach((res, i) => {
+      if (res.status !== "success") return;
+      const percent = borrowRatePercent(res.result);
+      if (percent !== null) ratesBySymbol.set(rateReserves[i].symbol, percent);
+    });
 
     let account: AaveAccountData | null = null;
     let accountError: string | undefined;
@@ -303,7 +413,11 @@ export async function readChainAaveDebt(
     debtRes.forEach((res, i) => {
       const reserve = reserves[i];
       if (res.status === "success" && typeof res.result === "bigint") {
-        debts.push({ ...reserve, raw: res.result });
+        debts.push({
+          ...reserve,
+          raw: res.result,
+          borrowRatePercent: ratesBySymbol.get(reserve.symbol) ?? null,
+        });
       } else {
         const reason =
           res.status === "failure"
@@ -370,6 +484,12 @@ export interface AaveDebtPositionPayload {
   decimals: number;
   /** Сырое значение строкой — на случай пересчета без потери точности. */
   raw: string;
+  /**
+   * Ставка variable-займа на момент чтения, % годовых (APR); только у
+   * стейблов, у остальных резервов null. Из этих ставок складывается
+   * стоимость заемных стейблов — база сравнения для ставок Yield-позиций.
+   */
+  borrowRatePercent: number | null;
 }
 
 /**
@@ -449,6 +569,7 @@ export async function persistAaveDebt(
           underlying: d.underlying.toLowerCase(),
           decimals: d.decimals,
           raw: d.raw.toString(),
+          borrowRatePercent: d.borrowRatePercent,
         },
         updated_at: nowIso,
       });

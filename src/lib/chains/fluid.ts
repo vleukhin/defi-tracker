@@ -113,6 +113,46 @@ export interface FluidPositionReading {
   coingeckoId: string | null;
   /** Депозит в единицах базового актива, сырое значение. */
   raw: bigint;
+  /** Базовая ставка депозита, % годовых. null = резолвер ее не отдал. */
+  supplyRatePercent: number | null;
+  /** Награды сверх базовой ставки, % годовых. null = не отдал. */
+  rewardsRatePercent: number | null;
+}
+
+/**
+ * Ставки из ответа резолвера — по стратегии (docs/07 §3) депозит на лендинге
+ * держат, только пока его ставка выше ставки по займу, и без нее позицию
+ * не с чем сравнивать.
+ *
+ * Шкалы у двух полей РАЗНЫЕ, обе заданы контрактами Fluid:
+ *   supplyRate  — проценты с двумя знаками, 1e2 = 1% (525 → 5,25%);
+ *   rewardsRate — доля года с точностью 1e12, 1e12 = 100% (5e10 → 5%).
+ * Перепутать их местами — ошибка в сто миллионов раз, поэтому обе шкалы
+ * названы константами, а результат проверяется на правдоподобие.
+ *
+ * Ставка — величина «на момент чтения»: она плавает вместе с утилизацией
+ * рынка, и хранится ровно как остальные показания читателя.
+ */
+const SUPPLY_RATE_PER_PERCENT = 1e2;
+const REWARDS_RATE_PER_PERCENT = 1e10;
+
+/**
+ * Потолок правдоподобия. Ставка выше — это не сверхдоход, а признак того,
+ * что шкала поля разъехалась с нашей константой; показывать такое число
+ * нельзя, «неизвестно» честнее.
+ */
+const MAX_PLAUSIBLE_RATE_PERCENT = 1000;
+
+export function fluidRatePercent(
+  raw: bigint | undefined,
+  perPercent: number,
+): number | null {
+  if (raw === undefined || raw < 0n) return null;
+  const percent = Number(raw) / perPercent;
+  if (!Number.isFinite(percent) || percent > MAX_PLAUSIBLE_RATE_PERCENT) {
+    return null;
+  }
+  return percent;
 }
 
 export interface FluidChainStatus {
@@ -155,6 +195,9 @@ interface RawFluidEntry {
     symbol: string;
     decimals: bigint;
     asset: Address;
+    /** Опциональны в типе: старые моки и ответы без ставок остаются валидными. */
+    supplyRate?: bigint;
+    rewardsRate?: bigint;
   };
   userPosition: { underlyingAssets: bigint };
 }
@@ -220,6 +263,14 @@ export async function readChainFluid(
         decimals: Number(entry.fTokenDetails.decimals),
         coingeckoId: coingeckoIdForSymbol(symbol),
         raw,
+        supplyRatePercent: fluidRatePercent(
+          entry.fTokenDetails.supplyRate,
+          SUPPLY_RATE_PER_PERCENT,
+        ),
+        rewardsRatePercent: fluidRatePercent(
+          entry.fTokenDetails.rewardsRate,
+          REWARDS_RATE_PER_PERCENT,
+        ),
       });
     }
 
@@ -261,6 +312,10 @@ export interface FluidPositionPayload {
   decimals: number;
   /** Сырое значение строкой — пересчет без потери точности. */
   raw: string;
+  /** Ставка депозита на момент чтения, % годовых; null = не прочитана. */
+  supplyRatePercent: number | null;
+  /** Награды сверх ставки, % годовых; null = не прочитаны. */
+  rewardsRatePercent: number | null;
 }
 
 /**
@@ -309,6 +364,8 @@ export async function persistFluidPositions(
           underlying: p.underlying.toLowerCase(),
           decimals: p.decimals,
           raw: p.raw.toString(),
+          supplyRatePercent: p.supplyRatePercent,
+          rewardsRatePercent: p.rewardsRatePercent,
         },
         updated_at: nowIso,
       });

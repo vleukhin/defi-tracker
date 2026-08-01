@@ -51,6 +51,9 @@ interface FluidPayload {
   fTokenSymbol: string;
   coingeckoId: string | null;
   decimals: number;
+  /** Ставки на момент чтения; необязательны — строки до Фазы 7 их не хранят. */
+  supplyRatePercent?: number | null;
+  rewardsRatePercent?: number | null;
 }
 interface GmPayload {
   kind: "gmx_gm";
@@ -262,6 +265,10 @@ function buildFluid(
     ],
     feesUsd: null,
     inRange: null,
+    // Ставка депозита — то, ради чего Fluid и держат: доход тут начисляется
+    // процентом, а не переоценкой, и его сравнивают со ставкой займа
+    supplyRatePercent: payload.supplyRatePercent ?? null,
+    rewardsRatePercent: payload.rewardsRatePercent ?? null,
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -297,6 +304,9 @@ function buildGm(
     components,
     feesUsd: null,
     inRange: null,
+    // Пул не начисляет процент: доход GM считается переоценкой стоимости
+    supplyRatePercent: null,
+    rewardsRatePercent: null,
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -352,6 +362,9 @@ function buildLp(
     components,
     feesUsd,
     inRange: payload.inRange,
+    // У LP дохода-процента нет: он складывается из комиссий и переоценки
+    supplyRatePercent: null,
+    rewardsRatePercent: null,
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
