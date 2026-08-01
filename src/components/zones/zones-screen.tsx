@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, TriangleAlert } from "lucide-react";
+import { CircleAlert, SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -8,6 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
   PositionDto,
@@ -43,6 +49,11 @@ import { cn } from "@/lib/utils";
  * не обойтись: остаток «стоимость − свое» бывает и заемной частью, и
  * начисленным доходом. На депозите Fluid такой остаток был доходом,
  * а показывался как долг.
+ *
+ * Разметка живет в поповере за кнопкой, а не в строке: правят ее редко —
+ * при заведении позиции и при выводе, — а читают каждый день. Форма
+ * из четырех контролов в каждой строке отнимала место у чисел, ради
+ * которых на экран и заходят.
  */
 
 const LABEL =
@@ -81,6 +92,7 @@ export function ZonesScreen() {
   const { data, error, loading, refetch } = useApi<ZonesResponse>("/api/zones");
   const [busy, setBusy] = useState(false);
 
+  /** true = сохранилось; форма в поповере по этому признаку закрывается. */
   async function mark(position: PositionDto, patch: MarkPatch) {
     setBusy(true);
     try {
@@ -90,10 +102,12 @@ export function ZonesScreen() {
         body: JSON.stringify({ protocol, chain, externalId, ...patch }),
       });
       await refetch();
+      return true;
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Не удалось сохранить разметку",
       );
+      return false;
     } finally {
       setBusy(false);
     }
@@ -198,14 +212,13 @@ export function ZonesScreen() {
         </Card>
       ) : (
         <Card className="p-4">
-          <h2 className="text-sm font-semibold">Разметка позиций</h2>
+          <h2 className="text-sm font-semibold">Позиции</h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Укажите, сколько в позицию вложено своих и сколько заемных, а в
-            «Выведено» — стоимость того, что из нее забрали. Доход считается
-            как «стоимость + выведено − вложено»: иначе продажа части GM
-            с переводом BTC/ETH в залог выглядела бы убытком, хотя капитал
-            просто переехал в Growth. Из текущих собственных долей
-            складывается категория «Стейблы».
+            Доход считается как «стоимость + выведено − вложено»: иначе продажа
+            части GM с переводом BTC/ETH в залог выглядела бы убытком, хотя
+            капитал просто переехал в Growth. Из текущих собственных долей
+            складывается категория «Стейблы». Зона и вложенные суммы правятся
+            в разметке позиции — кнопка справа в строке.
           </p>
           <ul className="mt-3 divide-y divide-border">
             {positions.map((p) => (
@@ -291,7 +304,7 @@ function Row({
   );
 }
 
-/** Одна позиция: зона кнопками, два поля вложенного и доход. */
+/** Карточка позиции: что это, как размечено и что принесло. */
 function PositionRow({
   position,
   busy,
@@ -299,84 +312,57 @@ function PositionRow({
 }: {
   position: PositionDto;
   busy: boolean;
-  onMark: (p: PositionDto, patch: MarkPatch) => void;
+  onMark: (p: PositionDto, patch: MarkPatch) => Promise<boolean>;
 }) {
   const unmarked =
     position.ownPrincipalUsd === null || position.borrowedPrincipalUsd === null;
 
   return (
-    <li className="space-y-2 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className="truncate text-sm">{position.title}</span>
-            {unmarked && <Badge variant="warning">не размечено</Badge>}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {position.protocolLabel}
-            {" · стоит "}
-            {position.valueUsd === null ? "—" : tableUsd(position.valueUsd)}
-            {position.ownCurrentUsd !== null && !unmarked && (
-              <>
-                {" · своих сейчас "}
-                {tableUsd(position.ownCurrentUsd)}
-              </>
-            )}
-          </span>
-        </span>
+    <li className="flex flex-wrap items-start gap-x-3 gap-y-2 py-3">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="truncate text-sm">{position.title}</span>
+          <ZoneChip zone={position.zone} />
+          {unmarked && <Badge variant="warning">не размечено</Badge>}
+        </div>
 
-        <span className="flex gap-1">
-          {ZONE_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              disabled={busy}
-              onClick={() => onMark(position, { zone: o.value })}
-              aria-pressed={position.zone === o.value}
-              className={cn(
-                "rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
-                position.zone === o.value
-                  ? "bg-accent font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60",
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
-        </span>
+        <p className="truncate text-xs text-muted-foreground">
+          {position.protocolLabel}
+          {" · стоит "}
+          {position.valueUsd === null ? "—" : tableUsd(position.valueUsd)}
+          {position.ownCurrentUsd !== null && !unmarked && (
+            <>
+              {" · своих сейчас "}
+              {tableUsd(position.ownCurrentUsd)}
+            </>
+          )}
+        </p>
+
+        {/* Разметка ушла в поповер, но остается фактом о позиции: без нее
+            не прочитать ни доход, ни собственную долю */}
+        <p className="text-xs text-muted-foreground">
+          {"Вложено: свои "}
+          <Amount value={position.ownPrincipalUsd} />
+          {" · заемные "}
+          <Amount value={position.borrowedPrincipalUsd} />
+          {position.withdrawnUsd !== null && position.withdrawnUsd > 0 && (
+            <>
+              {" · выведено "}
+              <Amount value={position.withdrawnUsd} />
+            </>
+          )}
+        </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-2">
-        <PrincipalInput
-          id={`own-${position.id}`}
-          label="Вложено своих, $"
-          value={position.ownPrincipalUsd}
-          busy={busy}
-          onSave={(v) => onMark(position, { ownPrincipalUsd: v })}
-        />
-        <PrincipalInput
-          id={`brw-${position.id}`}
-          label="Вложено заемных, $"
-          value={position.borrowedPrincipalUsd}
-          busy={busy}
-          onSave={(v) => onMark(position, { borrowedPrincipalUsd: v })}
-        />
-        <PrincipalInput
-          id={`out-${position.id}`}
-          label="Выведено, $"
-          value={position.withdrawnUsd}
-          busy={busy}
-          onSave={(v) => onMark(position, { withdrawnUsd: v })}
-          hint="Стоимость того, что забрали из позиции: BTC/ETH с продажи GM, ушедшие в залог"
-        />
-
-        {/* Доход = стоимость − вложено. Пока размечена лишь часть, показать
-            его нельзя: остаток мог бы оказаться незаявленной заемной долей */}
-        <div className="pb-1">
-          <span className={LABEL}>Доход</span>
+      <div className="flex items-start gap-1">
+        {/* Доход = стоимость + выведено − вложено. Пока размечена лишь часть,
+            показать его нельзя: остаток мог бы оказаться незаявленной
+            заемной долей */}
+        <div className="text-right">
+          <span className={cn(LABEL, "block")}>Доход</span>
           <span
             className={cn(
-              "ml-2 font-mono text-sm font-semibold",
+              "font-mono text-sm font-semibold",
               position.profitUsd === null
                 ? "text-muted-foreground"
                 : pnlClass(position.profitUsd),
@@ -400,77 +386,244 @@ function PositionRow({
             )}
           </span>
         </div>
+
+        <MarkPopover position={position} busy={busy} onMark={onMark} />
       </div>
     </li>
   );
 }
 
+/** Сумма разметки; «—» означает «не сказали», а не ноль. */
+function Amount({ value }: { value: number | null }) {
+  if (value === null) return <span>—</span>;
+  return <span className="font-mono">{tableUsd(value)}</span>;
+}
+
+function ZoneChip({ zone }: { zone: StrategyZone }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <span
+        aria-hidden
+        className="size-2 rounded-full"
+        style={{ background: ZONE_ACCENT[zone] }}
+      />
+      {ZONE_OPTIONS.find((o) => o.value === zone)?.label ?? zone}
+    </span>
+  );
+}
+
 /**
- * Поле вложенной суммы. Пустое значение = «не размечено», и это не ноль:
- * ноль означал бы «вложено ничего» и объявил бы доходом всю стоимость.
+ * Разметка позиции в поповере. Правки редкие, чтение — ежедневное,
+ * поэтому форма не занимает место в строке постоянно.
  */
-function PrincipalInput({
+function MarkPopover({
+  position,
+  busy,
+  onMark,
+}: {
+  position: PositionDto;
+  busy: boolean;
+  onMark: (p: PositionDto, patch: MarkPatch) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={busy}
+          aria-label={`Разметка позиции: ${position.title}`}
+          title="Разметка позиции"
+        >
+          <SlidersHorizontal />
+        </Button>
+      </PopoverTrigger>
+      {/* Содержимое размонтируется при закрытии — черновик каждый раз
+          начинается с сохраненных значений, а не с прошлой правки */}
+      <PopoverContent align="end" className="w-80">
+        <MarkForm
+          position={position}
+          busy={busy}
+          onMark={onMark}
+          onDone={() => setOpen(false)}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function MarkForm({
+  position,
+  busy,
+  onMark,
+  onDone,
+}: {
+  position: PositionDto;
+  busy: boolean;
+  onMark: (p: PositionDto, patch: MarkPatch) => Promise<boolean>;
+  onDone: () => void;
+}) {
+  const [zone, setZone] = useState<StrategyZone>(position.zone);
+  const [own, setOwn] = useState(draftOf(position.ownPrincipalUsd));
+  const [borrowed, setBorrowed] = useState(
+    draftOf(position.borrowedPrincipalUsd),
+  );
+  const [withdrawn, setWithdrawn] = useState(draftOf(position.withdrawnUsd));
+
+  /** Одним запросом: разметка правится целиком, а не по полю за раз. */
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+
+    const patch: MarkPatch = {};
+    if (zone !== position.zone) patch.zone = zone;
+
+    const fields = [
+      ["ownPrincipalUsd", own, position.ownPrincipalUsd, "Вложено своих"],
+      [
+        "borrowedPrincipalUsd",
+        borrowed,
+        position.borrowedPrincipalUsd,
+        "Вложено заемных",
+      ],
+      ["withdrawnUsd", withdrawn, position.withdrawnUsd, "Выведено"],
+    ] as const;
+
+    for (const [key, draft, saved, label] of fields) {
+      const parsed = parseAmount(draft);
+      if (parsed === undefined) {
+        toast.error(`${label}: сумма должна быть неотрицательным числом`);
+        return;
+      }
+      if (parsed !== saved) patch[key] = parsed;
+    }
+
+    // Ничего не тронули — незачем и запрос: API такую правку отклоняет
+    if (Object.keys(patch).length === 0) {
+      onDone();
+      return;
+    }
+    if (await onMark(position, patch)) onDone();
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div>
+        <p className="text-sm font-medium">Разметка позиции</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {position.title}
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <span className={cn(LABEL, "block")} id={`zone-${position.id}`}>
+          Зона
+        </span>
+        <div
+          role="group"
+          aria-labelledby={`zone-${position.id}`}
+          className="grid grid-cols-3 gap-1"
+        >
+          {ZONE_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              disabled={busy}
+              onClick={() => setZone(o.value)}
+              aria-pressed={zone === o.value}
+              className={cn(
+                "rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                zone === o.value
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-accent/60",
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <AmountField
+        id={`own-${position.id}`}
+        label="Вложено своих, $"
+        value={own}
+        onChange={setOwn}
+      />
+      <AmountField
+        id={`brw-${position.id}`}
+        label="Вложено заемных, $"
+        value={borrowed}
+        onChange={setBorrowed}
+      />
+      <AmountField
+        id={`out-${position.id}`}
+        label="Выведено, $"
+        value={withdrawn}
+        onChange={setWithdrawn}
+        hint="Стоимость того, что забрали из позиции: BTC/ETH с продажи GM, ушедшие в залог"
+      />
+
+      <p className="text-xs text-muted-foreground">
+        Пустое поле — «не размечено», и это не ноль: ноль означал бы «вложено
+        ничего» и объявил бы доходом всю стоимость.
+      </p>
+
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onDone}>
+          Отмена
+        </Button>
+        <Button type="submit" size="sm" disabled={busy}>
+          Сохранить
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function AmountField({
   id,
   label,
   value,
-  busy,
-  onSave,
+  onChange,
   hint,
 }: {
   id: string;
   label: string;
-  value: number | null;
-  busy: boolean;
-  onSave: (value: number | null) => void;
+  value: string;
+  onChange: (value: string) => void;
   hint?: string;
 }) {
-  const saved = value === null ? "" : String(value);
-  const [draft, setDraft] = useState(saved);
-  const dirty = draft.trim() !== saved;
-
-  function save() {
-    const raw = draft.trim().replace(",", ".");
-    if (raw === "") {
-      onSave(null);
-      return;
-    }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      toast.error("Сумма должна быть неотрицательным числом");
-      return;
-    }
-    onSave(parsed);
-  }
-
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className={LABEL} title={hint}>
+      <Label htmlFor={id} className={LABEL} title={hint}>
         {label}
-      </label>
-      <div className="flex items-center gap-1">
-        <Input
-          id={id}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") save();
-          }}
-          inputMode="decimal"
-          placeholder="не указано"
-          className="h-8 w-32 font-mono"
-        />
-        {dirty && (
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy}
-            onClick={save}
-            className="h-8"
-          >
-            OK
-          </Button>
-        )}
-      </div>
+      </Label>
+      <Input
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        inputMode="decimal"
+        placeholder="не указано"
+        className="h-8 font-mono"
+      />
     </div>
   );
+}
+
+function draftOf(value: number | null): string {
+  return value === null ? "" : String(value);
+}
+
+/**
+ * Черновик поля в число: null — «снять разметку», undefined — не число.
+ * Пустое поле и ноль различаются намеренно (см. комментарий у формы).
+ */
+function parseAmount(draft: string): number | null | undefined {
+  const raw = draft.trim().replace(/\s/g, "").replace(",", ".");
+  if (raw === "") return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+  return parsed;
 }
