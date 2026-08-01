@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleAlert, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,9 @@ interface ZonesResponse {
 export function ZonesScreen() {
   const { data, error, loading, refetch } = useApi<ZonesResponse>("/api/zones");
   const [busy, setBusy] = useState(false);
+  // Одно «сейчас» на весь список: таймеры карточек не должны разъезжаться
+  // между соседними позициями
+  const nowMs = useNowMs();
 
   /** true = сохранилось; форма в поповере по этому признаку закрывается. */
   async function mark(position: PositionDto, patch: MarkPatch) {
@@ -129,9 +132,9 @@ export function ZonesScreen() {
             Позиций без разметки: {zones.unmarkedPositions}
           </AlertTitle>
           <AlertDescription>
-            Пока не указаны обе вложенные суммы, доход позиции не считается,
-            а неразмеченная собственная часть занижает категорию «Стейблы».
-            После перезаливки диапазона CLMM разметку нужно проставить заново.
+            Пока не указаны обе вложенные суммы, доход позиции не считается, а
+            неразмеченная собственная часть занижает категорию «Стейблы». После
+            перезаливки диапазона CLMM разметку нужно проставить заново.
           </AlertDescription>
         </Alert>
       )}
@@ -180,8 +183,8 @@ export function ZonesScreen() {
         <Card className="p-6 text-center">
           <p className="text-base font-medium">Позиций нет</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Здесь появятся депозиты Fluid, GM-пулы и LP-позиции, когда они
-            будут прочитаны с кошельков.
+            Здесь появятся депозиты Fluid, GM-пулы и LP-позиции, когда они будут
+            прочитаны с кошельков.
           </p>
         </Card>
       ) : (
@@ -191,8 +194,8 @@ export function ZonesScreen() {
             Доход считается как «стоимость + выведено − вложено»: иначе продажа
             части GM с переводом BTC/ETH в залог выглядела бы убытком, хотя
             капитал просто переехал в Growth. Из текущих собственных долей
-            складывается категория «Стейблы». Зона и вложенные суммы правятся
-            в разметке позиции — кнопка справа в строке.
+            складывается категория «Стейблы». Зона и вложенные суммы правятся в
+            разметке позиции — кнопка справа в строке.
           </p>
           <ul className="mt-3 space-y-3">
             {positions.map((p) => (
@@ -202,6 +205,7 @@ export function ZonesScreen() {
                 busy={busy}
                 onMark={mark}
                 stableBorrow={stableBorrow}
+                nowMs={nowMs}
               />
             ))}
           </ul>
@@ -209,6 +213,19 @@ export function ZonesScreen() {
       )}
     </div>
   );
+}
+
+/**
+ * «Сейчас» с обновлением раз в минуту: обратный отсчет 48 часов на карточке
+ * LP должен идти, а не застывать на времени открытия экрана.
+ */
+function useNowMs(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
 }
 
 function splitKey(key: string): [string, string, string] {

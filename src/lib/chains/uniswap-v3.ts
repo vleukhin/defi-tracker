@@ -514,11 +514,50 @@ export interface UniV3PositionPayload {
   liquidity: string;
   token0: UniV3Token;
   token1: UniV3Token;
+  /**
+   * Момент, с которого позиция замечена вне диапазона; null = в диапазоне.
+   *
+   * По стратегии (docs/07 §5, §6) после выхода из диапазона ждут ~48 часов,
+   * прежде чем действовать. Сам факт выхода читается заново каждым
+   * обновлением, а вот МОМЕНТ перехода невосстановим: не записали — потеряли.
+   *
+   * Отсчет ведется от первого чтения, в котором позиция увидена вне
+   * диапазона: если она вышла между обновлениями, реальный выход был раньше.
+   * Занижать срок ожидания безопаснее, чем завышать.
+   */
+  outOfRangeSince: string | null;
+}
+
+/** Прежнее состояние позиции — только то, что нужно для отсчета 48 часов. */
+interface PreviousRangeState {
+  inRange: boolean;
+  outOfRangeSince: string | null;
+}
+
+/**
+ * Момент выхода из диапазона для новой записи.
+ *
+ * Три случая: вернулась в диапазон — отсчет сбрасывается; вышла только что —
+ * ставим текущее время; остается вне диапазона — сохраняем прежний момент,
+ * иначе таймер обнулялся бы каждым обновлением и 48 часов не наступали
+ * никогда.
+ */
+export function nextOutOfRangeSince(
+  inRange: boolean,
+  previous: PreviousRangeState | undefined,
+  nowIso: string,
+): string | null {
+  if (inRange) return null;
+  return previous?.outOfRangeSince ?? nowIso;
 }
 
 /**
  * Запись LP-позиций. external_id = tokenId NFT (уникален в пределах сети).
  * value_usd проставляет вызывающий: цены компонентов — не забота читателя.
+ *
+ * Перед записью читается предыдущее состояние диапазона: upsert переписывает
+ * payload целиком, и без этого момент выхода из диапазона стирался бы каждым
+ * обновлением.
  */
 export async function persistUniswapV3Positions(
   admin: SupabaseClient,
@@ -527,6 +566,24 @@ export async function persistUniswapV3Positions(
   valueUsdByTokenId: Map<string, number> = new Map(),
 ): Promise<void> {
   const nowIso = new Date().toISOString();
+
+  const previousByKey = new Map<string, PreviousRangeState>();
+  const { data: existing, error: existingError } = await admin
+    .from("protocol_positions")
+    .select("chain, external_id, payload")
+    .eq("wallet_id", walletId)
+    .eq("protocol", UNIV3_SOURCE);
+  if (existingError) {
+    throw new Error(`protocol_positions (univ3) read: ${existingError.message}`);
+  }
+  for (const row of existing ?? []) {
+    const payload = row.payload as Partial<UniV3PositionPayload> | null;
+    if (!payload) continue;
+    previousByKey.set(`${row.chain}:${row.external_id}`, {
+      inRange: payload.inRange ?? true,
+      outOfRangeSince: payload.outOfRangeSince ?? null,
+    });
+  }
   const upserts = statuses.flatMap((status) =>
     status.ok
       ? status.positions.map((p) => ({
@@ -547,6 +604,11 @@ export async function persistUniswapV3Positions(
             liquidity: p.liquidity,
             token0: p.token0,
             token1: p.token1,
+            outOfRangeSince: nextOutOfRangeSince(
+              p.inRange,
+              previousByKey.get(`${p.chain}:${p.tokenId}`),
+              nowIso,
+            ),
           },
           updated_at: nowIso,
         }))

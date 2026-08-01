@@ -12,11 +12,17 @@ import type { PositionDto, StrategyZone } from "@/lib/api/types";
 export const LABEL =
   "text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase";
 
-/** Цвет зоны: тот же язык, что у категорий портфеля. */
+/**
+ * Цвет зоны — тем же языком, что и категории портфеля (ТЗ §1.3):
+ * Growth держит BTC/ETH, Stability — стейблы, Yield работает заемными.
+ *
+ * Раньше здесь стояли --color-chart-1..3, которых в токенах нет вовсе:
+ * точки зон и левая кромка карточек рисовались прозрачными.
+ */
 export const ZONE_ACCENT: Record<StrategyZone, string> = {
-  growth: "var(--color-chart-1)",
-  yield: "var(--color-chart-2)",
-  stability: "var(--color-chart-3)",
+  growth: "var(--color-chart-btc)",
+  yield: "var(--color-chart-eth)",
+  stability: "var(--color-chart-stable)",
 };
 
 export const ZONE_OPTIONS: { value: StrategyZone; label: string }[] = [

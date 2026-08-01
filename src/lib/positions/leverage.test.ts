@@ -30,6 +30,7 @@ function position(id: string, valueUsd: number | null): PositionDto {
     components: [],
     supplyRatePercent: null,
     rewardsRatePercent: null,
+    outOfRangeSince: null,
     feesUsd: null,
     inRange: null,
     walletId: "w1",

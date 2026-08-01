@@ -11,6 +11,7 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { FluidCard } from "./fluid-card";
+import { UniswapCard } from "./uniswap-card";
 import { MarkPopover } from "./mark-popover";
 import { LABEL, ZoneChip, type MarkFn } from "./shared";
 
@@ -19,7 +20,7 @@ import { LABEL, ZoneChip, type MarkFn } from "./shared";
  * ликвидности разные вопросы к позиции, и общая строка отвечала на них
  * одинаково плохо — Fluid живет ставкой, а GM переоценкой.
  *
- * Пока своя карточка есть только у Fluid; остальные протоколы показываются
+ * Свои карточки есть у Fluid и Uniswap v3; остальные протоколы показываются
  * общей карточкой, из которой они и вырастут.
  */
 export function PositionCard({
@@ -27,11 +28,14 @@ export function PositionCard({
   busy,
   onMark,
   stableBorrow,
+  nowMs,
 }: {
   position: PositionDto;
   busy: boolean;
   onMark: MarkFn;
   stableBorrow: StableBorrowRateDto;
+  /** «Сейчас» для таймеров карточек — одно на весь список. */
+  nowMs: number;
 }) {
   if (position.protocol === "fluid") {
     return (
@@ -40,6 +44,16 @@ export function PositionCard({
         busy={busy}
         onMark={onMark}
         stableBorrow={stableBorrow}
+      />
+    );
+  }
+  if (position.protocol === "uni_v3") {
+    return (
+      <UniswapCard
+        position={position}
+        busy={busy}
+        onMark={onMark}
+        nowMs={nowMs}
       />
     );
   }

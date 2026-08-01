@@ -74,6 +74,8 @@ interface UniV3Payload {
   inRange: boolean;
   token0: LpToken;
   token1: LpToken;
+  /** Необязателен: строки, записанные до появления таймера, его не хранят. */
+  outOfRangeSince?: string | null;
 }
 interface LpToken {
   symbol: string;
@@ -265,6 +267,7 @@ function buildFluid(
     ],
     feesUsd: null,
     inRange: null,
+    outOfRangeSince: null,
     // Ставка депозита — то, ради чего Fluid и держат: доход тут начисляется
     // процентом, а не переоценкой, и его сравнивают со ставкой займа
     supplyRatePercent: payload.supplyRatePercent ?? null,
@@ -304,6 +307,7 @@ function buildGm(
     components,
     feesUsd: null,
     inRange: null,
+    outOfRangeSince: null,
     // Пул не начисляет процент: доход GM считается переоценкой стоимости
     supplyRatePercent: null,
     rewardsRatePercent: null,
@@ -362,6 +366,8 @@ function buildLp(
     components,
     feesUsd,
     inRange: payload.inRange,
+    // В диапазоне таймер не идет: момент выхода сбрасывается читателем
+    outOfRangeSince: payload.inRange ? null : (payload.outOfRangeSince ?? null),
     // У LP дохода-процента нет: он складывается из комиссий и переоценки
     supplyRatePercent: null,
     rewardsRatePercent: null,
