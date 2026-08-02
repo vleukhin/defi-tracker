@@ -510,6 +510,21 @@ export interface PositionRangeDto {
    * null = позиция в диапазоне или цена не прочитана.
    */
   outsidePercent: number | null;
+  /**
+   * Во что превратится позиция при выходе за нижнюю границу: у нижней цены
+   * она целиком в базовом активе, у верхней — целиком в котировке. Это и
+   * есть развилка стратегии (docs/07 §5, §6): вниз — актив уходит в Growth,
+   * вверх — стейблы переоткрывают диапазон. null = граница без числа
+   * (позиция на весь диапазон) или ликвидность не прочитана.
+   */
+  exitLower: PositionExitDto | null;
+  exitUpper: PositionExitDto | null;
+}
+
+/** Актив, в котором окажется позиция при выходе за границу. */
+export interface PositionExitDto {
+  symbol: string;
+  quantity: number;
 }
 
 /**

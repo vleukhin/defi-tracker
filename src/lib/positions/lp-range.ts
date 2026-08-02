@@ -1,5 +1,10 @@
-import type { PositionRangeDto } from "@/lib/api/types";
-import { tickToPrice } from "@/lib/chains/uniswap-math";
+import type { PositionExitDto, PositionRangeDto } from "@/lib/api/types";
+import {
+  amount0ForLiquidity,
+  amount1ForLiquidity,
+  getSqrtRatioAtTick,
+  tickToPrice,
+} from "@/lib/chains/uniswap-math";
 import { isStableSymbol } from "@/lib/stables";
 
 /**
@@ -21,6 +26,11 @@ import { isStableSymbol } from "@/lib/stables";
  * и ликвидность распределена равномерно именно по тикам. Позиция вне
  * диапазона дает значение меньше нуля или больше единицы — отдельного
  * флага не нужно, знак и есть направление выхода.
+ *
+ * ВЫХОД. У нижней границы позиция целиком в базовом активе, у верхней —
+ * целиком в котировке: подешевел актив — на руках остается актив,
+ * подорожал — остаются деньги. Количества считаются из ликвидности той же
+ * формулой, что и текущий состав, и не требуют ни одного лишнего запроса.
  */
 
 /**
@@ -39,6 +49,8 @@ export interface LpRangeInput {
   tickUpper: number;
   /** Текущий тик пула; null = не прочитан (строки до появления поля). */
   tick: number | null;
+  /** Ликвидность позиции строкой; без нее количества на выходе не считаются. */
+  liquidity?: string | null;
   token0: LpRangeToken;
   token1: LpRangeToken;
 }
@@ -81,6 +93,8 @@ export function buildLpRange(input: LpRangeInput): PositionRangeDto | null {
     }
   }
 
+  const exits = exitAmounts(input, invert);
+
   return {
     baseSymbol: base.symbol,
     quoteSymbol: quote.symbol,
@@ -89,5 +103,64 @@ export function buildLpRange(input: LpRangeInput): PositionRangeDto | null {
     currentPrice,
     position,
     outsidePercent,
+    // Граница без числа — это «весь диапазон»: количество на ней
+    // астрономическое и смысла не несет
+    exitLower: lowerPrice === null ? null : exits.lower,
+    exitUpper: upperPrice === null ? null : exits.upper,
+  };
+}
+
+/**
+ * Сколько токенов останется на каждой границе. У нижней цены базового
+ * актива позиция целиком в нем самом, у верхней — целиком в котировке;
+ * при перевернутой паре стороны меняются местами вместе с токенами.
+ */
+function exitAmounts(
+  input: LpRangeInput,
+  invert: boolean,
+): { lower: PositionExitDto | null; upper: PositionExitDto | null } {
+  const raw = input.liquidity;
+  if (raw === undefined || raw === null || raw === "") {
+    return { lower: null, upper: null };
+  }
+
+  let liquidity: bigint;
+  try {
+    liquidity = BigInt(raw);
+  } catch {
+    return { lower: null, upper: null };
+  }
+  if (liquidity <= 0n) return { lower: null, upper: null };
+
+  // Тик вне допустимого предела роняет тик-математику исключением, а весь
+  // DTO из-за одной кривой строки падать не должен
+  let sqrtLower: bigint;
+  let sqrtUpper: bigint;
+  try {
+    sqrtLower = getSqrtRatioAtTick(input.tickLower);
+    sqrtUpper = getSqrtRatioAtTick(input.tickUpper);
+  } catch {
+    return { lower: null, upper: null };
+  }
+
+  const amount0 =
+    Number(amount0ForLiquidity(sqrtLower, sqrtUpper, liquidity)) /
+    10 ** input.token0.decimals;
+  const amount1 =
+    Number(amount1ForLiquidity(sqrtLower, sqrtUpper, liquidity)) /
+    10 ** input.token1.decimals;
+
+  const base = invert ? input.token1 : input.token0;
+  const quote = invert ? input.token0 : input.token1;
+
+  return {
+    lower: {
+      symbol: base.symbol,
+      quantity: invert ? amount1 : amount0,
+    },
+    upper: {
+      symbol: quote.symbol,
+      quantity: invert ? amount0 : amount1,
+    },
   };
 }

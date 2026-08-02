@@ -79,6 +79,8 @@ interface UniV3Payload {
   outOfRangeSince?: string | null;
   /** Текущий тик пула; необязателен по той же причине. */
   tick?: number | null;
+  /** Ликвидность позиции — из нее считаются количества на границах. */
+  liquidity?: string | null;
 }
 interface LpToken {
   symbol: string;
@@ -378,6 +380,7 @@ function buildLp(
       tickLower: payload.tickLower,
       tickUpper: payload.tickUpper,
       tick: payload.tick ?? null,
+      liquidity: payload.liquidity ?? row.quantity,
       token0: payload.token0,
       token1: payload.token1,
     }),

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import type {
   PositionComponentDto,
   PositionDto,
+  PositionExitDto,
   PositionRangeDto,
 } from "@/lib/api/types";
 import {
@@ -280,6 +281,8 @@ function RangeFooter({
           )}
         </>
       ) : (
+        // Что будет на границах, уже написано под ними числами — повторять
+        // это словами значит удлинять абзац, который и так читают редко
         "Пока цена в диапазоне, позиция собирает комиссии — по стратегии делать с ней нечего."
       )}
     </CardFooter>
@@ -363,10 +366,21 @@ function RangeBar({
         )}
       </span>
 
-      {/* Границы с расстоянием до них — под ручками, а не по краям блока */}
-      <span className="relative mt-2 block h-8">
-        <Bound at={BAND_START} price={lowerPrice} currentPrice={currentPrice} />
-        <Bound at={BAND_END} price={upperPrice} currentPrice={currentPrice} />
+      {/* Границы под ручками: цена, расстояние до нее и во что превратится
+          позиция, если цена туда дойдет */}
+      <span className="relative mt-2 block h-12">
+        <Bound
+          at={BAND_START}
+          price={lowerPrice}
+          currentPrice={currentPrice}
+          exit={range.exitLower}
+        />
+        <Bound
+          at={BAND_END}
+          price={upperPrice}
+          currentPrice={currentPrice}
+          exit={range.exitUpper}
+        />
       </span>
 
       {currentPrice === null && (
@@ -394,10 +408,13 @@ function Bound({
   at,
   price,
   currentPrice,
+  exit,
 }: {
   at: number;
   price: number | null;
   currentPrice: number | null;
+  /** Во что превратится позиция на этой границе. */
+  exit: PositionExitDto | null;
 }) {
   const distance =
     price !== null && currentPrice !== null && currentPrice > 0
@@ -416,6 +433,12 @@ function Bound({
       {distance !== null && (
         <span className="block text-[11px] whitespace-nowrap text-muted-foreground">
           {tablePctSigned(distance, Math.abs(distance) >= 10 ? 1 : 2)}
+        </span>
+      )}
+      {exit !== null && (
+        <span className="block text-[11px] whitespace-nowrap text-muted-foreground">
+          <span className="font-mono">{tokenQuantity(exit.quantity)}</span>
+          {` ${exit.symbol}`}
         </span>
       )}
     </span>
