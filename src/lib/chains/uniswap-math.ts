@@ -129,3 +129,28 @@ export function positionAmounts(
     inRange: false,
   };
 }
+
+/**
+ * Цена по тику в человеческих единицах: сколько token1 за один token0.
+ *
+ * Здесь, в отличие от количеств, считать во float МОЖНО и нужно: это число
+ * идет на экран, а не в раскладку позиции. Точность double на пять значащих
+ * цифр цены с запасом, а bigint пришлось бы делить с потерей знаков.
+ *
+ * Экспонента через Math.exp, а не Math.pow(1.0001, tick): на краях
+ * диапазона тиков pow теряет точность быстрее. Цена на самом краю
+ * (±887 272) — величина вроде 1e50: это позиция «на весь диапазон»,
+ * и границы у нее показываются словами, а не числом (см. lp-range).
+ */
+const LN_TICK_BASE = Math.log(1.0001);
+
+export function tickToPrice(
+  tick: number,
+  decimals0: number,
+  decimals1: number,
+): number | null {
+  if (!Number.isFinite(tick)) return null;
+  const price =
+    Math.exp(tick * LN_TICK_BASE) * Math.pow(10, decimals0 - decimals1);
+  return Number.isFinite(price) && price > 0 ? price : null;
+}

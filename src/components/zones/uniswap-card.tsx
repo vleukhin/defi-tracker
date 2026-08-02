@@ -1,10 +1,15 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import type { PositionComponentDto, PositionDto } from "@/lib/api/types";
+import type {
+  PositionComponentDto,
+  PositionDto,
+  PositionRangeDto,
+} from "@/lib/api/types";
 import {
   chainLabel,
   formatRelativeTime,
+  tableNumber,
   tablePct,
   tableUsd,
 } from "@/lib/format";
@@ -195,9 +200,14 @@ function CompositionBar({
 }
 
 /**
- * Диапазон и правило 48 часов. Пока позиция в диапазоне — она работает,
- * и трогать ее нечего; вышла — начинается отсчет, и действие зависит от
- * стороны выхода.
+ * Диапазон: где цена относительно границ и что с этим делать.
+ *
+ * Полоса отвечает на вопрос одним взглядом — линия внутри полосы значит
+ * «позиция работает», у края «вот-вот выйдет», за полосой «вышла». Числа
+ * рядом: обе границы, текущая цена и расстояние до ближайшей границы.
+ *
+ * Правило 48 часов (docs/07 §5–§7) живет тут же: вышедшая позиция сама
+ * по себе не повод действовать, повод — вышедший срок ожидания.
  */
 function RangeFooter({
   position,
@@ -206,18 +216,8 @@ function RangeFooter({
   position: PositionDto;
   nowMs: number;
 }) {
-  if (position.inRange !== false) {
-    return (
-      <CardFooter
-        title={position.subtitle ?? "В диапазоне"}
-        badge={<Badge variant="success">в диапазоне</Badge>}
-      >
-        Пока цена в диапазоне, позиция собирает комиссии — по стратегии делать с
-        ней нечего.
-      </CardFooter>
-    );
-  }
-
+  const range = position.range;
+  const outOfRange = position.inRange === false;
   const since = position.outOfRangeSince;
   const decision = since === null ? null : rangeDecision(since, nowMs);
   const side = exitSide(position.components);
@@ -226,54 +226,179 @@ function RangeFooter({
   return (
     <CardFooter
       title={
-        since === null ? (
-          "Вне диапазона"
+        range === null ? (
+          (position.subtitle ?? "Диапазон")
         ) : (
           <>
-            {"Вне диапазона "}
-            <span className="text-foreground">
-              {formatRelativeTime(since, nowMs)}
+            <span className="font-mono text-foreground">
+              {priceLabel(range.lowerPrice)}
             </span>
+            {" … "}
+            <span className="font-mono text-foreground">
+              {priceLabel(range.upperPrice)}
+            </span>
+            {` ${range.quoteSymbol} за ${range.baseSymbol}`}
           </>
         )
       }
       badge={
-        decision && (
+        outOfRange ? (
           <Badge
-            variant={decision.ready ? "warning" : "muted"}
+            variant={decision?.ready ? "warning" : "muted"}
             className="font-mono"
           >
-            {decision.ready
-              ? "срок вышел"
-              : `ждать ${Math.ceil(decision.hoursLeft)} ч`}
+            {decision === null
+              ? "вне диапазона"
+              : decision.ready
+                ? "срок вышел"
+                : `ждать ${Math.ceil(decision.hoursLeft)} ч`}
           </Badge>
+        ) : (
+          <Badge variant="success">в диапазоне</Badge>
         )
       }
     >
-      {since === null ? (
-        `Момент выхода не записан — отсчет ${RANGE_WAIT_HOURS} часов пойдет с ближайшего обновления.`
-      ) : (
+      {range !== null && <RangeBar range={range} outOfRange={outOfRange} />}
+
+      {outOfRange ? (
         <>
-          {asset && side !== null && (
+          {since !== null && (
             <>
-              {`Позиция целиком в ${asset} — цена ушла ${side === "down" ? "вниз" : "вверх"}. `}
+              {"Вне диапазона "}
+              <span className="text-foreground">
+                {formatRelativeTime(since, nowMs)}
+              </span>
+              {". "}
             </>
           )}
-          {decision?.ready
-            ? "Срок ожидания вышел — по стратегии можно действовать: "
-            : "По стратегии ждем 48 часов (в выходные — до понедельника), затем "}
-          {side === "down"
-            ? "закрыть позицию и увести актив — в залог под HF, в пулы BTC↔BTC / ETH↔stETH или на лендинг с наградами."
-            : side === "up"
-              ? "закрыть позицию, забрать стейблы и открыть новую с актуальным диапазоном."
-              : "решить по позиции."}
+          {asset && side !== null && (
+            <>{`Позиция целиком в ${asset} — цена ушла ${side === "down" ? "вниз" : "вверх"}. `}</>
+          )}
+          {since === null
+            ? `Момент выхода не записан — отсчет ${RANGE_WAIT_HOURS} часов пойдет с ближайшего обновления.`
+            : decision?.ready
+              ? "Срок ожидания вышел — по стратегии можно действовать: "
+              : "По стратегии ждем 48 часов (в выходные — до понедельника), затем "}
+          {since !== null &&
+            (side === "down"
+              ? "закрыть позицию и увести актив — в залог под HF, в пулы BTC↔BTC / ETH↔stETH или на лендинг с наградами."
+              : side === "up"
+                ? "закрыть позицию, забрать стейблы и открыть новую с актуальным диапазоном."
+                : "решить по позиции.")}
           {decision && !decision.ready && decision.postponedToMonday && (
             <> Срок выпал на выходные — ждем понедельника.</>
           )}
         </>
+      ) : (
+        "Пока цена в диапазоне, позиция собирает комиссии — по стратегии делать с ней нечего."
       )}
     </CardFooter>
   );
+}
+
+/**
+ * Полоса диапазона: границы, текущая цена и запас до выхода.
+ *
+ * Шкала логарифмическая — как сами тики: положение приходит уже
+ * посчитанным (0 — нижняя граница, 1 — верхняя), и значения за этими
+ * пределами означают выход. Поля по краям оставлены нарочно: маркер
+ * вне диапазона должен быть виден, а не упираться в торец полосы.
+ */
+const BAND_START = 0.18;
+const BAND_END = 0.82;
+
+function RangeBar({
+  range,
+  outOfRange,
+}: {
+  range: PositionRangeDto;
+  outOfRange: boolean;
+}) {
+  const position = range.position;
+
+  return (
+    <span className="mt-2 mb-1.5 block">
+      <span className="relative block h-3 rounded-full bg-muted">
+        <span
+          aria-hidden
+          className="absolute inset-y-0 rounded-full"
+          style={{
+            left: `${BAND_START * 100}%`,
+            right: `${(1 - BAND_END) * 100}%`,
+            background: outOfRange
+              ? "color-mix(in oklab, var(--color-warning) 30%, transparent)"
+              : `color-mix(in oklab, ${UNI_ACCENT} 45%, transparent)`,
+          }}
+        />
+        {position !== null && (
+          <span
+            aria-hidden
+            // Метка как риски целей у полосы аллокации (ТЗ §5.1.4):
+            // выступает над и под полосой, чтобы читаться поверх заливки
+            className="absolute -top-1 -bottom-1 w-0.5 rounded-full bg-foreground"
+            style={{ left: `${markerPercent(position)}%` }}
+          />
+        )}
+      </span>
+
+      <span className="mt-1.5 block text-xs text-muted-foreground">
+        {range.currentPrice === null ? (
+          "цена пула не прочитана — обновите данные"
+        ) : (
+          <>
+            {"сейчас "}
+            <span className="font-mono text-foreground">
+              {priceLabel(range.currentPrice)}
+            </span>
+            {range.outsidePercent !== null ? (
+              <>
+                {" — на "}
+                <span className="font-mono">
+                  {tablePct(Math.abs(range.outsidePercent), 1)}
+                </span>
+                {range.outsidePercent < 0
+                  ? " ниже нижней границы"
+                  : " выше верхней границы"}
+              </>
+            ) : (
+              position !== null && (
+                <>
+                  {" · "}
+                  <span className="font-mono">
+                    {tablePct(position * 100, 0)}
+                  </span>
+                  {" диапазона пройдено"}
+                </>
+              )
+            )}
+          </>
+        )}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Положение маркера в процентах ширины. Внутри диапазона — линейно по
+ * полосе, снаружи — в поле у края, пропорционально удалению, но не
+ * дальше торца: «очень далеко» и «невероятно далеко» на глаз одинаковы.
+ */
+function markerPercent(position: number): number {
+  if (position >= 0 && position <= 1) {
+    return (BAND_START + position * (BAND_END - BAND_START)) * 100;
+  }
+  if (position < 0) {
+    return BAND_START * (1 - Math.min(1, -position)) * 100;
+  }
+  return (BAND_END + (1 - BAND_END) * Math.min(1, position - 1)) * 100;
+}
+
+/** Цена в человеческом виде; null = границы нет (позиция на весь диапазон). */
+function priceLabel(price: number | null): string {
+  if (price === null) return "без границы";
+  if (price >= 1000) return tableNumber(price, 0);
+  if (price >= 1) return tableNumber(price, 2);
+  return tableNumber(price, 6);
 }
 
 /**

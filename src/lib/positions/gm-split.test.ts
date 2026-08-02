@@ -35,6 +35,7 @@ function gm(
     feesUsd: null,
     inRange: null,
     outOfRangeSince: null,
+    range: null,
     supplyRatePercent: null,
     rewardsRatePercent: null,
     walletId: "w",

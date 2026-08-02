@@ -161,6 +161,8 @@ export interface UniV3PositionReading {
   fee: number;
   tickLower: number;
   tickUpper: number;
+  /** Текущий тик пула; null = slot0 не прочитан. Из него цена и положение. */
+  tick: number | null;
   /** false = позиция вне диапазона: она целиком в одном активе. */
   inRange: boolean;
   liquidity: string;
@@ -380,11 +382,17 @@ export async function readChainUniswapV3(
     void logCall("alchemy", `univ3:${chain}:slot0`, { units: 1 });
 
     const sqrtByPool = new Map<string, bigint>();
+    // Текущий тик — там же, в slot0, вторым полем. Из него считается цена
+    // в человеческих единицах: раскладка на токены отвечает «сколько чего»,
+    // но не «где цена относительно границ диапазона»
+    const tickByPool = new Map<string, number>();
     pools.forEach((p, i) => {
       const r = slotResults[i];
       if (r.status === "success" && Array.isArray(r.result)) {
         const sqrt = r.result[0];
         if (typeof sqrt === "bigint") sqrtByPool.set(p.toLowerCase(), sqrt);
+        const tick = r.result[1];
+        if (typeof tick === "number") tickByPool.set(p.toLowerCase(), tick);
       }
     });
 
@@ -450,6 +458,7 @@ export async function readChainUniswapV3(
         fee: p.fee,
         tickLower: p.tickLower,
         tickUpper: p.tickUpper,
+        tick: tickByPool.get(pool.toLowerCase()) ?? null,
         inRange: amounts.inRange,
         liquidity: p.liquidity.toString(),
         token0: {
@@ -510,6 +519,8 @@ export interface UniV3PositionPayload {
   fee: number;
   tickLower: number;
   tickUpper: number;
+  /** Текущий тик пула на момент чтения; null = не прочитан. */
+  tick: number | null;
   inRange: boolean;
   liquidity: string;
   token0: UniV3Token;
@@ -600,6 +611,7 @@ export async function persistUniswapV3Positions(
             fee: p.fee,
             tickLower: p.tickLower,
             tickUpper: p.tickUpper,
+            tick: p.tick,
             inRange: p.inRange,
             liquidity: p.liquidity,
             token0: p.token0,

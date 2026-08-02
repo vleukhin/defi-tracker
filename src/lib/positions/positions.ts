@@ -5,6 +5,7 @@ import type {
   PositionsSummaryDto,
   StrategyZone,
 } from "@/lib/api/types";
+import { buildLpRange } from "./lp-range";
 import { POSITION_SOURCES, PROTOCOL_LABELS } from "./sources";
 import { DEFAULT_POSITION_ZONE } from "./zones";
 
@@ -76,10 +77,13 @@ interface UniV3Payload {
   token1: LpToken;
   /** Необязателен: строки, записанные до появления таймера, его не хранят. */
   outOfRangeSince?: string | null;
+  /** Текущий тик пула; необязателен по той же причине. */
+  tick?: number | null;
 }
 interface LpToken {
   symbol: string;
   coingeckoId: string | null;
+  decimals: number;
   quantity: number;
   feesQuantity: number | null;
 }
@@ -268,6 +272,7 @@ function buildFluid(
     feesUsd: null,
     inRange: null,
     outOfRangeSince: null,
+    range: null,
     // Ставка депозита — то, ради чего Fluid и держат: доход тут начисляется
     // процентом, а не переоценкой, и его сравнивают со ставкой займа
     supplyRatePercent: payload.supplyRatePercent ?? null,
@@ -308,6 +313,7 @@ function buildGm(
     feesUsd: null,
     inRange: null,
     outOfRangeSince: null,
+    range: null,
     // Пул не начисляет процент: доход GM считается переоценкой стоимости
     supplyRatePercent: null,
     rewardsRatePercent: null,
@@ -368,6 +374,13 @@ function buildLp(
     inRange: payload.inRange,
     // В диапазоне таймер не идет: момент выхода сбрасывается читателем
     outOfRangeSince: payload.inRange ? null : (payload.outOfRangeSince ?? null),
+    range: buildLpRange({
+      tickLower: payload.tickLower,
+      tickUpper: payload.tickUpper,
+      tick: payload.tick ?? null,
+      token0: payload.token0,
+      token1: payload.token1,
+    }),
     // У LP дохода-процента нет: он складывается из комиссий и переоценки
     supplyRatePercent: null,
     rewardsRatePercent: null,
