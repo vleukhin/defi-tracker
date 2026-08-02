@@ -2,15 +2,11 @@
 
 import { Badge } from "@/components/ui/badge";
 import type { PositionComponentDto, PositionDto } from "@/lib/api/types";
-import {
-  chainLabel,
-  tablePct,
-  tableSigned,
-  tableUsd,
-} from "@/lib/format";
+import { chainLabel, tablePct, tableSigned, tableUsd } from "@/lib/format";
 import { GM_SHARE_TOLERANCE_PP, gmShare } from "@/lib/positions/gm-split";
 import { categoryColor } from "@/lib/symbol-category";
 import {
+  CardBars,
   CardFooter,
   CardHead,
   CardMetric,
@@ -107,19 +103,21 @@ export function GmxCard({
         </CardMetric>
       </CardMetrics>
 
-      <CardSection label="Состав">
-        <SidesBar
-          components={position.components}
-          valueUsd={position.valueUsd}
-        />
-      </CardSection>
+      <CardBars>
+        <CardSection label="Состав">
+          <SidesBar
+            components={position.components}
+            valueUsd={position.valueUsd}
+          />
+        </CardSection>
 
-      <CardSection
-        label="Вложено"
-        value={principal === null ? null : tableUsd(principal)}
-      >
-        <OwnershipBar own={own} borrowed={borrowed} accent={GMX_ACCENT} />
-      </CardSection>
+        <CardSection
+          label="Вложено"
+          value={principal === null ? null : tableUsd(principal)}
+        >
+          <OwnershipBar own={own} borrowed={borrowed} accent={GMX_ACCENT} />
+        </CardSection>
+      </CardBars>
 
       <CardFooter
         title={

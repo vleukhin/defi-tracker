@@ -5,6 +5,7 @@ import type { PositionDto, StableBorrowRateDto } from "@/lib/api/types";
 import { chainLabel, tablePct, tableSigned, tableUsd } from "@/lib/format";
 import { isStableSymbol } from "@/lib/stables";
 import {
+  CardBars,
   CardFooter,
   CardHead,
   CardMetric,
@@ -119,12 +120,14 @@ export function FluidCard({
         </CardMetric>
       </CardMetrics>
 
-      <CardSection
-        label="Вложено"
-        value={principal === null ? null : tableUsd(principal)}
-      >
-        <OwnershipBar own={own} borrowed={borrowed} accent={FLUID_ACCENT} />
-      </CardSection>
+      <CardBars>
+        <CardSection
+          label="Вложено"
+          value={principal === null ? null : tableUsd(principal)}
+        >
+          <OwnershipBar own={own} borrowed={borrowed} accent={FLUID_ACCENT} />
+        </CardSection>
+      </CardBars>
 
       {comparable && (
         <CardFooter

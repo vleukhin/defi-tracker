@@ -11,6 +11,7 @@ import {
 import { rangeDecision, RANGE_WAIT_HOURS } from "@/lib/positions/range-timer";
 import { categoryColor, symbolCategory } from "@/lib/symbol-category";
 import {
+  CardBars,
   CardFooter,
   CardHead,
   CardMetric,
@@ -123,16 +124,18 @@ export function UniswapCard({
         </CardMetric>
       </CardMetrics>
 
-      <CardSection label="Состав">
-        <CompositionBar components={position.components} />
-      </CardSection>
+      <CardBars>
+        <CardSection label="Состав">
+          <CompositionBar components={position.components} />
+        </CardSection>
 
-      <CardSection
-        label="Вложено"
-        value={principal === null ? null : tableUsd(principal)}
-      >
-        <OwnershipBar own={own} borrowed={borrowed} accent={UNI_ACCENT} />
-      </CardSection>
+        <CardSection
+          label="Вложено"
+          value={principal === null ? null : tableUsd(principal)}
+        >
+          <OwnershipBar own={own} borrowed={borrowed} accent={UNI_ACCENT} />
+        </CardSection>
+      </CardBars>
 
       <RangeFooter position={position} nowMs={nowMs} />
     </ProtocolCard>

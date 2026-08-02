@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { PositionDto } from "@/lib/api/types";
 import { tableNumber, tablePct, tableUsd } from "@/lib/format";
@@ -117,6 +117,24 @@ export function CardMetric({
   );
 }
 
+/**
+ * Ряд секций с полосами. Две полосы встают рядом: и состав, и вложенное —
+ * это доли одного и того же, читаются они одинаково, и растянутые на всю
+ * ширину карточки только удлиняют ее. Одна полоса занимает ряд целиком.
+ */
+export function CardBars({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "grid gap-x-6 gap-y-4 px-4 pb-4",
+        Children.count(children) > 1 && "sm:grid-cols-2",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** Секция карточки под метриками: полоса состава, полоса вложенного. */
 export function CardSection({
   label,
@@ -129,7 +147,7 @@ export function CardSection({
   children: ReactNode;
 }) {
   return (
-    <div className="px-4 pb-4">
+    <div>
       <div className="flex items-baseline justify-between gap-2">
         <span className={LABEL}>{label}</span>
         {value != null && (
