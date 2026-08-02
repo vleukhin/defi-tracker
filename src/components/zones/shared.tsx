@@ -13,17 +13,25 @@ export const LABEL =
   "text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase";
 
 /**
- * Цвет зоны — тем же языком, что и категории портфеля (ТЗ §1.3):
- * Growth держит BTC/ETH, Stability — стейблы, Yield работает заемными.
+ * Цвет зоны — собственный ряд, а не категорийный. Зоны и категории это
+ * РАЗНЫЕ разрезы (docs/07 §10.1): категория отвечает «в чем лежит»,
+ * зона — «какую задачу решает», и стейблы есть сразу в двух зонах.
+ * Общий цвет склеивал бы два разреза в один и подсказывал бы неверное.
  *
- * Раньше здесь стояли --color-chart-1..3, которых в токенах нет вовсе:
- * точки зон и левая кромка карточек рисовались прозрачными.
+ * Оттенки разведены с ближайшими соседями палитры (BTC-оранжевый,
+ * success-зеленый, ETH-индиго) — см. ТЗ §1.3. Как и категорийные, эти
+ * цвета только ЗАЛИВКА: точка, кромка, тинт, сегмент полосы. Не текст.
  */
 export const ZONE_ACCENT: Record<StrategyZone, string> = {
-  growth: "var(--color-chart-btc)",
-  yield: "var(--color-chart-eth)",
-  stability: "var(--color-chart-stable)",
+  growth: "var(--color-zone-growth)",
+  yield: "var(--color-zone-yield)",
+  stability: "var(--color-zone-stability)",
 };
+
+/** Фон-тинт зоны: тот же рецепт, что у карточек протоколов (ТЗ §5.1.3). */
+export function zoneTint(zone: StrategyZone, percent = 6): string {
+  return `color-mix(in oklab, ${ZONE_ACCENT[zone]} ${percent}%, var(--card))`;
+}
 
 export const ZONE_OPTIONS: { value: StrategyZone; label: string }[] = [
   { value: "growth", label: "Growth" },

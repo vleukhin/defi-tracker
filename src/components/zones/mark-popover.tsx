@@ -13,7 +13,14 @@ import {
 } from "@/components/ui/popover";
 import type { PositionDto, StrategyZone } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
-import { LABEL, ZONE_OPTIONS, type MarkFn, type MarkPatch } from "./shared";
+import {
+  LABEL,
+  ZONE_ACCENT,
+  ZONE_OPTIONS,
+  zoneTint,
+  type MarkFn,
+  type MarkPatch,
+} from "./shared";
 
 /**
  * Разметка позиции: зона стратегии и вложенные суммы.
@@ -138,13 +145,28 @@ function MarkForm({
               disabled={busy}
               onClick={() => setZone(o.value)}
               aria-pressed={zone === o.value}
-              className={cn(
-                "rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+              // Выбранная зона подсвечена своим цветом, а не общим accent:
+              // на карточке позиции зона узнается по нему же
+              style={
                 zone === o.value
-                  ? "bg-accent font-medium text-foreground"
+                  ? {
+                      background: zoneTint(o.value, 14),
+                      boxShadow: `inset 0 0 0 1px ${ZONE_ACCENT[o.value]}`,
+                    }
+                  : undefined
+              }
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                zone === o.value
+                  ? "font-medium text-foreground"
                   : "text-muted-foreground hover:bg-accent/60",
               )}
             >
+              <span
+                aria-hidden
+                className="size-2 shrink-0 rounded-full"
+                style={{ background: ZONE_ACCENT[o.value] }}
+              />
               {o.label}
             </button>
           ))}

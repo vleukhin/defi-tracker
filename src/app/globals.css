@@ -31,6 +31,11 @@
   --chart-btc: oklch(0.62 0.15 55);            /* #c9690c */
   --chart-eth: oklch(0.51 0.19 275);           /* #4c52d0 */
   --chart-stable: oklch(0.56 0.10 180);        /* #098777 */
+  /* Зоны стратегии Capital Growth (docs/07): свой ряд цветов, не категорийный —
+     зона отвечает «какую задачу решает», категория «в чем лежит» */
+  --zone-growth: oklch(0.58 0.15 38);          /* #c25430 — жженый оранжевый */
+  --zone-yield: oklch(0.55 0.14 135);          /* #4b8323 — травяной зеленый */
+  --zone-stability: oklch(0.55 0.12 245);      /* #2677b2 — стальной синий */
   --radius: 0.625rem;
 }
 
@@ -61,6 +66,9 @@
   --chart-btc: oklch(0.75 0.15 60);            /* #f2943c */
   --chart-eth: oklch(0.67 0.15 278);           /* #8189ef */
   --chart-stable: oklch(0.76 0.12 180);        /* #42cab4 */
+  --zone-growth: oklch(0.74 0.16 38);          /* #fe825c */
+  --zone-yield: oklch(0.78 0.17 135);          /* #86cf57 */
+  --zone-stability: oklch(0.72 0.13 242);      /* #4fadef */
 }
 
 /* ------- Маппинг в утилиты Tailwind 4 ------- */
@@ -94,6 +102,9 @@
   --color-chart-btc: var(--chart-btc);
   --color-chart-eth: var(--chart-eth);
   --color-chart-stable: var(--chart-stable);
+  --color-zone-growth: var(--zone-growth);
+  --color-zone-yield: var(--zone-yield);
+  --color-zone-stability: var(--zone-stability);
 
   --radius-sm: calc(var(--radius) - 4px);   /* 6px  — бейджи, мелкие элементы */
   --radius-md: calc(var(--radius) - 2px);   /* 8px  — кнопки, инпуты */
