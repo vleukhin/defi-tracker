@@ -89,7 +89,7 @@ function GenericCard({
     position.ownPrincipalUsd === null || position.borrowedPrincipalUsd === null;
 
   return (
-    <li className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border border-border bg-muted/30 p-3">
+    <li className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border border-border bg-card p-4 shadow-sm dark:shadow-none">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="truncate text-sm">{position.title}</span>

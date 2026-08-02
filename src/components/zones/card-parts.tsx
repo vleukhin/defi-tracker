@@ -28,7 +28,9 @@ export function ProtocolCard({
 }) {
   return (
     <li
-      className="overflow-hidden rounded-lg border border-border"
+      // Поверхность уровня 1 (ТЗ §3), как у Card: карточка позиции лежит
+      // на фоне страницы сама по себе
+      className="overflow-hidden rounded-xl border border-border shadow-sm dark:shadow-none"
       style={{ background: `color-mix(in oklab, ${accent} 6%, var(--card))` }}
     >
       {children}
