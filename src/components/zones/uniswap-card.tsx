@@ -1,10 +1,10 @@
 "use client";
 
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type {
   PositionComponentDto,
   PositionDto,
-  PositionExitDto,
   PositionRangeDto,
 } from "@/lib/api/types";
 import {
@@ -84,7 +84,12 @@ export function UniswapCard({
       <CardHead
         mark={<UniswapMark />}
         name="Uniswap v3"
-        subtitle={`${position.title} · ${chainLabel(position.chain)}`}
+        subtitle={
+          <>
+            {`${position.title} · ${chainLabel(position.chain)}`}
+            <ExitHint range={position.range} />
+          </>
+        }
         badges={
           <>
             <UnmarkedBadge principal={principal} />
@@ -146,6 +151,40 @@ export function UniswapCard({
 
       <RangeFooter position={position} nowMs={nowMs} />
     </ProtocolCard>
+  );
+}
+
+/**
+ * Во что превратится позиция на границах — одной строкой в шапке.
+ *
+ * Стрелка вниз: цена базового актива упала до нижней границы, и позиция
+ * стала этим активом. Стрелка вверх: выросла до верхней, и позиция стала
+ * котировкой. Развилка стратегии (docs/07 §5, §6) целиком в этих двух
+ * числах, и знать их полезно до того, как цена дошла до края.
+ */
+function ExitHint({ range }: { range: PositionRangeDto | null }) {
+  if (!range?.exitLower || !range.exitUpper) return null;
+
+  return (
+    <span title="Во что превратится позиция при выходе за нижнюю и верхнюю границу">
+      {" · на границах "}
+      {/* Каждая пара «стрелка — число — тикер» не рвется, а между парами
+          строка переносится: на узком экране иначе уезжает за карточку */}
+      <span className="whitespace-nowrap">
+        <ArrowDown aria-hidden className="inline size-3 align-[-0.1em]" />
+        <span className="font-mono">
+          {` ${tokenQuantity(range.exitLower.quantity)} `}
+        </span>
+        {range.exitLower.symbol}
+      </span>{" "}
+      <span className="whitespace-nowrap">
+        <ArrowUp aria-hidden className="inline size-3 align-[-0.1em]" />
+        <span className="font-mono">
+          {` ${tokenQuantity(range.exitUpper.quantity)} `}
+        </span>
+        {range.exitUpper.symbol}
+      </span>
+    </span>
   );
 }
 
@@ -366,21 +405,10 @@ function RangeBar({
         )}
       </span>
 
-      {/* Границы под ручками: цена, расстояние до нее и во что превратится
-          позиция, если цена туда дойдет */}
-      <span className="relative mt-2 block h-12">
-        <Bound
-          at={BAND_START}
-          price={lowerPrice}
-          currentPrice={currentPrice}
-          exit={range.exitLower}
-        />
-        <Bound
-          at={BAND_END}
-          price={upperPrice}
-          currentPrice={currentPrice}
-          exit={range.exitUpper}
-        />
+      {/* Границы с расстоянием до них — под ручками, а не по краям блока */}
+      <span className="relative mt-2 block h-8">
+        <Bound at={BAND_START} price={lowerPrice} currentPrice={currentPrice} />
+        <Bound at={BAND_END} price={upperPrice} currentPrice={currentPrice} />
       </span>
 
       {currentPrice === null && (
@@ -408,13 +436,10 @@ function Bound({
   at,
   price,
   currentPrice,
-  exit,
 }: {
   at: number;
   price: number | null;
   currentPrice: number | null;
-  /** Во что превратится позиция на этой границе. */
-  exit: PositionExitDto | null;
 }) {
   const distance =
     price !== null && currentPrice !== null && currentPrice > 0
@@ -433,12 +458,6 @@ function Bound({
       {distance !== null && (
         <span className="block text-[11px] whitespace-nowrap text-muted-foreground">
           {tablePctSigned(distance, Math.abs(distance) >= 10 ? 1 : 2)}
-        </span>
-      )}
-      {exit !== null && (
-        <span className="block text-[11px] whitespace-nowrap text-muted-foreground">
-          <span className="font-mono">{tokenQuantity(exit.quantity)}</span>
-          {` ${exit.symbol}`}
         </span>
       )}
     </span>
