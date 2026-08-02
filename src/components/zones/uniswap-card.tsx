@@ -317,8 +317,10 @@ function RangeBar({
 
   return (
     <span className="mt-2 mb-1 block">
-      {/* Дорожка текущей цены: бейдж едет за маркером, но не за край */}
-      <span className="relative block h-5">
+      {/* Дорожка текущей цены: бейдж едет за маркером, но не за край.
+          Высота с запасом — под бейджем стоит стрелка маркера, и они
+          не должны наезжать друг на друга */}
+      <span className="relative block h-7">
         {currentPrice !== null && position !== null && (
           <span
             className="absolute top-0 rounded-md bg-popover px-1.5 py-0.5 font-mono text-xs font-medium ring-1 ring-border"
@@ -405,7 +407,7 @@ function Bound({
   return (
     <span
       className="absolute top-0 -translate-x-1/2 text-center"
-      style={{ left: `${labelPercent(at)}%` }}
+      style={{ left: `${at * 100}%` }}
     >
       <span className="block font-mono text-xs whitespace-nowrap">
         {priceLabel(price)}
@@ -437,11 +439,6 @@ function badgePosition(marker: number): React.CSSProperties {
   if (marker > 82) return { right: 0 };
   if (marker < 18) return { left: 0 };
   return { left: `${marker}%`, transform: "translateX(-50%)" };
-}
-
-/** Подпись границы центрирована по ручке и в поле помещается. */
-function labelPercent(position: number): number {
-  return Math.min(88, Math.max(12, markerPercent(position)));
 }
 
 /**
