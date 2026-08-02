@@ -11,6 +11,7 @@ import {
   formatRelativeTime,
   tableNumber,
   tablePct,
+  tablePctSigned,
   tableUsd,
 } from "@/lib/format";
 import { rangeDecision, RANGE_WAIT_HOURS } from "@/lib/positions/range-timer";
@@ -226,20 +227,9 @@ function RangeFooter({
   return (
     <CardFooter
       title={
-        range === null ? (
-          (position.subtitle ?? "Диапазон")
-        ) : (
-          <>
-            <span className="font-mono text-foreground">
-              {priceLabel(range.lowerPrice)}
-            </span>
-            {" … "}
-            <span className="font-mono text-foreground">
-              {priceLabel(range.upperPrice)}
-            </span>
-            {` ${range.quoteSymbol} за ${range.baseSymbol}`}
-          </>
-        )
+        range === null
+          ? (position.subtitle ?? "Диапазон")
+          : `Диапазон · ${range.quoteSymbol} за ${range.baseSymbol}`
       }
       badge={
         outOfRange ? (
@@ -297,15 +287,23 @@ function RangeFooter({
 }
 
 /**
- * Полоса диапазона: границы, текущая цена и запас до выхода.
+ * Полоса диапазона: границы с ручками, текущая цена и запас до каждой
+ * границы.
  *
  * Шкала логарифмическая — как сами тики: положение приходит уже
  * посчитанным (0 — нижняя граница, 1 — верхняя), и значения за этими
- * пределами означают выход. Поля по краям оставлены нарочно: маркер
- * вне диапазона должен быть виден, а не упираться в торец полосы.
+ * пределами означают выход. Поля по краям оставлены нарочно: маркер вне
+ * диапазона должен быть виден, а не упираться в торец полосы.
+ *
+ * Проценты под границами — расстояние от ТЕКУЩЕЙ цены до каждой из них:
+ * «до нижней −22%, до верхней +4%» отвечает на вопрос «скоро ли выход»
+ * быстрее, чем сами цены, — их еще надо мысленно поделить.
+ *
+ * Текущая цена вынесена наверх отдельной дорожкой: у самой границы она
+ * иначе накрывала бы подпись этой границы.
  */
-const BAND_START = 0.18;
-const BAND_END = 0.82;
+const BAND_START = 0.14;
+const BAND_END = 0.86;
 
 function RangeBar({
   range,
@@ -314,68 +312,136 @@ function RangeBar({
   range: PositionRangeDto;
   outOfRange: boolean;
 }) {
-  const position = range.position;
+  const { position, currentPrice, lowerPrice, upperPrice } = range;
+  const accent = outOfRange ? "var(--color-warning)" : UNI_ACCENT;
 
   return (
-    <span className="mt-2 mb-1.5 block">
-      <span className="relative block h-3 rounded-full bg-muted">
+    <span className="mt-2 mb-1 block">
+      {/* Дорожка текущей цены: бейдж едет за маркером, но не за край */}
+      <span className="relative block h-5">
+        {currentPrice !== null && position !== null && (
+          <span
+            className="absolute top-0 rounded-md bg-popover px-1.5 py-0.5 font-mono text-xs font-medium ring-1 ring-border"
+            style={badgePosition(markerPercent(position))}
+          >
+            {priceLabel(currentPrice)}
+          </span>
+        )}
+      </span>
+
+      <span
+        className="relative block h-1.5 rounded-full bg-muted"
+        role="img"
+        aria-label={rangeLabel(range)}
+      >
         <span
           aria-hidden
-          className="absolute inset-y-0 rounded-full"
+          className="absolute inset-y-0"
           style={{
             left: `${BAND_START * 100}%`,
             right: `${(1 - BAND_END) * 100}%`,
-            background: outOfRange
-              ? "color-mix(in oklab, var(--color-warning) 30%, transparent)"
-              : `color-mix(in oklab, ${UNI_ACCENT} 45%, transparent)`,
+            background: accent,
           }}
         />
+        <Handle at={BAND_START} color={accent} />
+        <Handle at={BAND_END} color={accent} />
+
         {position !== null && (
           <span
             aria-hidden
-            // Метка как риски целей у полосы аллокации (ТЗ §5.1.4):
-            // выступает над и под полосой, чтобы читаться поверх заливки
-            className="absolute -top-1 -bottom-1 w-0.5 rounded-full bg-foreground"
-            style={{ left: `${markerPercent(position)}%` }}
+            // Треугольник над полосой: на полосе в 6px тонкая риска
+            // теряется, а стрелка читается и не спорит с ручками
+            className="absolute -top-1.5 size-2 -translate-x-1/2"
+            style={{
+              left: `${markerPercent(position)}%`,
+              background: "var(--color-foreground)",
+              clipPath: "polygon(50% 100%, 0 0, 100% 0)",
+            }}
           />
         )}
       </span>
 
-      <span className="mt-1.5 block text-xs text-muted-foreground">
-        {range.currentPrice === null ? (
-          "цена пула не прочитана — обновите данные"
-        ) : (
-          <>
-            {"сейчас "}
-            <span className="font-mono text-foreground">
-              {priceLabel(range.currentPrice)}
-            </span>
-            {range.outsidePercent !== null ? (
-              <>
-                {" — на "}
-                <span className="font-mono">
-                  {tablePct(Math.abs(range.outsidePercent), 1)}
-                </span>
-                {range.outsidePercent < 0
-                  ? " ниже нижней границы"
-                  : " выше верхней границы"}
-              </>
-            ) : (
-              position !== null && (
-                <>
-                  {" · "}
-                  <span className="font-mono">
-                    {tablePct(position * 100, 0)}
-                  </span>
-                  {" диапазона пройдено"}
-                </>
-              )
-            )}
-          </>
-        )}
+      {/* Границы с расстоянием до них — под ручками, а не по краям блока */}
+      <span className="relative mt-2 block h-8">
+        <Bound at={BAND_START} price={lowerPrice} currentPrice={currentPrice} />
+        <Bound at={BAND_END} price={upperPrice} currentPrice={currentPrice} />
       </span>
+
+      {currentPrice === null && (
+        <span className="block text-xs text-muted-foreground">
+          цена пула не прочитана — обновите данные
+        </span>
+      )}
     </span>
   );
+}
+
+/** Ручка на конце диапазона — как у ползунка: граница задана, а не размыта. */
+function Handle({ at, color }: { at: number; color: string }) {
+  return (
+    <span
+      aria-hidden
+      className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+      style={{ left: `${at * 100}%`, background: color }}
+    />
+  );
+}
+
+/** Подпись границы: цена и сколько до нее от текущей цены. */
+function Bound({
+  at,
+  price,
+  currentPrice,
+}: {
+  at: number;
+  price: number | null;
+  currentPrice: number | null;
+}) {
+  const distance =
+    price !== null && currentPrice !== null && currentPrice > 0
+      ? (price / currentPrice - 1) * 100
+      : null;
+
+  return (
+    <span
+      className="absolute top-0 -translate-x-1/2 text-center"
+      style={{ left: `${labelPercent(at)}%` }}
+    >
+      <span className="block font-mono text-xs whitespace-nowrap">
+        {priceLabel(price)}
+      </span>
+      {/* Без текущей цены расстояния нет — и строки под ценой тоже */}
+      {distance !== null && (
+        <span className="block text-[11px] whitespace-nowrap text-muted-foreground">
+          {tablePctSigned(distance, Math.abs(distance) >= 10 ? 1 : 2)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Описание для скринридера: полоса — картинка, числа под ней те же. */
+function rangeLabel(range: PositionRangeDto): string {
+  const bounds = `${priceLabel(range.lowerPrice)} … ${priceLabel(range.upperPrice)} ${range.quoteSymbol} за ${range.baseSymbol}`;
+  if (range.currentPrice === null) return `Диапазон ${bounds}`;
+  return `Диапазон ${bounds}; цена ${priceLabel(range.currentPrice)}${
+    range.outsidePercent === null ? " внутри диапазона" : " вне диапазона"
+  }`;
+}
+
+/**
+ * Бейдж цены у края прижимается к нему целиком, а не центрируется: иначе
+ * его половина уезжает за карточку, и он отрывается от своего маркера.
+ */
+function badgePosition(marker: number): React.CSSProperties {
+  if (marker > 82) return { right: 0 };
+  if (marker < 18) return { left: 0 };
+  return { left: `${marker}%`, transform: "translateX(-50%)" };
+}
+
+/** Подпись границы центрирована по ручке и в поле помещается. */
+function labelPercent(position: number): number {
+  return Math.min(88, Math.max(12, markerPercent(position)));
 }
 
 /**
@@ -396,7 +462,8 @@ function markerPercent(position: number): number {
 /** Цена в человеческом виде; null = границы нет (позиция на весь диапазон). */
 function priceLabel(price: number | null): string {
   if (price === null) return "без границы";
-  if (price >= 1000) return tableNumber(price, 0);
+  // До десяти тысяч копейки различимы и нужны: диапазон бывает узким
+  if (price >= 10_000) return tableNumber(price, 0);
   if (price >= 1) return tableNumber(price, 2);
   return tableNumber(price, 6);
 }
