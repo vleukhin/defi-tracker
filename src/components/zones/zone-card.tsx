@@ -46,33 +46,58 @@ export function ZoneCard({ zone }: { zone: ZoneBreakdownDto }) {
         {zone.valueUsd === null ? "—" : tableUsd(zone.valueUsd)}
       </p>
 
-      <dl className="mt-3 space-y-1 text-xs">
-        <Row label="Залог" value={zone.collateralUsd} hideZero />
-        <Row label="Свободные стейблы" value={zone.manualUsd} hideZero />
-        <Row
-          label={`Позиции (${zone.positionCount})`}
-          value={zone.positionsUsd}
-          hideZero={zone.positionCount === 0}
-        />
-      </dl>
+      <Breakdown zone={zone} />
     </Card>
   );
 }
 
-function Row({
-  label,
-  value,
-  hideZero,
-}: {
-  label: string;
-  value: number | null;
-  hideZero?: boolean;
-}) {
-  if (hideZero && value === 0) return null;
+/**
+ * Из чего сложилась зона. Разбивка нужна, когда слагаемых несколько:
+ * единственное слагаемое просто повторяет итог другим шрифтом, и вместо
+ * ответа на вопрос «из чего» карточка показывает то же число дважды.
+ *
+ * Когда разбивка свернута, число позиций все равно говорится — оно про
+ * состав зоны, а не про деньги, и из итога его не видно.
+ */
+function Breakdown({ zone }: { zone: ZoneBreakdownDto }) {
+  const parts = [
+    { label: "Залог", value: zone.collateralUsd },
+    { label: "Свободные стейблы", value: zone.manualUsd },
+    { label: `Позиции (${zone.positionCount})`, value: zone.positionsUsd },
+  ].filter(
+    (p) => p.value !== 0 && !(p.value === null && zone.positionCount === 0),
+  );
+
+  // Округление до доллара: суммы сходятся с итогом с точностью до центов
+  const single =
+    parts.length <= 1 &&
+    (parts.length === 0 ||
+      (parts[0].value !== null &&
+        zone.valueUsd !== null &&
+        Math.abs(parts[0].value - zone.valueUsd) < 0.5));
+
+  if (single) {
+    if (zone.positionCount === 0) return null;
+    return (
+      <p className="mt-3 text-xs text-muted-foreground">
+        Позиций: <span className="font-mono">{zone.positionCount}</span>
+      </p>
+    );
+  }
+
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-mono">{value === null ? "—" : tableUsd(value)}</dd>
-    </div>
+    <dl className="mt-3 space-y-1 text-xs">
+      {parts.map((p) => (
+        <div
+          key={p.label}
+          className="flex items-baseline justify-between gap-2"
+        >
+          <dt className="text-muted-foreground">{p.label}</dt>
+          <dd className="font-mono">
+            {p.value === null ? "—" : tableUsd(p.value)}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
