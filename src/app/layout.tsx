@@ -1,23 +1,26 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { Footer } from "@/components/footer";
 import { Toaster } from "@/components/ui/sonner";
 
 /**
- * Типографика «Terminal Blue» (ТЗ §2.1): Inter — UI-текст,
- * JetBrains Mono — числа, адреса, код. Оба с кириллицей —
- * «п.п.», «нет цены», «мин назад» не выпадают в fallback.
+ * Типографика дизайн-кода 1.0 (§3): IBM Plex Sans — весь интерфейс,
+ * IBM Plex Mono — денежные суммы от 24px и точные количества токенов.
+ * Оба с кириллицей — «п.п.», «нет цены», «мин назад» не выпадают в fallback.
+ * Sans берётся переменным начертанием: дизайн-код использует вес 450,
+ * которого нет среди статических файлов.
  */
-const inter = Inter({
+const plexSans = IBM_Plex_Sans({
   subsets: ["latin", "cyrillic"],
-  variable: "--font-inter",
+  variable: "--font-plex-sans",
   display: "swap",
 });
-const jbMono = JetBrains_Mono({
+const plexMono = IBM_Plex_Mono({
   subsets: ["latin", "cyrillic"],
-  variable: "--font-jbmono",
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-mono",
   display: "swap",
 });
 
@@ -40,12 +43,14 @@ export default function RootLayout({
     // до гидрации (ТЗ §5.6.3) — без предупреждения о несовпадении.
     <html
       lang="ru"
-      className={`${inter.variable} ${jbMono.variable} h-full antialiased`}
+      className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col">
+        {/* Тема ставится и классом, и data-theme: токены дизайн-кода
+            написаны под [data-theme], примитивы shadcn — под .dark */}
         <ThemeProvider
-          attribute="class"
+          attribute={["class", "data-theme"]}
           defaultTheme="dark"
           enableSystem
           disableTransitionOnChange

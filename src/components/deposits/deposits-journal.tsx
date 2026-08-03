@@ -3,6 +3,10 @@
 import { X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { DcCard, EmptyState } from "@/components/dc/card";
+import { Chip } from "@/components/dc/chip";
+import { HelpTip } from "@/components/dc/help-tip";
+import { Segmented } from "@/components/dc/segmented";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,37 +19,23 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import type { DepositDto, DepositsResponseDto } from "@/lib/api/types";
-import {
-  MINUS,
-  NBSP,
-  tableDate,
-  tableUsd,
-  tableUsdSigned,
-  usdDecimals,
-} from "@/lib/format";
+import { dcUsd, dcUsdSigned, tableDate } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import {
-  signedDepositAmount,
-  type DepositDirection,
-} from "./deposit-amount";
+import { signedDepositAmount, type DepositDirection } from "./deposit-amount";
 
 /**
- * Журнал «Внесено» (Фаза 4, S4.0) на экране «Цели и записи» — рядом со
- * вторым журналом ручного ввода. История, а не одно число: иначе нельзя
- * ни проверить, ни исправить прошлое.
+ * Журнал «Внесено» на экране «Цели и записи» (README §8): сумма Mono 27px
+ * в шапке, прибыль справа, форма на фоне --bg-sunken, ниже история строками.
  *
- * Сумма вводится положительной, знак ставит переключатель
- * «Пополнение / Вывод». Итог журнала — подписанная сумма всех записей.
+ * История, а не одно число: иначе нельзя ни проверить, ни исправить прошлое.
+ * Сумма вводится положительной, знак ставит сегмент «Пополнение / Вывод».
+ *
+ * Кнопка «Записать» — secondary: единственная primary-кнопка экрана отдана
+ * «Сохранить цели» (дизайн-код §5).
  */
-
-/** Сегмент радио-контрола — как в форме сделок (trade-form.tsx). */
-const SEGMENT =
-  "flex h-9 cursor-pointer select-none items-center justify-center gap-2 rounded-md border border-input px-2 text-sm transition-colors duration-120 ease-out hover:bg-accent/60 has-checked:border-ring has-checked:bg-accent has-checked:font-medium has-focus-visible:ring-3 has-focus-visible:ring-ring/50";
 
 /** Сегодня в локальном поясе для value/max нативного input type="date". */
 function todayLocal(): string {
@@ -55,7 +45,14 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-export function DepositsJournal() {
+export function DepositsJournal({
+  profitUsd,
+  profitLoading,
+}: {
+  /** Чистая − Внесено. null — долг ни разу не прочитан, прибыль неизвестна. */
+  profitUsd?: number | null;
+  profitLoading?: boolean;
+} = {}) {
   const { data, error, loading, refetch } =
     useApi<DepositsResponseDto>("/api/deposits");
 
@@ -114,131 +111,130 @@ export function DepositsJournal() {
   }
 
   const deposits = data?.deposits ?? [];
-  const total = data?.summary.totalDeposited ?? 0;
+  const total = data?.summary.totalDeposited ?? null;
 
   return (
-    <Card className="p-0">
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold">Внесено</h2>
-          {data !== null && deposits.length > 0 && (
+    <DcCard as="section">
+      <div className="flex items-start justify-between gap-4 border-line border-b px-card pt-4 pb-3.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <h2 className="t-h2">Внесено</h2>
+            <HelpTip size="md">
+              Только собственные деньги. Заёмные средства и прибыль от них сюда
+              не попадают — прибыль считается как чистая минус внесено.
+            </HelpTip>
+          </div>
+          {/* Главное число карточки — сумма журнала (дизайн-код §1.1) */}
+          {total === null ? (
+            <div aria-hidden className="h-[27px] w-[132px] rounded-pill bg-chip" />
+          ) : (
+            <p className="t-metric-lg">
+              {dcUsd(total)}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="t-label">Прибыль</span>
+          {profitLoading ? (
+            <span aria-hidden className="block h-4 w-[86px] rounded-pill bg-chip" />
+          ) : profitUsd === null || profitUsd === undefined ? (
+            <span className="text-[16px] text-text-3">—</span>
+          ) : (
             <span
-              className="font-mono text-sm text-muted-foreground"
-              title="Подписанная сумма журнала: выводы уменьшают итог"
+              className={cn(
+                "font-medium text-[16px]",
+                profitUsd > 0 ? "text-profit" : profitUsd < 0 ? "text-loss" : "text-text-1",
+              )}
             >
-              {tableUsd(total, usdDecimals(total))}
+              {dcUsdSigned(profitUsd)}
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Только собственные деньги. Заемные средства и прибыль от них сюда не
-          попадают — прибыль считается как Чистая{NBSP}
-          {MINUS}
-          {NBSP}Внесено.
-        </p>
       </div>
 
-      <form onSubmit={add} className="space-y-3 px-4 py-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <fieldset>
-            <legend className="text-sm font-medium">Операция</legend>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              <label className={cn(SEGMENT, "has-checked:text-success")}>
-                <input
-                  type="radio"
-                  name="deposit-direction"
-                  value="in"
-                  checked={direction === "in"}
-                  onChange={() => setDirection("in")}
-                  className="sr-only"
-                />
-                Пополнение
-              </label>
-              <label className={cn(SEGMENT, "has-checked:text-destructive")}>
-                <input
-                  type="radio"
-                  name="deposit-direction"
-                  value="out"
-                  checked={direction === "out"}
-                  onChange={() => setDirection("out")}
-                  className="sr-only"
-                />
-                Вывод
-              </label>
-            </div>
-          </fieldset>
-          <div className="space-y-1.5">
-            <Label htmlFor="deposit-amount">Сумма, $</Label>
-            <Input
-              id="deposit-amount"
-              type="text"
-              required
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="5000"
-              className="text-right font-mono"
-            />
-          </div>
+      <form
+        onSubmit={add}
+        className="flex flex-col gap-3 border-line border-b bg-sunken px-card py-4"
+      >
+        <Segmented
+          ariaLabel="Операция"
+          value={direction}
+          onChange={setDirection}
+          options={[
+            { value: "in", label: "Пополнение" },
+            { value: "out", label: "Вывод" },
+          ]}
+        />
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Input
+            id="deposit-amount"
+            type="text"
+            required
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="5000"
+            aria-label="Сумма в долларах"
+            className="min-w-[120px] flex-1 text-right font-mono text-[13px]"
+          />
+          <Input
+            id="deposit-date"
+            type="date"
+            required
+            value={date}
+            max={todayLocal()}
+            onChange={(e) => setDate(e.target.value)}
+            aria-label="Дата операции"
+            className="w-[152px] shrink-0 font-mono text-[13px]"
+          />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="deposit-date">Дата</Label>
-            <Input
-              id="deposit-date"
-              type="date"
-              required
-              value={date}
-              max={todayLocal()}
-              onChange={(e) => setDate(e.target.value)}
-              className="font-mono"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="deposit-note">Заметка (не обяз.)</Label>
-            <Input
-              id="deposit-note"
-              type="text"
-              maxLength={200}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Перевод с биржи"
-            />
-          </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Input
+            id="deposit-note"
+            type="text"
+            maxLength={200}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Перевод с биржи"
+            aria-label="Заметка (не обязательно)"
+            className="min-w-[140px] flex-1 text-[13px]"
+          />
+          <Button type="submit" variant="secondary" disabled={pending}>
+            {pending ? "Сохранение…" : "Записать"}
+          </Button>
         </div>
 
         {formError && (
-          <p role="status" className="text-sm text-destructive">
+          <p role="status" className="t-meta text-loss">
             {formError}
           </p>
         )}
-
-        <Button type="submit" variant="secondary" disabled={pending}>
-          {pending ? "Сохранение…" : "Добавить"}
-        </Button>
       </form>
 
       {error && (
-        <p className="px-4 pb-2 text-sm text-destructive" role="status">
+        <p role="status" className="t-meta px-card py-3 text-loss">
           Не удалось загрузить журнал: {error}
         </p>
       )}
 
       {loading && !data ? (
-        <p className="px-4 pb-3 text-xs text-muted-foreground">Загрузка…</p>
+        <div className="flex flex-col gap-2 px-card py-4" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-[19px] rounded-pill bg-chip" />
+          ))}
+        </div>
       ) : deposits.length === 0 ? (
-        <p className="px-4 pb-3 text-xs text-muted-foreground">
-          Записей пока нет.
-        </p>
+        <EmptyState title="Записей пока нет — запишите первое пополнение" />
       ) : (
-        <ul className="divide-y divide-border border-t border-border">
+        <ul>
           {deposits.map((d) => (
             <DepositRow key={d.id} deposit={d} onRemove={remove} />
           ))}
         </ul>
       )}
-    </Card>
+    </DcCard>
   );
 }
 
@@ -251,65 +247,55 @@ function DepositRow({
 }) {
   const amount = Number.parseFloat(deposit.amount);
   const isWithdrawal = amount < 0;
+  const kind = isWithdrawal ? "Вывод" : "Пополнение";
 
   return (
-    <li className="flex items-center justify-between gap-3 px-4 py-2.5">
-      <span className="flex min-w-0 items-baseline gap-3">
-        <span className="shrink-0 font-mono text-xs text-muted-foreground">
-          {tableDate(deposit.happenedOn)}
-        </span>
-        <span className="min-w-0 truncate text-sm">
-          {deposit.note ?? (
-            <span className="text-muted-foreground">
-              {isWithdrawal ? "Вывод" : "Пополнение"}
-            </span>
-          )}
-        </span>
+    <li className="flex items-center gap-3 border-line border-b px-card py-3 transition-colors duration-120 ease-out last:border-0 hover:bg-chip">
+      <span className="w-[82px] shrink-0 font-mono text-[12.5px] text-text-3">
+        {tableDate(deposit.happenedOn)}
       </span>
-      <span className="flex shrink-0 items-center gap-3">
-        {/* Знак в тексте: вывод отличим не только словом в заметке */}
-        <span className="font-mono text-sm whitespace-nowrap">
-          {tableUsdSigned(amount, usdDecimals(amount))}
-        </span>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={`Удалить запись от ${tableDate(deposit.happenedOn)} на ${tableUsdSigned(amount, usdDecimals(amount))}`}
-              className="text-muted-foreground hover:text-destructive"
+      {/* Тип операции — нейтральный чип: это не прибыль и не риск (§2) */}
+      <Chip>{kind}</Chip>
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-text-3">
+        {deposit.note ?? "—"}
+      </span>
+      {/* Знак в тексте: вывод отличим не только чипом */}
+      <span className="shrink-0 whitespace-nowrap font-mono text-[13px]">
+        {dcUsdSigned(amount)}
+      </span>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Удалить запись от ${tableDate(deposit.happenedOn)} на ${dcUsdSigned(amount)}`}
+            className="-mr-1.5 shrink-0 text-text-4 hover:text-loss"
+          >
+            <X />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить запись?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {kind} от{" "}
+              <span className="font-mono">{tableDate(deposit.happenedOn)}</span>{" "}
+              на <span className="font-mono">{dcUsdSigned(amount)}</span>{" "}
+              исчезнет из журнала, итог «Внесено» пересчитается.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => void onRemove(deposit)}
             >
-              <X className="size-4" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Удалить запись?</AlertDialogTitle>
-              <AlertDialogDescription>
-                {isWithdrawal ? "Вывод" : "Пополнение"} от{" "}
-                <span className="font-mono">
-                  {tableDate(deposit.happenedOn)}
-                </span>{" "}
-                на{" "}
-                <span className="font-mono">
-                  {tableUsdSigned(amount, usdDecimals(amount))}
-                </span>{" "}
-                исчезнет из журнала, итог «Внесено» пересчитается.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Отмена</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                onClick={() => void onRemove(deposit)}
-              >
-                Удалить
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </span>
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </li>
   );
 }

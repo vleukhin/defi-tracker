@@ -3,11 +3,13 @@
 import { Button } from "@/components/ui/button";
 
 /**
- * Постраничная навигация под списком: «Показано N–M из K» + Назад/Вперед.
+ * Постраничная навигация под списком: «показаны 1–20 из 39» + Назад/Вперёд.
  *
- * Общая для журнала сделок (страницы приходят с сервера) и списка снепшотов
- * (нарезка на клиенте — графикам нужен весь ряд, серверная пагинация порезала
- * бы и их). Компонент про отображение и ничего не знает про источник страниц.
+ * Используется списком снепшотов (нарезка на клиенте — графикам нужен весь
+ * ряд, серверная пагинация порезала бы и их). Журнал сделок листается иначе:
+ * там окно выборки растёт кнопкой «Показать ещё» в футере той же карточки.
+ *
+ * Набор дизайн-кода: подпись 12,5px --text-3, кнопки ghost-обводкой.
  */
 export function Pagination({
   page,
@@ -27,11 +29,9 @@ export function Pagination({
   const last = Math.min(page * pageSize, total);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="text-xs text-muted-foreground">
-        Показано <span className="font-mono">{first}</span>–
-        <span className="font-mono">{last}</span> из{" "}
-        <span className="font-mono">{total}</span>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="t-meta text-text-3">
+        показаны {first}–{last} из {total}
       </p>
       {totalPages > 1 && (
         <div className="flex items-center gap-2">
@@ -45,12 +45,11 @@ export function Pagination({
             Назад
           </Button>
           <span
-            className="text-xs text-muted-foreground"
+            className="t-meta text-text-3"
             aria-live="polite"
             aria-atomic="true"
           >
-            Стр. <span className="font-mono">{page}</span> из{" "}
-            <span className="font-mono">{totalPages}</span>
+            стр. {page} из {totalPages}
           </span>
           <Button
             type="button"
@@ -59,7 +58,7 @@ export function Pagination({
             disabled={page >= totalPages}
             onClick={() => onPage(page + 1)}
           >
-            Вперед
+            Вперёд
           </Button>
         </div>
       )}

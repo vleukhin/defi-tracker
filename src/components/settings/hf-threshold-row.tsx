@@ -1,98 +1,60 @@
 "use client";
 
-import { useState } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import type { ReactNode } from "react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { formatHfThreshold } from "@/components/debt/hf";
-import type { SettingsDto } from "@/lib/api/types";
-import { ApiError, apiFetch, useApi } from "@/lib/use-api";
+import { SettingRow } from "./setting-row";
 
 /**
- * Строка настроек «Порог предупреждения HF» (Фаза 4, S4.1/S4.3):
- * ниже порога дашборд и экран «Долг» показывают предупреждение о риске
- * ликвидации. Границы формы повторяют серверные (1 < x ≤ 10, дефолт 1.5).
+ * Строка «Порог предупреждения HF» (Фаза 4, S4.1/S4.3): ниже порога
+ * дашборд и экран «Долг» показывают предупреждение о риске ликвидации.
+ *
+ * Поле управляемое, сохранение — общей кнопкой карточки (README §9):
+ * две кнопки «Сохранить» в одной карточке читались бы как два разных
+ * действия. Разделитель дробной части — запятая (дизайн-код §4), поэтому
+ * поле текстовое: type="number" запятую не принимает.
  */
 
-export function HfThresholdRow() {
-  const { data, loading, refetch } = useApi<SettingsDto>("/api/settings");
-  // null — пользователь еще не трогал поле: показывается сохраненное
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/** Границы формы. Сервер требует строго >1; верх — договорённость дизайна. */
+export const HF_MIN = 1;
+export const HF_MAX = 3;
 
-  const value = draft ?? (data ? String(data.hfWarningThreshold) : "");
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    const n = Number.parseFloat(value.replace(",", "."));
-    if (!Number.isFinite(n) || n <= 1 || n > 10) {
-      setError("Порог — число больше 1 и не больше 10");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await apiFetch<SettingsDto>("/api/settings", {
-        method: "PUT",
-        body: JSON.stringify({ hfWarningThreshold: n }),
-      });
-      toast.success("Порог сохранен");
-      setDraft(null);
-      await refetch();
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Не удалось сохранить порог",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
+export function HfThresholdRow({
+  value,
+  onChange,
+  hint,
+  disabled,
+  invalid,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  /** «сейчас 1,68 — выше порога»; null, пока долг не прочитан. */
+  hint?: ReactNode;
+  disabled?: boolean;
+  invalid?: boolean;
+}) {
   return (
-    <div className="px-4 py-3">
-      <Label
-        htmlFor="hf-threshold"
-        className="text-xs font-normal text-muted-foreground"
-      >
-        Порог предупреждения HF
-      </Label>
-      <form onSubmit={save} className="mt-1.5 flex items-center gap-2">
-        <Input
-          id="hf-threshold"
-          type="number"
-          min={1.1}
-          max={10}
-          step={0.1}
-          inputMode="decimal"
-          value={value}
-          onChange={(e) => setDraft(e.target.value)}
-          disabled={loading && !data}
-          className="w-24 text-right font-mono"
-        />
-        <Button type="submit" size="sm" variant="secondary" disabled={saving}>
-          {saving ? "Сохранение…" : "Сохранить"}
-        </Button>
-      </form>
-      {error && (
-        <p role="status" className="mt-1.5 text-sm text-destructive">
-          {error}
-        </p>
+    <SettingRow
+      htmlFor="hf-threshold"
+      label="Порог предупреждения HF"
+      hint="Когда health factor опускается ниже порога, портфель и страница «Долг» предупреждают о риске ликвидации."
+    >
+      <Input
+        id="hf-threshold"
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        aria-invalid={invalid || undefined}
+        aria-describedby={hint ? "hf-threshold-hint" : undefined}
+        className="w-[84px] border-line-strong text-right font-mono"
+      />
+      {hint && (
+        <span id="hf-threshold-hint" className="t-meta text-text-3">
+          {hint}
+        </span>
       )}
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        {data !== null && (
-          <>
-            Текущий порог:{" "}
-            <span className="font-mono">
-              {formatHfThreshold(data.hfWarningThreshold)}
-            </span>
-            .{" "}
-          </>
-        )}
-        Когда health factor опускается ниже порога, дашборд и экран «Долг»
-        предупреждают о риске ликвидации.
-      </p>
-    </div>
+    </SettingRow>
   );
 }

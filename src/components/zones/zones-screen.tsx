@@ -1,66 +1,117 @@
 "use client";
 
-import { CircleAlert, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { DcCard, EmptyState } from "@/components/dc/card";
+import { Chip, StatusChip, ZONE_LABEL, zoneColor } from "@/components/dc/chip";
+import { HelpTip } from "@/components/dc/help-tip";
+import { FilterChips } from "@/components/dc/segmented";
+import { countLabel } from "@/components/portfolio/plural";
 import type {
+  DebtResponseDto,
   PositionDto,
   PositionsSummaryDto,
   StableBorrowRateDto,
+  StrategyZone,
   ZonesSummaryDto,
 } from "@/lib/api/types";
-import { tableUsd } from "@/lib/format";
-import { ApiError, apiFetch, useApi } from "@/lib/use-api";
+import { dcUsd } from "@/lib/format";
+import { ApiError, apiFetch } from "@/lib/use-api";
+import { AaveCard } from "./aave-card";
 import { PositionCard } from "./position-card";
-import { LABEL, type MarkPatch } from "./shared";
+import type { MarkPatch } from "./shared";
 import { ZoneCard } from "./zone-card";
 
 /**
- * Экран «Зоны» (Фаза 6) — разрез портфеля по стратегии Capital Growth
- * (docs/07-strategia-capital-growth.md).
+ * Разрез портфеля по зонам стратегии Capital Growth
+ * (docs/07-strategia-capital-growth.md) — тело режима «Зоны».
  *
- * Зоны НЕ дублируют три категории: категория отвечает «в чем лежит»
+ * Зоны НЕ дублируют три категории: категория отвечает «в чём лежит»
  * (BTC / ETH / стейблы), зона — «какую задачу решает». Стейблкоины есть
  * и в Stability, и в Yield, поэтому один разрез через другой не выражается.
  *
- * Внизу — разметка позиций. По стратегии собственные стейблы всегда
- * распределены по позициям зон Yield и Stability, поэтому категория
- * «Стейблы» складывается именно из этих пометок, а не вводится одним числом.
+ * Сверка стоит отдельной полосой и держит два инварианта разом: сумма зон
+ * равна «Активам», а собственные доли позиций — категории «Стейблы».
+ * Расхождение здесь означает ошибку в разметке, и увидеть его надо раньше,
+ * чем принимать по числам решения.
  *
- * Вложенное задается ДВУМЯ числами — своим и заемным. Одной величиной
- * не обойтись: остаток «стоимость − свое» бывает и заемной частью, и
- * начисленным доходом. На депозите Fluid такой остаток был доходом,
- * а показывался как долг.
- *
- * Разметка живет в поповере за кнопкой, а не в карточке: правят ее редко —
- * при заведении позиции и при выводе, — а читают каждый день. Форма
- * из четырех контролов в каждой строке отнимала место у чисел, ради
- * которых на экран и заходят.
- *
- * Сами карточки разбираются по протоколу (components/zones/*-card.tsx):
- * у депозита лендинга и у пула ликвидности разные вопросы к позиции.
+ * Разметка позиции живёт в поповере за кнопкой в шапке карточки: правят её
+ * при заведении позиции и при выводе, а читают каждый день.
  */
 
-interface ZonesResponse {
+interface ZonesData {
   zones: ZonesSummaryDto;
   positions: PositionDto[];
   positionsSummary: PositionsSummaryDto;
-  /** Стоимость заемных стейблов — порог для ставок Yield-позиций. */
+  /** Стоимость заёмных стейблов — порог для ставок Yield-позиций. */
   stableBorrow: StableBorrowRateDto;
   assetsUsd: number | null;
   stableCategoryUsd: number;
 }
 
-export function ZonesScreen() {
-  const { data, error, loading, refetch } = useApi<ZonesResponse>("/api/zones");
+export type { ZonesData };
+
+const POSITIONS_HINT =
+  "Доход позиции — «стоимость + выведено − вложено»: перевод BTC/ETH в залог не выглядит убытком, капитал просто переехал в другую зону.";
+const SANITY_HINT =
+  "Сумма зон обязана совпасть с активами. Собственные доли позиций образуют категорию «Стейблы» — разница между ними это свободные стейблы, не вложенные никуда.";
+
+type ZoneFilter = StrategyZone | "all";
+
+const FILTERS: { value: ZoneFilter; label: string }[] = [
+  { value: "all", label: "Все" },
+  { value: "growth", label: ZONE_LABEL.growth },
+  { value: "yield", label: ZONE_LABEL.yield },
+  { value: "stability", label: ZONE_LABEL.stability },
+];
+
+export function ZonesScreen({
+  data,
+  debt,
+  onRefetch,
+}: {
+  data: ZonesData;
+  /** Займы: в /api/zones их нет, они приходят отдельным ответом. */
+  debt: DebtResponseDto | null;
+  onRefetch: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
-  // Одно «сейчас» на весь список: таймеры карточек не должны разъезжаться
-  // между соседними позициями
+  const [filter, setFilter] = useState<ZoneFilter>("all");
+  // Одно «сейчас» на весь список: таймеры соседних карточек не должны
+  // разъезжаться между собой
   const nowMs = useNowMs();
+
+  const {
+    zones,
+    positions,
+    positionsSummary,
+    stableBorrow,
+    assetsUsd,
+    stableCategoryUsd,
+  } = data;
+
+  const visible = useMemo(
+    () =>
+      filter === "all" ? positions : positions.filter((p) => p.zone === filter),
+    [positions, filter],
+  );
+
+  /**
+   * Займы в списке позиций. В модели данных заём — не позиция
+   * (`PositionProtocol` знает только fluid / gmx_v2 / uni_v3), он живёт
+   * долговой строкой в /api/debt. Но на экране это ровно такой же объект
+   * учёта, и по стратегии залог под заём — зона Growth, поэтому карточка
+   * встаёт в тот же список и слушается того же фильтра.
+   */
+  const loans = useMemo(() => {
+    if (!debt || (filter !== "all" && filter !== "growth")) return [];
+    // Порог берётся из того же ответа, что и сами займы: подставлять
+    // умолчание было бы враньём — оно расходится с настройкой пользователя
+    const threshold = debt.summary.hfWarningThreshold;
+    return debt.chains
+      .filter((c) => (c.totalDebtUsd ?? 0) > 0)
+      .map((chain) => ({ chain, threshold }));
+  }, [debt, filter]);
 
   /** true = сохранилось; форма в поповере по этому признаку закрывается. */
   async function mark(position: PositionDto, patch: MarkPatch) {
@@ -71,7 +122,7 @@ export function ZonesScreen() {
         method: "PUT",
         body: JSON.stringify({ protocol, chain, externalId, ...patch }),
       });
-      await refetch();
+      await onRefetch();
       return true;
     } catch (err) {
       toast.error(
@@ -83,144 +134,200 @@ export function ZonesScreen() {
     }
   }
 
-  if (loading && !data) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-32 rounded-xl" />
-        <Skeleton className="h-48 rounded-xl" />
-      </div>
-    );
-  }
-
-  if (error && !data) {
-    return (
-      <Alert variant="destructive">
-        <CircleAlert className="size-4" />
-        <AlertTitle>Не удалось загрузить зоны: {error}</AlertTitle>
-        <AlertDescription>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void refetch()}
-            className="mt-2"
-          >
-            Повторить
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  if (!data) return null;
-
-  const {
-    zones,
-    positions,
-    positionsSummary,
-    stableBorrow,
-    assetsUsd,
-    stableCategoryUsd,
-  } = data;
-
   return (
-    <div className="space-y-4">
-      {zones.unmarkedPositions > 0 && (
-        <Alert variant="destructive">
-          <TriangleAlert className="size-4" />
-          <AlertTitle>
-            Позиций без разметки: {zones.unmarkedPositions}
-          </AlertTitle>
-          <AlertDescription>
-            Пока не указаны обе вложенные суммы, доход позиции не считается, а
-            неразмеченная собственная часть занижает категорию «Стейблы». После
-            перезаливки диапазона CLMM разметку нужно проставить заново.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-3">
+    <>
+      <section className="grid gap-3 md:grid-cols-3">
         {zones.zones.map((z) => (
           <ZoneCard key={z.zone} zone={z} />
         ))}
+      </section>
+
+      <SanityStrip
+        zonesTotalUsd={zones.totalUsd}
+        assetsUsd={assetsUsd}
+        ownInPositionsUsd={zones.ownInPositionsUsd}
+        stableCategoryUsd={stableCategoryUsd}
+        unpricedCount={positionsSummary.unpricedCount}
+      />
+
+      {zones.unmarkedPositions > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-block border border-line bg-sunken px-card py-3">
+          <StatusChip tone="warn">
+            {countLabel(
+              zones.unmarkedPositions,
+              "позиция без разметки",
+              "позиции без разметки",
+              "позиций без разметки",
+            )}
+          </StatusChip>
+          <p className="t-meta min-w-0 text-text-2">
+            Пока не указаны обе вложенные суммы, доход позиции не считается,
+            а неразмеченная собственная часть занижает категорию «Стейблы».
+          </p>
+        </div>
+      )}
+
+      <div className="mt-3.5 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+        <div className="flex items-center gap-2.5">
+          <h2 className="t-h2">Позиции</h2>
+          <span className="text-[13px] text-text-3">
+            {visible.length + loans.length}
+          </span>
+          <HelpTip size="md">{POSITIONS_HINT}</HelpTip>
+        </div>
+        <FilterChips
+          options={FILTERS.map((f) => ({
+            value: f.value,
+            label:
+              f.value === "all" ? (
+                f.label
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-[6px] rounded-full"
+                    style={{ background: zoneColor(f.value) }}
+                  />
+                  {f.label}
+                </span>
+              ),
+          }))}
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Зона позиций"
+        />
       </div>
 
-      {/* Сверка. Сумма зон обязана совпасть с Активами; собственные доли
-          позиций обязаны совпасть с категорией «Стейблы» */}
-      <Card className="p-4">
-        <h2 className="text-sm font-semibold">Сверка</h2>
-        <dl className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <Metric
-            label="Сумма зон"
-            value={zones.totalUsd === null ? "—" : tableUsd(zones.totalUsd)}
+      {visible.length + loans.length === 0 ? (
+        <DcCard>
+          <EmptyState
+            title={
+              positions.length === 0
+                ? "Позиций пока нет — депозиты, GM-пулы и LP появятся после чтения кошельков"
+                : "В этой зоне позиций нет"
+            }
           />
-          <Metric
-            label="Активы"
-            value={assetsUsd === null ? "—" : tableUsd(assetsUsd)}
-          />
-          <Metric
-            label="Своих в позициях"
-            value={tableUsd(zones.ownInPositionsUsd)}
-          />
-          <Metric
-            label="Категория «Стейблы»"
-            value={tableUsd(stableCategoryUsd)}
-          />
-        </dl>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Собственные доли позиций и образуют категорию «Стейблы» — разница
-          между ними это свободные стейблы, не вложенные никуда.
-        </p>
-        {positionsSummary.unpricedCount > 0 && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Позиций без оценки: {positionsSummary.unpricedCount} — суммы с ними
-            не выводятся.
-          </p>
-        )}
-      </Card>
-
-      {positions.length === 0 ? (
-        <Card className="p-6 text-center">
-          <p className="text-base font-medium">Позиций нет</p>
-          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Здесь появятся депозиты Fluid, GM-пулы и LP-позиции, когда они будут
-            прочитаны с кошельков.
-          </p>
-        </Card>
+        </DcCard>
       ) : (
         /* Карточки позиций лежат на фоне страницы, а не внутри общей
-           карточки: вложенная карточка в карточке спорит с elevation —
-           у каждой позиции своя поверхность, и вторая рамка вокруг них
-           только съедает ширину */
-        <section>
-          <h2 className="text-sm font-semibold">Позиции</h2>
-          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Доход считается как «стоимость + выведено − вложено»: иначе продажа
-            части GM с переводом BTC/ETH в залог выглядела бы убытком, хотя
-            капитал просто переехал в Growth. Из текущих собственных долей
-            складывается категория «Стейблы». Зона и вложенные суммы правятся в
-            разметке позиции — кнопка справа в шапке карточки.
-          </p>
-          <ul className="mt-3 space-y-3">
-            {positions.map((p) => (
-              <PositionCard
-                key={p.id}
-                position={p}
-                positions={positions}
-                busy={busy}
-                onMark={mark}
-                stableBorrow={stableBorrow}
-                nowMs={nowMs}
-              />
-            ))}
-          </ul>
-        </section>
+           карточки: вложенная карточка в карточке спорит с elevation */
+        <ul className="flex flex-col gap-3">
+          {/* Заём идёт первым: он единственный, что способен принудительно
+              прервать стратегию, и читать его надо раньше доходных позиций */}
+          {loans.map(({ chain, threshold }) => (
+            <AaveCard
+              key={`loan-${chain.chain}`}
+              chain={chain}
+              hfWarningThreshold={threshold}
+              borrowRatePercent={stableBorrow.ratePercent}
+            />
+          ))}
+          {visible.map((p) => (
+            <PositionCard
+              key={p.id}
+              position={p}
+              positions={positions}
+              busy={busy}
+              onMark={mark}
+              stableBorrow={stableBorrow}
+              nowMs={nowMs}
+            />
+          ))}
+        </ul>
       )}
-    </div>
+    </>
   );
 }
 
 /**
- * «Сейчас» с обновлением раз в минуту: обратный отсчет 48 часов на карточке
+ * Полоса «Сверка»: два равенства, которые обязаны сойтись на реальных
+ * данных. Проверка держится чипами, а не абзацем — расхождение видно
+ * по цвету статуса, а его величина стоит рядом числом.
+ */
+function SanityStrip({
+  zonesTotalUsd,
+  assetsUsd,
+  ownInPositionsUsd,
+  stableCategoryUsd,
+  unpricedCount,
+}: {
+  zonesTotalUsd: number | null;
+  assetsUsd: number | null;
+  ownInPositionsUsd: number;
+  stableCategoryUsd: number;
+  unpricedCount: number;
+}) {
+  // Округление до доллара: суммы сходятся с точностью до центов
+  const diff =
+    zonesTotalUsd === null || assetsUsd === null
+      ? null
+      : zonesTotalUsd - assetsUsd;
+
+  return (
+    <section className="flex flex-wrap items-center gap-2 rounded-block border border-line bg-sunken px-card py-3">
+      <span className="mr-1 flex items-center gap-1.5">
+        <span className="t-label">Сверка</span>
+        <HelpTip>{SANITY_HINT}</HelpTip>
+      </span>
+
+      <SanityChip label="сумма зон" value={zonesTotalUsd} />
+      <span aria-hidden className="text-[12px] text-text-4">
+        =
+      </span>
+      <SanityChip label="активы" value={assetsUsd} />
+
+      {diff !== null ? (
+        Math.abs(diff) < 0.5 ? (
+          <StatusChip tone="profit" className="h-[26px] text-[12px]">
+            ✓ сходится
+          </StatusChip>
+        ) : (
+          <StatusChip tone="loss" className="h-[26px] text-[12px]">
+            расходится на {dcUsd(Math.abs(diff))}
+          </StatusChip>
+        )
+      ) : (
+        <Chip className="h-[26px] px-2.5 text-[12px]">
+          {unpricedCount > 0
+            ? `${countLabel(unpricedCount, "позиция", "позиции", "позиций")} без оценки`
+            : "сверка недоступна"}
+        </Chip>
+      )}
+
+      <span className="min-w-3 flex-1" />
+
+      <span className="flex flex-wrap items-center gap-x-[7px] gap-y-1 text-[12.5px]">
+        <span className="text-text-3">своих в позициях</span>
+        <span className="font-medium">{dcUsd(ownInPositionsUsd)}</span>
+        <span aria-hidden className="text-text-4">
+          ·
+        </span>
+        <span className="text-text-3">категория «Стейблы»</span>
+        <span className="font-medium">{dcUsd(stableCategoryUsd)}</span>
+      </span>
+    </section>
+  );
+}
+
+function SanityChip({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | null;
+}) {
+  return (
+    <Chip className="h-[26px] gap-[7px] px-2.5 text-[12.5px] font-normal">
+      <span className="text-text-3">{label}</span>
+      <span className="font-medium text-text-1">
+        {value === null ? "—" : dcUsd(value)}
+      </span>
+    </Chip>
+  );
+}
+
+/**
+ * «Сейчас» с обновлением раз в минуту: обратный отсчёт 48 часов на карточке
  * LP должен идти, а не застывать на времени открытия экрана.
  */
 function useNowMs(): number {
@@ -235,13 +342,4 @@ function useNowMs(): number {
 function splitKey(key: string): [string, string, string] {
   const [protocol, chain, ...rest] = key.split(":");
   return [protocol, chain, rest.join(":")];
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <dt className={LABEL}>{label}</dt>
-      <dd className="font-mono text-sm font-semibold">{value}</dd>
-    </div>
-  );
 }

@@ -2,47 +2,44 @@
 
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
-import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/dc/segmented";
 
-const THEME_OPTIONS = [
+/**
+ * Тема — сегментированный переключатель (README §9): Светлая / Тёмная /
+ * Системная. Значение хранит next-themes: класс и data-theme ставятся на
+ * <html>, выбор переживает перезагрузку.
+ */
+
+type ThemeValue = "light" | "dark" | "system";
+
+const THEME_OPTIONS: { value: ThemeValue; label: string }[] = [
   { value: "light", label: "Светлая" },
-  { value: "dark", label: "Темная" },
+  { value: "dark", label: "Тёмная" },
   { value: "system", label: "Системная" },
-] as const;
+];
+
+/** Тема по умолчанию в ThemeProvider — до гидрации показываем её. */
+const SSR_THEME: ThemeValue = "dark";
 
 const emptySubscribe = () => () => {};
 
-/**
- * Сегментный контрол темы в настройках (ТЗ §5.4): дублирует переключатель
- * из шапки — на мобильных это основная точка входа.
- */
 export function ThemeRow() {
   const { theme, setTheme } = useTheme();
-  // До гидрации активный пункт неизвестен — все кнопки ghost
+  // На сервере активный пункт неизвестен — берётся дефолт провайдера
   const mounted = useSyncExternalStore(
     emptySubscribe,
     () => true,
     () => false,
   );
+  const value: ThemeValue =
+    mounted && theme ? (theme as ThemeValue) : SSR_THEME;
 
   return (
-    <div
-      role="group"
-      aria-label="Выбор темы"
-      className="flex flex-wrap gap-1"
-    >
-      {THEME_OPTIONS.map((option) => (
-        <Button
-          key={option.value}
-          type="button"
-          size="sm"
-          variant={mounted && theme === option.value ? "secondary" : "ghost"}
-          onClick={() => setTheme(option.value)}
-          aria-pressed={mounted ? theme === option.value : undefined}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </div>
+    <Segmented
+      options={THEME_OPTIONS}
+      value={value}
+      onChange={setTheme}
+      ariaLabel="Выбор темы"
+    />
   );
 }

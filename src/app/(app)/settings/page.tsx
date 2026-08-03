@@ -1,16 +1,20 @@
 import type { Metadata } from "next";
-import { Card } from "@/components/ui/card";
-import { NBSP } from "@/lib/format";
-import { createClient } from "@/lib/supabase/server";
-import { HfThresholdRow } from "@/components/settings/hf-threshold-row";
-import { ThemeRow } from "@/components/settings/theme-row";
+import { Disclaimer } from "@/components/dc/card";
+import { PageHeader } from "@/components/dc/page-header";
+import { AccountCard } from "@/components/settings/account-card";
 import { UsersManager } from "@/components/settings/users-manager";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Настройки" };
 
 /**
- * Настройки — честный минимум Фазы 1: email аккаунта, тема и порог
- * отклонения (фиксированный). Выход — кнопка «Выйти» в навигации.
+ * «Настройки» (README §9): аккаунт и вид, пороги предупреждений,
+ * пользователи (только администратору). Выход — кнопка «Выйти» в навигации.
+ *
+ * Контент сужается до 840px: строки label/control длиной в 1120px читались
+ * бы как таблица, а это форма. Общий .page-shell из layout не трогаем —
+ * ограничение ставится здесь, поверх него.
  */
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -20,42 +24,21 @@ export default async function SettingsPage() {
   const isAdmin = user?.app_metadata?.role === "admin";
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Настройки</h1>
+    <TooltipProvider>
+      <div className="mx-auto flex w-full max-w-[840px] flex-col gap-4">
+        <PageHeader
+          title="Настройки"
+          meta={<span>аккаунт, вид и пороги предупреждений</span>}
+        />
 
-      <Card className="divide-y divide-border p-0">
-        <div className="px-4 py-3">
-          <p className="text-xs text-muted-foreground">Email</p>
-          <p className="mt-0.5 font-mono text-sm">{user?.email ?? "—"}</p>
-        </div>
-        <div className="px-4 py-3">
-          <p className="text-xs text-muted-foreground">Тема</p>
-          <div className="mt-1.5">
-            <ThemeRow />
-          </div>
-        </div>
-        <div className="px-4 py-3">
-          <p className="text-xs text-muted-foreground">
-            Порог выделения отклонения
-          </p>
-          <p className="mt-0.5 font-mono text-sm">5{NBSP}п.п.</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Настраивается в будущих версиях.
-          </p>
-        </div>
-        {/* Фаза 4 (S4.3): настраиваемый порог предупреждения по HF */}
-        <HfThresholdRow />
-        <div className="px-4 py-3">
-          <p className="text-xs text-muted-foreground">Выход из аккаунта</p>
-          <p className="mt-0.5 text-sm">Кнопка «Выйти» — в навигации сверху.</p>
-        </div>
-      </Card>
+        <AccountCard email={user?.email ?? null} />
 
-      {isAdmin && user && <UsersManager selfId={user.id} />}
+        {isAdmin && user && <UsersManager selfId={user.id} />}
 
-      <p className="text-xs text-muted-foreground">
-        Суммы ребалансировки на дашборде — расчеты, а не финансовые советы.
-      </p>
-    </div>
+        <Disclaimer>
+          Суммы к ребалансировке и оценки риска — расчёт, а не финансовый совет.
+        </Disclaimer>
+      </div>
+    </TooltipProvider>
   );
 }

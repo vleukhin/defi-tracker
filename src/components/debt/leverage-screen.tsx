@@ -1,457 +1,151 @@
 "use client";
 
-import { ChevronRight, CircleAlert, Link2Off, RefreshCw } from "lucide-react";
+import { Link2Off, Plus, X } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
-import { pnlClass } from "@/components/pnl";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DcBlock, DcCard, SectionHead, Verdict } from "@/components/dc/card";
+import { StatusChip } from "@/components/dc/chip";
+import { HelpTip } from "@/components/dc/help-tip";
+import { Metric, MetricGrid } from "@/components/dc/metrics";
+import { ProtocolTile } from "@/components/dc/page-header";
+import { protocolBrand } from "@/components/dc/protocols";
+import { Dash } from "@/components/dc/table";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import type {
   LeverageBorrowDto,
   LeverageResponseDto,
   PositionDto,
-  RefreshResponseDto,
 } from "@/lib/api/types";
 import {
-  NBSP,
   chainLabel,
-  formatRelativeTime,
-  tableNumber,
+  dcUsd,
+  dcUsdSigned,
   tablePctSigned,
   tableQuantity,
-  tableUsd,
-  tableUsdSigned,
-  usdDecimals,
 } from "@/lib/format";
-import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 
 /**
- * Вкладка «Левередж» (Фаза 5, S5.3): куда размещены заемные средства и
- * оправдывает ли себя связка «занял и вложил».
+ * «Займы и размещение» — карточка экрана «Долг» (была отдельная вкладка
+ * «Левередж», Фаза 5).
  *
- * Три блока:
- *  1. Сводка — сколько размещено и как привязанные позиции соотносятся с долгом;
- *  2. Собственные средства — почему в Активы вошла не вся стоимость позиций;
- *  3. Позиции и займы со связками.
+ * Отвечает на один вопрос: оправдывает ли себя связка «занял и вложил».
+ * Привязка «займ → позиция» — бухгалтерская метка: ни на портфель, ни на
+ * связку пяти чисел она не влияет, влияет только на числа этой карточки.
  *
- * Привязка — бухгалтерская метка: ни на портфель, ни на пять чисел она
- * не влияет. Стоимость позиций в Активы входит независимо от того,
- * привязана позиция к займу или нет.
+ * Форма привязки не висит в потоке, а раскрывается по кнопке (дизайн-код
+ * §8): правят её при заведении займа, а читают карточку каждый день.
  */
 
-const LABEL =
-  "text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase";
+const AAVE = protocolBrand("aave");
 
-const UNPRICED_HINT = "Стоимость этой позиции получить не удалось";
-
-export function LeverageScreen() {
-  const { data, error, loading, refetch } =
-    useApi<LeverageResponseDto>("/api/leverage");
-  const [refreshing, setRefreshing] = useState(false);
-  const [busyLink, setBusyLink] = useState(false);
-
-  async function doRefresh() {
-    if (refreshing) return;
-    setRefreshing(true);
-    try {
-      await apiFetch<RefreshResponseDto>("/api/refresh", { method: "POST" });
-      await refetch();
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Не удалось обновить данные",
-      );
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  async function link(borrowId: string, positionId: string) {
-    if (busyLink) return;
-    setBusyLink(true);
-    try {
-      await apiFetch("/api/borrow-links", {
-        method: "POST",
-        body: JSON.stringify({ borrowId, positionId }),
-      });
-      await refetch();
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Не удалось привязать позицию",
-      );
-    } finally {
-      setBusyLink(false);
-    }
-  }
-
-  async function unlink(borrowId: string, positionId: string) {
-    if (busyLink) return;
-    setBusyLink(true);
-    try {
-      // Связка адресуется парой (она же уникальный ключ) — отдельный id
-      // связки клиенту знать незачем
-      await apiFetch(
-        `/api/borrow-links?borrowId=${encodeURIComponent(borrowId)}&positionId=${encodeURIComponent(positionId)}`,
-        { method: "DELETE" },
-      );
-      await refetch();
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Не удалось снять привязку",
-      );
-    } finally {
-      setBusyLink(false);
-    }
-  }
-
-  if (loading && !data) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-24 rounded-xl" />
-        <Skeleton className="h-40 rounded-xl" />
-      </div>
-    );
-  }
-
-  if (error && !data) {
-    return (
-      <Alert variant="destructive">
-        <CircleAlert className="size-4" />
-        <AlertTitle>Не удалось загрузить размещение: {error}</AlertTitle>
-        <AlertDescription>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void refetch()}
-            className="mt-2"
-          >
-            Повторить
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  if (!data) return null;
-
+export function LeverageCard({
+  data,
+  busy,
+  onLink,
+  onUnlink,
+}: {
+  data: LeverageResponseDto;
+  busy: boolean;
+  onLink: (borrowId: string, positionId: string) => void;
+  onUnlink: (borrowId: string, positionId: string) => void;
+}) {
   const { positions, borrows, summary, chains } = data;
   const failed = chains.filter((c) => !c.ok);
-  const oldest =
-    positions
-      .map((p) => p.updatedAt)
-      .filter(Boolean)
-      .sort()[0] ?? null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          данные: {formatRelativeTime(oldest) ?? "нет данных"}
-          {refreshing && (
-            <span className="ml-2 inline-flex items-baseline gap-1.5">
-              <span
-                aria-hidden="true"
-                className="size-1.5 animate-pulse self-center rounded-full bg-primary"
-              />
-              обновляется…
-            </span>
-          )}
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void doRefresh()}
-          disabled={refreshing}
-          aria-label="Обновить"
-          className="max-sm:size-9 max-sm:p-0"
-        >
-          <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-          <span className="hidden sm:inline">
-            {refreshing ? "Обновление…" : "Обновить"}
-          </span>
-        </Button>
-      </div>
+    <DcCard as="section">
+      <SectionHead
+        title="Займы и размещение"
+        count={borrows.length}
+        className="border-line border-b"
+        hint="Привязка займа к позиции — метка для этой карточки: на портфель и на связку пяти чисел она не влияет."
+        action={
+          failed.length > 0 && (
+            <StatusChip tone="warn">
+              не прочитано источников: {failed.length}
+              <HelpTip label="Какие источники не прочитаны">
+                {failed
+                  .map((c) => `${c.source} · ${chainLabel(c.chain)}`)
+                  .join(", ")}
+              </HelpTip>
+            </StatusChip>
+          )
+        }
+      />
 
-      {/* Отказ источника: «позиций нет» и «не смогли прочитать» — разные вещи */}
-      {failed.length > 0 && (
-        <Alert variant="destructive">
-          <CircleAlert className="size-4" />
-          <AlertTitle>
-            Часть источников не прочитана — суммы могут быть неполными
-          </AlertTitle>
-          <AlertDescription>
-            {failed
-              .map((c) => `${c.source} · ${chainLabel(c.chain)}`)
-              .join(", ")}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <SummaryCard summary={summary} />
-
-      {(summary.ownUsd !== 0 || summary.grossUsd !== null) && (
-        <OwnCapitalCard summary={summary} />
-      )}
-
-      {positions.length === 0 ? (
-        <Card className="p-6 text-center">
-          <p className="text-base font-medium">Размещенных позиций нет</p>
-          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Здесь появятся депозиты Fluid, GM-пулы GMX и LP-позиции Uniswap v3,
-            когда они будут прочитаны с ваших кошельков.
-          </p>
-        </Card>
-      ) : (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold">
-            Позиции ({positions.length})
-          </h2>
-          <div className="space-y-2">
-            {positions.map((p) => (
-              <PositionCard key={p.id} position={p} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {borrows.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold">Займы и их размещение</h2>
-          <p className="text-xs text-muted-foreground">
-            Привязка — только метка для этого экрана: на портфель и на связку
-            пяти чисел она не влияет.
-          </p>
-          <div className="space-y-2">
-            {borrows.map((b) => (
-              <BorrowCard
-                key={b.id}
-                borrow={b}
-                positions={positions}
-                busy={busyLink}
-                onLink={link}
-                onUnlink={unlink}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
-  );
-}
-
-function SummaryCard({ summary }: { summary: LeverageResponseDto["summary"] }) {
-  return (
-    <Card className="p-4">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-        <div>
-          <dt className={LABEL}>Размещено</dt>
-          <dd
-            className={cn(
-              "mt-1 font-mono text-lg font-semibold",
-              summary.positionsUsd === null && "text-muted-foreground",
-            )}
-            title="Вклад позиций в «Активы» — Fluid после вычета собственных стейблов"
-          >
-            {summary.positionsUsd === null
-              ? "—"
-              : tableUsd(summary.positionsUsd)}
-          </dd>
-        </div>
-        <div>
-          <dt className={LABEL}>Привязанный долг</dt>
-          <dd className="mt-1 font-mono text-lg font-semibold">
-            {summary.linkedDebtUsd === null
-              ? "—"
-              : tableUsd(summary.linkedDebtUsd)}
-          </dd>
-        </div>
-        <div>
-          <dt className={LABEL}>Привязанные позиции</dt>
-          <dd className="mt-1 font-mono text-lg font-semibold">
-            {summary.linkedPositionsUsd === null
-              ? "—"
-              : tableUsd(summary.linkedPositionsUsd)}
-          </dd>
-        </div>
-        <div>
-          <dt className={LABEL}>Дельта связки</dt>
-          <dd
-            className={cn(
-              "mt-1 font-mono text-lg font-semibold",
-              summary.linkedDeltaUsd === null
-                ? "text-muted-foreground"
-                : pnlClass(summary.linkedDeltaUsd),
-            )}
-            title="Стоимость привязанных позиций минус профинансировавший их долг"
-          >
-            {summary.linkedDeltaUsd === null
-              ? "—"
-              : tableUsdSigned(
-                  summary.linkedDeltaUsd,
-                  usdDecimals(summary.linkedDeltaUsd),
-                )}
-          </dd>
-        </div>
-      </dl>
-
-      {summary.unpricedCount > 0 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Без оценки: {summary.unpricedCount} — пока их стоимость неизвестна,
-          «Активы» на дашборде не выводятся.
-        </p>
-      )}
-    </Card>
-  );
-}
-
-/**
- * Почему в «Активы» вошла не вся стоимость позиций.
- *
- * Собственные средства внутри позиций уже посчитаны ручными записями
- * портфеля, поэтому вычитаются — иначе своя часть попадает в Активы дважды.
- * До Фазы 6 вычиталось только из Fluid, и это ломалось, как только свои
- * деньги переезжали в другой протокол.
- */
-function OwnCapitalCard({
-  summary,
-}: {
-  summary: LeverageResponseDto["summary"];
-}) {
-  return (
-    <Card className="p-4">
-      <h2 className="text-sm font-semibold">Собственные средства в позициях</h2>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Своя доля уже посчитана категорией «Стейблы», поэтому в «Активы»
-        позиции входят за ее вычетом — иначе те же деньги вошли бы дважды.
-      </p>
-      <dl className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 font-mono text-sm">
-        <dt className="sr-only">Стоимость позиций</dt>
-        <dd>{summary.grossUsd === null ? "—" : tableUsd(summary.grossUsd)}</dd>
-        <span aria-hidden="true" className="text-muted-foreground">
-          −
-        </span>
-        <dt className="sr-only">Своих внутри</dt>
-        <dd>{tableUsd(summary.ownUsd)}</dd>
-        <span aria-hidden="true" className="text-muted-foreground">
-          =
-        </span>
-        <dt className="sr-only">Вклад в Активы</dt>
-        <dd className="font-semibold">
-          {summary.positionsUsd === null ? "—" : tableUsd(summary.positionsUsd)}
-        </dd>
-        <span className="font-sans text-xs text-muted-foreground">
-          позиции − свои{NBSP}внутри = вклад{NBSP}в{NBSP}Активы
-        </span>
-      </dl>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Вложенное своё и заёмное указывается у каждой позиции на экране
-        «Зоны»; из текущих собственных долей складывается категория «Стейблы».
-        {summary.unmarkedCount > 0 &&
-          ` Без разметки: ${summary.unmarkedCount} — считаются целиком заемными.`}
-      </p>
-    </Card>
-  );
-}
-
-/** Одна позиция: стоимость, состав, комиссии; состав раскрывается. */
-function PositionCard({ position }: { position: PositionDto }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Card className="p-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left outline-none transition-colors duration-120 hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
-            open && "rotate-90",
-          )}
+      <MetricGrid>
+        <Metric
+          label="Размещено"
+          hint="Вклад позиций в «Активы» — стоимость позиций за вычетом своих средств внутри них."
+          value={
+            summary.positionsUsd === null ? null : dcUsd(summary.positionsUsd)
+          }
         />
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium">
-            {position.title}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {position.protocolLabel} · {chainLabel(position.chain)}
-            {position.subtitle ? ` · ${position.subtitle}` : ""}
-          </span>
-        </span>
-        {position.inRange === false && (
-          <Badge variant="warning" className="shrink-0">
-            вне диапазона
-          </Badge>
-        )}
-        <span
-          className={cn(
-            "ml-auto shrink-0 font-mono text-sm font-semibold",
-            position.valueUsd === null && "text-muted-foreground",
-          )}
-          title={position.valueUsd === null ? UNPRICED_HINT : undefined}
-        >
-          {position.valueUsd === null ? "—" : tableUsd(position.valueUsd)}
-        </span>
-      </button>
+        <Metric
+          label="Привязанный долг"
+          value={
+            summary.linkedDebtUsd === null ? null : dcUsd(summary.linkedDebtUsd)
+          }
+        />
+        <Metric
+          label="Привязанные позиции"
+          value={
+            summary.linkedPositionsUsd === null
+              ? null
+              : dcUsd(summary.linkedPositionsUsd)
+          }
+        />
+        <Metric
+          label="Дельта связки"
+          hint="Стоимость привязанных позиций минус профинансировавший их долг."
+          tone={
+            summary.linkedDeltaUsd === null
+              ? undefined
+              : summary.linkedDeltaUsd >= 0
+                ? "profit"
+                : "loss"
+          }
+          value={
+            summary.linkedDeltaUsd === null
+              ? null
+              : dcUsdSigned(summary.linkedDeltaUsd)
+          }
+        />
+      </MetricGrid>
 
-      {open && (
-        <div className="border-t border-border bg-muted/40 px-4 py-3">
-          <ul className="space-y-1.5">
-            {position.components.map((c, i) => (
-              <li
-                key={`${c.symbol}-${i}`}
-                className="flex items-baseline justify-between gap-3"
-              >
-                <span className="text-sm">
-                  {c.symbol}
-                  {c.side && (
-                    <span className="ml-1.5 text-xs text-muted-foreground">
-                      {c.side === "long" ? "long" : "short"}
-                    </span>
-                  )}
-                </span>
-                <span className="flex items-baseline gap-3">
-                  <span className="font-mono text-sm">
-                    {tableNumber(c.quantity, c.quantity >= 1000 ? 2 : 6)}
-                  </span>
-                  <span className="font-mono text-sm text-muted-foreground">
-                    {c.valueUsd === null
-                      ? `≈${NBSP}—`
-                      : tableUsd(c.valueUsd, usdDecimals(c.valueUsd))}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          {position.feesUsd !== null && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Несобранные комиссии:{" "}
-              <span className="font-mono">
-                {tableUsd(position.feesUsd, usdDecimals(position.feesUsd))}
-              </span>{" "}
-              — в стоимость позиции не входят
-            </p>
-          )}
-
-          <p className="mt-2 text-xs text-muted-foreground">
-            прочитано: {formatRelativeTime(position.updatedAt) ?? "—"}
-            {position.walletLabel ? ` · ${position.walletLabel}` : ""}
-          </p>
-        </div>
+      {borrows.length === 0 ? (
+        <p className="t-meta border-line border-t px-card py-6 text-text-3">
+          Займов не прочитано.
+        </p>
+      ) : (
+        <ul className="grid gap-px border-line border-t bg-line">
+          {borrows.map((borrow) => (
+            <BorrowRow
+              key={borrow.id}
+              borrow={borrow}
+              positions={positions}
+              busy={busy}
+              onLink={onLink}
+              onUnlink={onUnlink}
+            />
+          ))}
+        </ul>
       )}
-    </Card>
+
+      <Verdict>
+        {summary.ownUsd > 0
+          ? `В «Активы» позиции входят за вычетом своих ${dcUsd(summary.ownUsd)} — эта доля уже посчитана категорией «Стейблы».`
+          : "Собственных средств внутри позиций не размечено — они считаются целиком заёмными."}
+        {summary.unmarkedCount > 0 &&
+          ` Без разметки: ${summary.unmarkedCount}.`}
+        {summary.unpricedCount > 0 && ` Без оценки: ${summary.unpricedCount}.`}
+      </Verdict>
+    </DcCard>
   );
 }
 
-/** Займ: долг, привязанные позиции, дельта и управление связками. */
-function BorrowCard({
+/** Один займ: долг, привязанные позиции, дельта и раскрываемая привязка. */
+function BorrowRow({
   borrow,
   positions,
   busy,
@@ -465,6 +159,7 @@ function BorrowCard({
   onUnlink: (borrowId: string, positionId: string) => void;
 }) {
   const [pick, setPick] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const linked = positions.filter((p) =>
     borrow.linkedPositionIds.includes(p.id),
   );
@@ -473,103 +168,94 @@ function BorrowCard({
   );
 
   return (
-    <Card className="p-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-3">
-        <div>
-          <span className="text-sm font-medium">{borrow.symbol}</span>
-          <span className="ml-2 text-xs text-muted-foreground">
-            {chainLabel(borrow.chain)}
-          </span>
+    <li className="bg-surface px-card py-3.5">
+      <div className="flex items-center gap-3">
+        <ProtocolTile abbr={AAVE.abbr} color={AAVE.color} size={30} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13.5px] font-medium">
+            {borrow.symbol} · {chainLabel(borrow.chain)}
+          </p>
+          <p className="truncate text-[12px] text-text-3">
+            {tableQuantity(borrow.quantity)} {borrow.symbol}
+          </p>
         </div>
-        <div className="flex items-baseline gap-3">
-          <span
-            className="font-mono text-sm"
-            title={tableQuantity(borrow.quantity, true)}
-          >
-            {tableQuantity(borrow.quantity)}
-          </span>
-          <span className="font-mono text-sm font-semibold">
-            {borrow.debtUsd === null ? "—" : tableUsd(borrow.debtUsd)}
-          </span>
-        </div>
+        <span className="shrink-0 font-mono text-[13px] font-medium">
+          {borrow.debtUsd === null ? <Dash /> : dcUsd(borrow.debtUsd)}
+        </span>
       </div>
 
-      <div className="px-4 py-3">
-        {linked.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Не привязан ни к одной позиции — непонятно, во что ушли эти деньги.
+      {linked.length === 0 ? (
+        <p className="mt-2.5 text-[12px] text-text-3">
+          Не привязан ни к одной позиции — во что ушли эти деньги, неизвестно.
+        </p>
+      ) : (
+        <DcBlock className="mt-2.5 px-3 py-2.5">
+          <ul className="grid gap-1.5">
+            {linked.map((position) => (
+              <li
+                key={position.id}
+                className="flex items-center justify-between gap-3"
+              >
+                <span className="min-w-0 truncate text-[12.5px] text-text-2">
+                  {position.title}
+                  <span className="ml-1.5 text-text-3">
+                    {position.protocolLabel}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="font-mono text-[12.5px]">
+                    {position.valueUsd === null ? (
+                      <Dash />
+                    ) : (
+                      dcUsd(position.valueUsd)
+                    )}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    disabled={busy}
+                    onClick={() => onUnlink(borrow.id, position.id)}
+                    aria-label={`Снять привязку: ${position.title}`}
+                    title="Снять привязку"
+                  >
+                    <Link2Off />
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2.5 flex items-baseline justify-between gap-3 border-line border-t pt-2.5 text-[12px] text-text-3">
+            <span>
+              позиции{" "}
+              <span className="font-mono text-text-2">
+                {borrow.linkedUsd === null ? "—" : dcUsd(borrow.linkedUsd)}
+              </span>
+            </span>
+            <span>
+              дельта{" "}
+              <span
+                className={cn(
+                  "font-mono",
+                  borrow.deltaUsd === null
+                    ? "text-text-3"
+                    : borrow.deltaUsd >= 0
+                      ? "text-profit"
+                      : "text-loss",
+                )}
+              >
+                {borrow.deltaUsd === null ? "—" : dcUsdSigned(borrow.deltaUsd)}
+                {borrow.deltaPct !== null &&
+                  ` · ${tablePctSigned(borrow.deltaPct, 1)}`}
+              </span>
+            </span>
           </p>
-        ) : (
-          <>
-            <ul className="space-y-1.5">
-              {linked.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-baseline justify-between gap-3"
-                >
-                  <span className="min-w-0 truncate text-sm">
-                    {p.title}
-                    <span className="ml-1.5 text-xs text-muted-foreground">
-                      {p.protocolLabel}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-baseline gap-2">
-                    <span className="font-mono text-sm">
-                      {p.valueUsd === null ? "—" : tableUsd(p.valueUsd)}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => onUnlink(borrow.id, p.id)}
-                      aria-label={`Снять привязку ${p.title}`}
-                      title="Снять привязку"
-                      className="h-7 px-1.5 text-muted-foreground"
-                    >
-                      <Link2Off className="size-3.5" />
-                    </Button>
-                  </span>
-                </li>
-              ))}
-            </ul>
+        </DcBlock>
+      )}
 
-            <dl className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1 border-t border-border pt-3">
-              <div className="flex items-baseline gap-2">
-                <dt className={LABEL}>Позиции</dt>
-                <dd className="font-mono text-sm">
-                  {borrow.linkedUsd === null ? "—" : tableUsd(borrow.linkedUsd)}
-                </dd>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <dt className={LABEL}>Дельта</dt>
-                <dd
-                  className={cn(
-                    "font-mono text-sm font-semibold",
-                    borrow.deltaUsd === null
-                      ? "text-muted-foreground"
-                      : pnlClass(borrow.deltaUsd),
-                  )}
-                >
-                  {borrow.deltaUsd === null
-                    ? "—"
-                    : tableUsdSigned(
-                        borrow.deltaUsd,
-                        usdDecimals(borrow.deltaUsd),
-                      )}
-                  {borrow.deltaPct !== null && (
-                    <span className="ml-1.5 text-xs">
-                      ({tablePctSigned(borrow.deltaPct, 1)})
-                    </span>
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </>
-        )}
-
-        {available.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+      {available.length > 0 &&
+        (formOpen ? (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <label htmlFor={`link-${borrow.id}`} className="sr-only">
               Позиция для привязки
             </label>
@@ -577,30 +263,55 @@ function BorrowCard({
               id={`link-${borrow.id}`}
               value={pick}
               onChange={(e) => setPick(e.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="h-control min-w-0 flex-1 rounded-control border border-line-card bg-sunken px-2.5 text-[13px] text-text-1 outline-none transition-colors duration-120 ease-out focus-visible:border-[var(--accent)] focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              <option value="">Привязать позицию…</option>
-              {available.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title} · {p.protocolLabel} · {chainLabel(p.chain)}
+              <option value="">Выберите позицию…</option>
+              {available.map((position) => (
+                <option key={position.id} value={position.id}>
+                  {position.title} · {position.protocolLabel} ·{" "}
+                  {chainLabel(position.chain)}
                 </option>
               ))}
             </select>
             <Button
               type="button"
-              variant="outline"
+              variant="secondary"
               size="sm"
               disabled={busy || pick === ""}
               onClick={() => {
                 onLink(borrow.id, pick);
                 setPick("");
+                setFormOpen(false);
               }}
             >
               Привязать
             </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Отмена"
+              onClick={() => {
+                setPick("");
+                setFormOpen(false);
+              }}
+            >
+              <X />
+            </Button>
           </div>
-        )}
-      </div>
-    </Card>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-1.5 mt-2"
+            aria-expanded={formOpen}
+            onClick={() => setFormOpen(true)}
+          >
+            <Plus data-icon="inline-start" />
+            Привязать позицию
+          </Button>
+        ))}
+    </li>
   );
 }

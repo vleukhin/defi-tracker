@@ -3,6 +3,7 @@
 import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { zoneTextColor } from "@/components/dc/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,6 @@ import {
 import type { PositionDto, StrategyZone } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import {
-  LABEL,
   ZONE_ACCENT,
   ZONE_OPTIONS,
   zoneTint,
@@ -25,9 +25,13 @@ import {
 /**
  * Разметка позиции: зона стратегии и вложенные суммы.
  *
- * Живет в поповере, а не в карточке: правят ее редко — при заведении позиции
- * и при выводе, — а читают каждый день. Форма из четырех контролов в каждой
+ * Живёт в поповере, а не в карточке: правят её редко — при заведении позиции
+ * и при выводе, — а читают каждый день. Форма из четырёх контролов в каждой
  * строке отнимала место у чисел, ради которых на экран и заходят.
+ *
+ * Триггер — кнопка меню карточки 30px с обводкой --line-card (дизайн-код §5,
+ * шапка карточки позиции): это единственный элемент управления в шапке,
+ * и выглядеть он должен как контрол, а не как ещё один чип.
  */
 export function MarkPopover({
   position,
@@ -43,18 +47,18 @@ export function MarkPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <button
+          type="button"
           disabled={busy}
           aria-label={`Разметка позиции: ${position.title}`}
           title="Разметка позиции"
+          className="grid size-[30px] shrink-0 place-items-center rounded-control border border-line-card text-text-3 outline-none transition-colors duration-120 ease-out hover:border-line-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
         >
-          <SlidersHorizontal />
-        </Button>
+          <SlidersHorizontal className="size-3.5" />
+        </button>
       </PopoverTrigger>
       {/* Содержимое размонтируется при закрытии — черновик каждый раз
-          начинается с сохраненных значений, а не с прошлой правки */}
+          начинается с сохранённых значений, а не с прошлой правки */}
       <PopoverContent align="end" className="w-80">
         <MarkForm
           position={position}
@@ -98,7 +102,7 @@ function MarkForm({
         "borrowedPrincipalUsd",
         borrowed,
         position.borrowedPrincipalUsd,
-        "Вложено заемных",
+        "Вложено заёмных",
       ],
       ["withdrawnUsd", withdrawn, position.withdrawnUsd, "Выведено"],
     ] as const;
@@ -121,16 +125,14 @@ function MarkForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <form onSubmit={submit} className="flex flex-col gap-3">
       <div>
-        <p className="text-sm font-medium">Разметка позиции</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {position.title}
-        </p>
+        <p className="t-h3">Разметка позиции</p>
+        <p className="t-meta truncate text-text-3">{position.title}</p>
       </div>
 
-      <div className="space-y-1">
-        <span className={cn(LABEL, "block")} id={`zone-${position.id}`}>
+      <div className="flex flex-col gap-1.5">
+        <span className="t-label" id={`zone-${position.id}`}>
           Зона
         </span>
         <div
@@ -146,27 +148,23 @@ function MarkForm({
               onClick={() => setZone(o.value)}
               aria-pressed={zone === o.value}
               // Выбранная зона подсвечена своим цветом, а не общим accent:
-              // на карточке позиции зона узнается по нему же
+              // на карточке позиции зона узнаётся по нему же
               style={
                 zone === o.value
                   ? {
-                      background: zoneTint(o.value, 14),
-                      boxShadow: `inset 0 0 0 1px ${ZONE_ACCENT[o.value]}`,
+                      background: zoneTint(o.value),
+                      boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${ZONE_ACCENT[o.value]} 40%, transparent)`,
+                      color: zoneTextColor(o.value),
                     }
                   : undefined
               }
               className={cn(
-                "flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                "flex h-8 items-center justify-center rounded-control px-2 text-[12.5px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
                 zone === o.value
-                  ? "font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60",
+                  ? "font-medium"
+                  : "text-text-3 hover:bg-raised hover:text-text-1",
               )}
             >
-              <span
-                aria-hidden
-                className="size-2 shrink-0 rounded-full"
-                style={{ background: ZONE_ACCENT[o.value] }}
-              />
               {o.label}
             </button>
           ))}
@@ -181,7 +179,7 @@ function MarkForm({
       />
       <AmountField
         id={`brw-${position.id}`}
-        label="Вложено заемных, $"
+        label="Вложено заёмных, $"
         value={borrowed}
         onChange={setBorrowed}
       />
@@ -193,7 +191,7 @@ function MarkForm({
         hint="Стоимость того, что забрали из позиции: BTC/ETH с продажи GM, ушедшие в залог"
       />
 
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[12px] text-text-3">
         Пустое поле — «не размечено», и это не ноль: ноль означал бы «вложено
         ничего» и объявил бы доходом всю стоимость.
       </p>
@@ -224,8 +222,8 @@ function AmountField({
   hint?: string;
 }) {
   return (
-    <div className="space-y-1">
-      <Label htmlFor={id} className={LABEL} title={hint}>
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id} className="t-label" title={hint}>
         {label}
       </Label>
       <Input
@@ -234,7 +232,7 @@ function AmountField({
         onChange={(e) => onChange(e.target.value)}
         inputMode="decimal"
         placeholder="не указано"
-        className="h-8 font-mono"
+        className="font-mono"
       />
     </div>
   );

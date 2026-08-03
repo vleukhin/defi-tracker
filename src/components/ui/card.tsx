@@ -3,17 +3,19 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * Поверхность уровня 1 (ТЗ §3): rounded-xl (14px) + граница;
- * в светлой теме — shadow-sm, в темной глубина задается тоном — теней нет.
- * Внутренние отступы задаются на месте (p-4 / p-0 + зоны px-4 py-3):
- * карточки-списки живут без CardHeader/CardFooter-обвязки (ТЗ §4.2).
+ * Поверхность карточки (дизайн-код §5): радиус 14, обводка --line-card,
+ * фон --bg-surface. Тени нет ни в одной теме — тень только у всплывающих
+ * слоёв (§9), глубину задаёт тон поверхности.
+ *
+ * Новый код берёт `DcCard` из @/components/dc/card: там же живут поля 18
+ * и hover-состояние. Этот примитив остаётся ради shadcn-совместимости.
  */
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card"
       className={cn(
-        "rounded-xl border border-border bg-card text-sm text-card-foreground shadow-sm dark:shadow-none",
+        "rounded-card border border-line-card bg-surface text-sm text-card-foreground",
         className
       )}
       {...props}

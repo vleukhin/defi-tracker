@@ -1,15 +1,132 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { tableDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { pickTicksByX } from "./chart-geometry";
+import {
+  areaPath,
+  linePath,
+  pickTicksByX,
+  type PlotPoint,
+  type ValueAxis,
+} from "./chart-geometry";
 
 /**
- * Общая обвязка графиков истории: слой наведения, тултип, ось дат
- * и легенда разрывов. Одинакова у графика стоимости и графика пропорций —
- * обе оси времени должны выглядеть и вести себя одинаково.
+ * Общая обвязка графиков истории: домен, отрисовка area+линии, слой
+ * наведения, тултип, ось дат и примечание о разрывах. Одинакова у графика
+ * стоимости, спарклайнов количеств и графика пропорций — все оси времени
+ * на экране обязаны выглядеть и вести себя одинаково.
+ *
+ * Правила дизайн-кода §5 для графиков: линия 1px с non-scaling-stroke,
+ * заливка градиентом цвета серии к нулю, СЕТКА НЕ РИСУЕТСЯ, подписи осей —
+ * Mono 11,5px --text-3 (.t-axis). Зелёного и красного в графиках нет.
  */
+
+/**
+ * Домен оси Y без «круглых» делений: сетки на графиках нет, а значит
+ * и приводить границы к круглым числам не за чем — важна форма кривой.
+ * Ряд отбивается от краёв карточки на 8% размаха.
+ *
+ * Постоянный ряд (min === max) отдаёт нулевой домен: yPercent на нём
+ * возвращает 50 — линия идёт по центру карточки, а не по нижнему краю
+ * (README, «Графики»).
+ */
+const DOMAIN_PAD = 0.08;
+
+export function valueDomain(values: readonly number[]): ValueAxis {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0) return { min: 0, max: 0, ticks: [] };
+  const lo = Math.min(...finite);
+  const hi = Math.max(...finite);
+  if (hi === lo) return { min: lo, max: lo, ticks: [] };
+  const pad = (hi - lo) * DOMAIN_PAD;
+  return { min: lo - pad, max: hi + pad, ticks: [] };
+}
+
+/** Отрезок подряд идущих дней: рисуется отдельным путём. */
+export interface ChartRun {
+  /** Стабильный ключ отрезка — дата его первой точки. */
+  key: string;
+  points: readonly PlotPoint[];
+}
+
+/**
+ * Заливка + линия по отрезкам. Растягивается по контейнеру
+ * (viewBox 0…100 + preserveAspectRatio="none") — толщину линии держит
+ * vector-effect, поэтому она остаётся ровно 1px на любой ширине.
+ */
+export function ChartArea({
+  runs,
+  color,
+  fillOpacity,
+  ariaLabel,
+  className,
+}: {
+  runs: ChartRun[];
+  /** Цвет серии: --text-1 у портфеля, --asset-* у количеств. */
+  color: string;
+  /** Верхняя точка градиента: 0.16 у портфеля, 0.22 у количеств. */
+  fillOpacity: number;
+  ariaLabel: string;
+  className?: string;
+}) {
+  // useId даёт «:r3:» — двоеточия в url(#…) читаются не везде
+  const gradientId = `history-fill-${useId().replace(/:/g, "")}`;
+  const drawable = runs.filter((run) => run.points.length >= 2);
+
+  return (
+    <svg
+      role="img"
+      aria-label={ariaLabel}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      className={cn("block h-full w-full", className)}
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={fillOpacity} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      {drawable.map((run) => (
+        <path
+          key={`fill-${run.key}`}
+          d={areaPath(run.points)}
+          fill={`url(#${gradientId})`}
+        />
+      ))}
+      {drawable.map((run) => (
+        <path
+          key={`line-${run.key}`}
+          d={linePath(run.points)}
+          fill="none"
+          stroke={color}
+          strokeWidth={1}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * Точка «частичные данные»: отличается ФОРМОЙ (полая), а не только цветом.
+ * Единственный случай семантики в графике — это статус достоверности точки,
+ * а не результат (дизайн-код §2).
+ */
+export function PartialMarker({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "size-2.5 rounded-full border-2 border-warn bg-sunken",
+        className,
+      )}
+    />
+  );
+}
 
 /**
  * Слой наведения: невидимые зоны-кнопки поверх графика. Тултип доступен
@@ -66,7 +183,7 @@ export function HoverLayer({
     <div className="absolute inset-0">
       {zones.map((zone, i) => (
         <button
-          key={i}
+          key={zone.label}
           type="button"
           ref={(el) => {
             refs.current[i] = el;
@@ -79,7 +196,7 @@ export function HoverLayer({
           onBlur={() => onActive(null)}
           onKeyDown={(e) => handleKeyDown(e, i)}
           style={{ left: `${zone.left}%`, width: `${zone.width}%` }}
-          className="absolute top-0 bottom-0 cursor-default rounded-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="absolute top-0 bottom-0 cursor-default rounded-pill outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       ))}
     </div>
@@ -87,8 +204,9 @@ export function HoverLayer({
 }
 
 /**
- * Тултип точки: карточка уровня 2 (popover) над графиком. У краев
- * прижимается к своей стороне, чтобы не уезжать за пределы карточки.
+ * Тултип точки — всплывающий слой (дизайн-код §5): --bg-raised, обводка
+ * --line-strong, радиус 9, 12,5px, тень --shadow-pop. У краёв прижимается
+ * к своей стороне, чтобы не уезжать за пределы карточки.
  */
 export function ChartTooltip({
   x,
@@ -101,12 +219,12 @@ export function ChartTooltip({
   const side = x < 25 ? "left" : x > 75 ? "right" : "center";
   return (
     <div
-      aria-hidden="true"
+      aria-hidden
       style={{ left: `${x}%` }}
-      className="pointer-events-none absolute top-1 z-10 -translate-x-1/2 data-[side=left]:translate-x-0 data-[side=right]:-translate-x-full"
+      className="pointer-events-none absolute top-2 z-10 -translate-x-1/2 data-[side=left]:translate-x-0 data-[side=right]:-translate-x-full"
       data-side={side}
     >
-      <div className="rounded-lg border border-border bg-popover px-2.5 py-1.5 text-xs whitespace-nowrap text-popover-foreground shadow-lg">
+      <div className="rounded-[9px] border border-line-strong bg-raised px-[11px] py-[9px] text-[12.5px]/[1.45] whitespace-nowrap text-text-1 shadow-(--shadow-pop)">
         {children}
       </div>
     </div>
@@ -134,14 +252,20 @@ export interface AxisPoint {
  * больше. Один компонент на все графики — оси времени обязаны стоять
  * на одной вертикали и разрежаться одинаково.
  *
- * Зазоры подобраны под ширину подписи «01.07.2026» (10px mono ≈ 60px):
- * на 375px это ~24% ширины поля графика, а крайняя подпись еще и прижата
+ * Зазоры подобраны под ширину подписи «01.07.2026» (Mono 11,5px ≈ 68px):
+ * на 375px это ~24% ширины поля графика, а крайняя подпись ещё и прижата
  * к своему краю — то есть заезжает внутрь на пол-ширины. Отсюда 36%
  * на узком экране: с 26% последние две даты налезали друг на друга.
  */
-export function ChartTimeAxis({ points }: { points: AxisPoint[] }) {
+export function ChartTimeAxis({
+  points,
+  className,
+}: {
+  points: AxisPoint[];
+  className?: string;
+}) {
   return (
-    <>
+    <div className={className}>
       <ChartXAxis points={points} count={3} minGap={36} className="sm:hidden" />
       <ChartXAxis
         points={points}
@@ -149,7 +273,7 @@ export function ChartTimeAxis({ points }: { points: AxisPoint[] }) {
         minGap={14}
         className="hidden sm:block"
       />
-    </>
+    </div>
   );
 }
 
@@ -172,13 +296,13 @@ export function ChartXAxis({
 }) {
   const xs = points.map((p) => p.x);
   return (
-    <div aria-hidden="true" className={cn("relative mt-1.5 h-4", className)}>
+    <div aria-hidden className={cn("relative h-[14px]", className)}>
       {pickTicksByX(xs, count, minGap).map((i) => (
         <span
           key={points[i].takenOn}
           style={{ left: `${points[i].x}%` }}
           data-edge={tickEdge(points[i].x)}
-          className="absolute -translate-x-1/2 font-mono text-[10px] whitespace-nowrap text-muted-foreground data-[edge=end]:-translate-x-full data-[edge=start]:translate-x-0"
+          className="t-axis absolute -translate-x-1/2 whitespace-nowrap data-[edge=end]:-translate-x-full data-[edge=start]:translate-x-0"
         >
           {tableDate(points[i].takenOn)}
         </span>
@@ -187,8 +311,12 @@ export function ChartXAxis({
   );
 }
 
-/** Легенда разрывов и частичных точек — цвет никогда не единственный сигнал. */
-export function ChartLegend({
+/**
+ * Примечание под графиком: разрывы и частичные точки. Цвет никогда
+ * не единственный сигнал — у полой точки другая форма, у разрыва
+ * подписано число дней.
+ */
+export function ChartNote({
   missing,
   anyPartial,
   /**
@@ -197,27 +325,30 @@ export function ChartLegend({
    * но цены категории не было и количество не выведено.
    */
   missingLabel = "дни без снепшота",
+  className,
 }: {
   missing: number;
   anyPartial: boolean;
   missingLabel?: string;
+  className?: string;
 }) {
   if (missing === 0 && !anyPartial) return null;
   return (
-    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+    <div
+      className={cn(
+        "t-meta flex flex-wrap items-center gap-x-4 gap-y-1 text-text-3",
+        className,
+      )}
+    >
       {anyPartial && (
         <span className="inline-flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className="inline-block size-2.5 shrink-0 rounded-full border-2 border-warning bg-background"
-          />
+          <PartialMarker />
           частичные данные
         </span>
       )}
       {missing > 0 && (
         <span>
-          разрывы — {missingLabel}:{" "}
-          <span className="font-mono">{missing}</span>
+          разрывы — {missingLabel}: <span className="font-mono">{missing}</span>
         </span>
       )}
     </div>

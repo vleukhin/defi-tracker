@@ -1,17 +1,22 @@
 import type { Metadata } from "next";
-import { DepositsJournal } from "@/components/deposits/deposits-journal";
+import { PageHeader } from "@/components/dc/page-header";
 import { TargetsManager } from "@/components/portfolio/targets-manager";
 
 export const metadata: Metadata = { title: "Цели и записи" };
 
+/**
+ * «Цели и записи» — три карточки: целевые доли, монеты вручную, внесено.
+ * Состав и данные держит клиентский корень TargetsManager: портфель нужен
+ * всем трём (доли, стоимости записей, прибыль), и читается он один раз.
+ */
 export default function TargetsPage() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Цели и записи</h1>
+    <>
+      <PageHeader
+        title="Цели и записи"
+        meta="целевые доли, ручные монеты и внесённые деньги"
+      />
       <TargetsManager />
-      {/* Фаза 4 (S4.0): журнал собственных средств — рядом со вторым
-          журналом ручного ввода */}
-      <DepositsJournal />
-    </div>
+    </>
   );
 }
