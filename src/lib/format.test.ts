@@ -62,16 +62,17 @@ describe("formatPct", () => {
 });
 
 describe("formatPp", () => {
+  // Величина — процентные пункты, единица пишется символом процента
   it("положительное отклонение — со знаком +", () => {
-    expect(formatPp(7.2)).toBe(`+7.2${NBSP}п.п.`);
+    expect(formatPp(7.2)).toBe("+7.2%");
   });
 
   it("отрицательное — с минусом", () => {
-    expect(formatPp(-3.14)).toBe(`${MINUS}3.1${NBSP}п.п.`);
+    expect(formatPp(-3.14)).toBe(`${MINUS}3.1%`);
   });
 
   it("ноль — без знака", () => {
-    expect(formatPp(0)).toBe(`0.0${NBSP}п.п.`);
+    expect(formatPp(0)).toBe("0.0%");
   });
 });
 

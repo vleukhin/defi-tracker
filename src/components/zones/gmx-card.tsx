@@ -80,10 +80,10 @@ export function GmxCard({
         status={
           share.deviationPp === null ? undefined : offTarget ? (
             <StatusChip tone="warn">
-              {`${tableSigned(share.deviationPp, 1)} п.п.`}
+              {`${tableSigned(share.deviationPp, 1)}%`}
             </StatusChip>
           ) : (
-            <Chip>{`${tableSigned(share.deviationPp, 1)} п.п.`}</Chip>
+            <Chip>{`${tableSigned(share.deviationPp, 1)}%`}</Chip>
           )
         }
         menu={<MarkPopover position={position} busy={busy} onMark={onMark} />}

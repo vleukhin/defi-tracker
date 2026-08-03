@@ -73,7 +73,7 @@ export function FluidCard({
         status={
           spread === null ? undefined : (
             <StatusChip tone={spread > 0 ? "profit" : "loss"}>
-              {`${tableSigned(spread, 2)} п.п.`}
+              {`${tableSigned(spread, 2)}%`}
             </StatusChip>
           )
         }
@@ -104,7 +104,7 @@ export function FluidCard({
         <Metric
           label="Спред к займу"
           hint="Ставка депозита минус ставка заёмных стейблов на Aave. Пока спред положительный, заёмные в позиции окупаются."
-          value={spread === null ? null : tableSigned(spread, 2)}
+          value={spread === null ? null : `${tableSigned(spread, 2)}%`}
           mono={false}
           tone={spread === null ? undefined : spread > 0 ? "profit" : "loss"}
           delta={
@@ -112,7 +112,7 @@ export function FluidCard({
               ? comparable
                 ? "сравнить не с чем — ставка не прочитана"
                 : "депозит не в стейблах — сравнения нет"
-              : `п.п. годовых · заём ${borrowRate === null ? "—" : dcRate(borrowRate)}`
+              : `годовых · заём ${borrowRate === null ? "—" : dcRate(borrowRate)}`
           }
         />
       </MetricRow>

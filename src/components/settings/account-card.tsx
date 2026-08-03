@@ -129,7 +129,7 @@ export function AccountCard({ email }: { email: string | null }) {
               value={tableNumber(DEVIATION_THRESHOLD_PP, 1)}
               className="w-[84px] border-line-strong text-right font-mono"
             />
-            <span className="t-meta text-text-3">п.п.</span>
+            <span className="t-meta text-text-3">%</span>
           </SettingRow>
         </div>
 

@@ -100,12 +100,16 @@ export function dcRate(value: number): string {
 }
 
 /**
- * Разница ставок — в процентных пунктах: «+1,38 п.п.».
- * Проценты и п.п. — разные величины, и путать их в одном экране нельзя:
- * спред к займу это п.п., доля портфеля — проценты.
+ * Разница ставок и отклонение от цели: «+1,38%».
+ *
+ * Величина здесь — процентные пункты (абсолютная разница двух процентов),
+ * но по решению владельца продукта единица во всём интерфейсе пишется
+ * символом процента. Не подставляйте это число в относительные расчёты:
+ * «+3,13%» рядом с долей «53,13%» означает «на 3,13 пункта выше цели»,
+ * а не «на 3,13% больше».
  */
 export function dcPp(value: number, decimals = 2): string {
-  return `${tableSigned(value, decimals)}${NBSP}п.п.`;
+  return `${tableSigned(value, decimals)}%`;
 }
 
 /** Количество токена — 4 знака: «6,9777 WETH». */
@@ -160,10 +164,13 @@ export function formatPct(value: number, decimals = 1): string {
   return `${value.toFixed(decimals)}%`;
 }
 
-/** «+7.2 п.п.» / «−3.1 п.п.» — отклонение со знаком (знак = не только цвет). */
+/**
+ * «+7.2%» / «−3.1%» — отклонение со знаком (знак = не только цвет).
+ * Величина — процентные пункты, единица пишется процентом: см. `dcPp`.
+ */
 export function formatPp(value: number, decimals = 1): string {
   const sign = value > 0 ? "+" : value < 0 ? MINUS : "";
-  return `${sign}${Math.abs(value).toFixed(decimals)}${NBSP}п.п.`;
+  return `${sign}${Math.abs(value).toFixed(decimals)}%`;
 }
 
 /**
