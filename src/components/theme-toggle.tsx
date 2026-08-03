@@ -41,7 +41,9 @@ export function ThemeToggle() {
           variant="ghost"
           size="icon"
           aria-label="Переключить тему"
-          className="text-muted-foreground hover:text-foreground"
+          // На тач-ширинах иконка дорастает до 44px: 34px — hit-зона мимо
+          // пальца, дизайн-код требует не меньше 44 (§6)
+          className="pointer-coarse:size-11 text-muted-foreground hover:text-foreground"
         >
           <Icon className="size-5" />
         </Button>
