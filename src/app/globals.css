@@ -229,10 +229,6 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-link: var(--link);
-  /* Прежние имена графиков — теперь синонимы категорий активов */
-  --color-chart-btc: var(--asset-btc);
-  --color-chart-eth: var(--asset-eth);
-  --color-chart-stable: var(--asset-stable);
 
   /* радиусы: имена дизайн-кода + алиасы, на которые опираются примитивы */
   --radius-card: 14px;

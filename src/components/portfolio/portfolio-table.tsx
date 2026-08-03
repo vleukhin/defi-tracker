@@ -105,7 +105,7 @@ export function PortfolioTable({
             <Th numeric>Цена</Th>
             <Th numeric>Доля</Th>
             <Th numeric>Цель</Th>
-            <Th numeric>Отклон.</Th>
+            <Th numeric>Отклон., п.п.</Th>
             <Th numeric>
               <span className="inline-flex items-center gap-1.5">
                 К ребаланс.
@@ -180,10 +180,13 @@ export function PortfolioTable({
                   </Td>
 
                   <Td numeric className={cn(beyond && "font-medium text-warn")}>
+                    {/* Отклонение от цели — процентные пункты, а не проценты
+                        (§4): «доля 53,02%» и «на 3,02 п.п. выше цели» —
+                        разные величины, и карточка над таблицей пишет п.п. */}
                     {row.percentDiff === null ? (
                       <Dash />
                     ) : (
-                      tablePctSigned(row.percentDiff)
+                      tableSigned(row.percentDiff, 2)
                     )}
                   </Td>
 

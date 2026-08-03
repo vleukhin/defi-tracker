@@ -42,9 +42,9 @@ export const CATEGORY_UNIT: Record<PortfolioCategory, string> =
   >;
 
 export const CATEGORY_BG: Record<PortfolioCategory, string> = {
-  btc: "bg-chart-btc",
-  eth: "bg-chart-eth",
-  stable: "bg-chart-stable",
+  btc: "bg-asset-btc",
+  eth: "bg-asset-eth",
+  stable: "bg-asset-stable",
 };
 
 export const CATEGORY_VAR: Record<PortfolioCategory, string> = {

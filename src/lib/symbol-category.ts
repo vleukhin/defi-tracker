@@ -18,6 +18,11 @@ import { isStableSymbol } from "@/lib/stables";
 const BTC_SYMBOLS = new Set([
   "BTC",
   "WBTC",
+  // Мостовые варианты пишутся суффиксом (как USDC.E в stables.ts).
+  // WBTC.b — рынок BTC/USD у GMX на Arbitrum: без него BTC-пул терял
+  // цель 70% и подписывался «рынок вне двух базовых активов».
+  "WBTC.B",
+  "WBTC.E",
   "CBBTC",
   "TBTC",
   "LBTC",
@@ -30,6 +35,7 @@ const BTC_SYMBOLS = new Set([
 const ETH_SYMBOLS = new Set([
   "ETH",
   "WETH",
+  "WETH.E",
   "STETH",
   "WSTETH",
   "WEETH",

@@ -18,12 +18,11 @@ import { formatHf, hfStatus, hfTitle } from "./hf";
 import { hfTone } from "./risk";
 
 /**
- * Ячейка суммы. Настоящий ноль — это «$0», а не «$0,00»: копейки у нуля
- * ничего не уточняют, а «—» означало бы «не прочитано» (дизайн-код §9).
+ * Ячейка суммы: «—» означает «не прочитано», ноль — это ноль.
+ * Форму нуля («$0», не «$0,00») держит сам `dcUsd`.
  */
 function usdCell(value: number | null) {
-  if (value === null) return <Dash />;
-  return value === 0 ? "$0" : dcUsd(value);
+  return value === null ? <Dash /> : dcUsd(value);
 }
 
 /**

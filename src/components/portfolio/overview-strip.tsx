@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { HelpTip } from "@/components/dc/help-tip";
 import { DEBT_UNREAD_HINT, formatHf, formatHfThreshold } from "@/components/debt/hf";
 import type { DebtSummaryDto, PortfolioOverviewDto } from "@/lib/api/types";
-import { dcUsd, dcUsdSigned, tablePctSigned } from "@/lib/format";
+import { NBSP, dcUsd, dcUsdSigned, tablePctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,8 +66,12 @@ export function OverviewStrip({
                 delta.absolute === 0 && "text-text-2",
               )}
             >
+              {/* Дельта — через точку-разделитель, без скобок (§4):
+                  в скобках процент читался бы как второстепенный,
+                  а он здесь не менее важен, чем сумма */}
               {dcUsdSigned(delta.absolute)}
-              {delta.percent !== null && ` (${tablePctSigned(delta.percent, 1)})`}
+              {delta.percent !== null &&
+                `${NBSP}·${NBSP}${tablePctSigned(delta.percent, 1)}`}
             </span>
             <span className="text-text-3">{delta.label}</span>
           </p>

@@ -69,12 +69,20 @@ export function ManualCoinsCard({
   for (const row of rows ?? []) {
     for (const e of row.manualEntries) valueById.set(e.id, e.valueUsd);
   }
-  const totalUsd =
-    rows === null
-      ? null
-      : [...valueById.values()].reduce((sum, v) => sum + v, 0);
 
   const list = entries ?? [];
+
+  /**
+   * Сумма считается только по записям этого списка, а не по всему
+   * `manualEntries` из /api/portfolio: движок кладёт туда ещё и
+   * собственные доли позиций синтетическими строками (`pos:*`), и они
+   * к ручным монетам отношения не имеют. Иначе карточка при пустом
+   * списке писала «0 записей · $38 948».
+   */
+  const totalUsd =
+    rows === null || entries === null
+      ? null
+      : list.reduce((sum, e) => sum + (valueById.get(e.id) ?? 0), 0);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -115,7 +123,10 @@ export function ManualCoinsCard({
           entries === null ? null : (
             <span className="t-meta shrink-0 text-text-3">
               {list.length} {pluralEntries(list.length)}
-              {totalUsd === null ? "" : ` · ${dcUsd(totalUsd)}`}
+              {/* Пустому списку сумма не нужна: «0 записей · $0» — шум */}
+              {totalUsd === null || list.length === 0
+                ? ""
+                : ` · ${dcUsd(totalUsd)}`}
             </span>
           )
         }

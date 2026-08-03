@@ -204,12 +204,13 @@ function TargetsCard({
 
                   <Td numeric className="py-2">
                     <div className="relative ml-auto w-[92px]">
+                      {/* type="text", а не "number": браузер молча съедает
+                          запятую, а десятичный разделитель в приложении —
+                          именно она (§4), и парсер ниже её ждёт. Спиннеры
+                          всё равно скрыты, так что number ничего не давал. */}
                       <Input
                         id={`target-${c.key}`}
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={0.5}
+                        type="text"
                         inputMode="decimal"
                         value={targets[c.key] ?? ""}
                         onChange={(e) =>
