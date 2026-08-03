@@ -1,4 +1,5 @@
 import type { StatusTone } from "@/components/dc/chip";
+import { HF_CRITICAL } from "@/lib/hf-zones";
 import { HF_OK_MARGIN } from "./hf";
 
 /**
@@ -15,8 +16,9 @@ import { HF_OK_MARGIN } from "./hf";
  * падения текущего залога от «сейчас», и общего у них только знак минус.
  */
 
-/** Ниже этого HF запас считается критическим — цвет loss (README §6). */
-export const HF_CRITICAL = 1.2;
+// Граница «тревожно / критично» живёт в общей шкале зон (lib/hf-zones):
+// тем же числом красится экран и решается, слать ли уведомление.
+export { HF_CRITICAL };
 
 /** Границы зон полосы «Запас прочности» в процентах ширины (дизайн). */
 export const SAFETY_LIQUIDATION_PERCENT = 22;

@@ -1,6 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError } from "@/lib/api/auth";
+import { checkCronSecret } from "@/lib/api/cron-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSnapshot, refreshUserWallets } from "@/lib/portfolio/snapshot";
 
@@ -35,17 +35,6 @@ const RPC_BUDGET_MS = 40_000;
 
 const USERS_PAGE_SIZE = 200;
 
-/**
- * Сравнение секретов постоянным временем. timingSafeEqual требует равной
- * длины, поэтому сравниваются sha256-дайджесты: длина у них всегда одна,
- * и сама длина секрета не утекает.
- */
-function secretMatches(provided: string, expected: string): boolean {
-  const a = createHash("sha256").update(provided).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
 interface UserResult {
   userId: string;
   ok: boolean;
@@ -58,18 +47,8 @@ interface UserResult {
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
 
-  const expected = process.env.CRON_SECRET;
-  if (!expected) {
-    // Отсутствие секрета — ошибка конфигурации, а не повод пустить запрос
-    console.error("[cron] CRON_SECRET не задан — запрос отклонен");
-    return apiError(500, "CRON_SECRET не настроен");
-  }
-
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!token || !secretMatches(token, expected)) {
-    return apiError(401, "Не авторизован");
-  }
+  const denied = checkCronSecret(request);
+  if (denied) return denied;
 
   const admin = createAdminClient();
 

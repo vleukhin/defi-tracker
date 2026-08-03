@@ -338,6 +338,38 @@ export interface SettingsDto {
   targetLtvPct: number;
 }
 
+// --- Фаза 6: уведомления ---
+
+/**
+ * Канал доставки уведомлений о health factor.
+ *
+ * chat_id наружу не отдаётся: интерфейсу он не нужен, а лишний адрес
+ * в ответе — лишний адрес в логах браузера. Вместо него — chatTitle,
+ * по которому владелец узнаёт свой чат.
+ */
+export interface NotificationChannelDto {
+  kind: "telegram";
+  enabled: boolean;
+  /** false = код привязки ещё не отработал, слать некуда. */
+  verified: boolean;
+  /** «@vasya» или имя чата; null, пока канал не привязан. */
+  chatTitle: string | null;
+  lastSentAt: string | null;
+  /** Последняя ошибка доставки — почему канал молчит. */
+  lastError: string | null;
+}
+
+/** GET /api/notifications/telegram — состояние канала. */
+export interface NotificationStatusDto {
+  /** null = канал не заводили. */
+  channel: NotificationChannelDto | null;
+  /** Имя бота для ссылки t.me; null = переменная окружения не задана. */
+  botUsername: string | null;
+  /** Действующий код привязки — показывается, пока не истёк. */
+  linkCode: string | null;
+  linkCodeExpiresAt: string | null;
+}
+
 /** Долговая позиция из разбивки по v-токенам (best-effort). */
 export interface DebtItemDto {
   symbol: string;
