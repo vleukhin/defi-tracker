@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { apiError, requireUser } from "@/lib/api/auth";
-import { AAVE_PROTOCOL } from "@/lib/chains/aave";
-import type { AaveDebtPositionPayload } from "@/lib/chains/aave-debt";
 import { POSITION_SOURCES } from "@/lib/positions/sources";
 import {
   POSITION_PROTOCOLS,
@@ -11,19 +9,20 @@ import {
   type PositionMark,
   type PositionRowInput,
 } from "@/lib/positions/positions";
-import { buildLeverage, type BorrowInput } from "@/lib/positions/leverage";
 import { getCoinPrices } from "@/lib/prices/coins";
 import type { LeverageResponseDto, StrategyZone } from "@/lib/api/types";
 
 /**
- * GET /api/leverage — вкладка «Левередж» экрана «Долг» (Фаза 5).
+ * GET /api/leverage — размещение заёмных средств: позиции блока «Где работают
+ * заёмные» на экране «Долг».
  *
- * Только кэши (protocol_positions + manual_positions + borrow_links +
- * coin_prices), без RPC и без походов в CoinGecko: свежие данные приносит
- * POST /api/refresh. Пустое состояние — нормальный ответ, а не ошибка.
+ * Только кэши (protocol_positions + coin_prices), без RPC и без походов
+ * в CoinGecko: свежие данные приносит POST /api/refresh. Пустое состояние —
+ * нормальный ответ, а не ошибка.
  *
- * Привязка «займ → позиция» здесь только читается и отображается: на портфель
- * и на пять чисел она не влияет (S5.3).
+ * Привязки «займ → позиция» здесь больше нет: заём уходит в разные позиции
+ * по частям, и отношение «один заём — одна позиция» этого не описывает.
+ * Сам долг живёт на /api/debt.
  */
 export async function GET() {
   const { user, supabase, unauthorized } = await requireUser();
@@ -65,7 +64,6 @@ export async function GET() {
     );
 
     const positionRows: PositionRowInput[] = [];
-    const borrows: BorrowInput[] = [];
     const chains: LeverageResponseDto["chains"] = [];
 
     if (walletIds.length > 0) {
@@ -74,30 +72,16 @@ export async function GET() {
         .select(
           "id, wallet_id, protocol, chain, external_id, quantity, value_usd, payload, updated_at",
         )
-        .in("protocol", [...POSITION_PROTOCOLS, AAVE_PROTOCOL])
+        .in("protocol", [...POSITION_PROTOCOLS])
         .in("wallet_id", walletIds);
       if (rowsError) return apiError(500, rowsError.message);
 
+      // Строки Aave (залог и долг) не выбираются вовсе: долг отдаёт
+      // /api/debt, залог посчитан категориями портфеля
       for (const row of rows ?? []) {
-        const protocol = row.protocol as string;
-        if (protocol === AAVE_PROTOCOL) {
-          const payload = row.payload as
-            | (Partial<AaveDebtPositionPayload> & { kind?: string })
-            | null;
-          // В protocol_positions лежат и залог, и долг — займы это второе
-          if (payload?.kind !== "debt" || !payload.symbol) continue;
-          borrows.push({
-            id: row.id as string,
-            chain: row.chain as string,
-            symbol: payload.symbol,
-            quantity: String(row.quantity ?? "0"),
-            coingeckoId: payload.coingeckoId ?? null,
-          });
-          continue;
-        }
         positionRows.push({
           id: row.id as string,
-          protocol,
+          protocol: row.protocol as string,
           chain: row.chain as string,
           externalId: row.external_id as string,
           quantity: row.quantity === null ? null : String(row.quantity),
@@ -134,13 +118,8 @@ export async function GET() {
       chains.push(...worstByKey.values());
     }
 
-    // Цены: компоненты позиций + занятые токены (оценка долга)
-    const priceIds = [
-      ...positionPriceIds(positionRows),
-      ...borrows
-        .map((b) => b.coingeckoId)
-        .filter((id): id is string => id !== null),
-    ];
+    // Цены: только компоненты позиций — долг оценивает /api/debt
+    const priceIds = positionPriceIds(positionRows);
     const prices = await getCoinPrices(priceIds, { fetchIfExpired: false });
     const pricesUsd = new Map(
       [...prices.values()].map((p) => [p.coingeckoId, p.priceUsd] as const),
@@ -152,32 +131,7 @@ export async function GET() {
       marksByKey,
     });
 
-    const { data: linkRows, error: linksError } = await supabase
-      .from("borrow_links")
-      .select("borrow_ref, position_ref");
-    if (linksError) return apiError(500, linksError.message);
-
-    const leverage = buildLeverage({
-      positions,
-      borrows,
-      links: (linkRows ?? []).map((l) => ({
-        borrowId: l.borrow_ref as string,
-        positionId: l.position_ref as string,
-      })),
-      pricesUsd,
-    });
-
-    const response: LeverageResponseDto = {
-      positions,
-      borrows: leverage.borrows,
-      summary: {
-        ...summary,
-        linkedDebtUsd: leverage.linkedDebtUsd,
-        linkedPositionsUsd: leverage.linkedPositionsUsd,
-        linkedDeltaUsd: leverage.linkedDeltaUsd,
-      },
-      chains,
-    };
+    const response: LeverageResponseDto = { positions, summary, chains };
     return NextResponse.json(response);
   } catch (err) {
     return apiError(

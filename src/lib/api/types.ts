@@ -580,47 +580,17 @@ export interface PositionsSummaryDto {
   unmarkedCount: number;
 }
 
-/** Займ и профинансированные им позиции (S5.3). */
-export interface LeverageBorrowDto {
-  /** protocol_positions.id долговой строки Aave. */
-  id: string;
-  chain: string;
-  symbol: string;
-  quantity: string;
-  debtUsd: number | null;
-  /** id связанных позиций. */
-  linkedPositionIds: string[];
-  linkedUsd: number | null;
-  /** Связанные позиции минус долг: выигрывает ли связка. */
-  deltaUsd: number | null;
-  deltaPct: number | null;
-}
-
 /**
- * GET /api/leverage — только кэш, без RPC.
+ * GET /api/leverage — размещение заёмных средств, только кэш, без RPC.
  *
- * Привязка «займ → позиция» — бухгалтерская метка: на портфель и на пять
- * чисел она не влияет, влияет только на этот экран (S5.3).
+ * Привязки «займ → позиция» здесь больше нет: заём уходит в разные позиции
+ * по частям, и отношение «один заём — одна позиция» этого не описывает.
+ * Сам долг отдаёт /api/debt.
  */
 export interface LeverageResponseDto {
   positions: PositionDto[];
-  borrows: LeverageBorrowDto[];
-  summary: PositionsSummaryDto & {
-    /** Долг, по которому есть привязки. */
-    linkedDebtUsd: number | null;
-    /** Суммарная стоимость привязанных позиций. */
-    linkedPositionsUsd: number | null;
-    linkedDeltaUsd: number | null;
-  };
+  summary: PositionsSummaryDto;
   chains: { chain: string; source: string; ok: boolean; error?: string }[];
-}
-
-/** POST /api/borrow-links (201). */
-export interface BorrowLinkDto {
-  id: string;
-  borrowId: string;
-  positionId: string;
-  createdAt: string;
 }
 
 // --- Фаза 6: зоны стратегии и собственный капитал в позициях ---

@@ -97,7 +97,9 @@ target_allocations  id, user_id, bucket_id, target_pct
 protocol_positions  id, wallet_id, protocol ('aave_v3'|'gmx_v2'|'uni_v3'), chain,
                     external_id (NPM tokenId / market addr), payload jsonb (HF, ticks...),
                     quantity, value_usd, updated_at      -- upsert текущего состояния
-borrow_links        id, user_id, borrow_ref, position_ref                    -- Фаза 5
+                    -- borrow_links (Фаза 5) удалена: связка «один заём — одна
+                    -- позиция» не описывала реальность, доли не хранились.
+                    -- Куда ушёл долг, отвечает разметка в position_marks
 price_cache         asset_id, price_usd, source, fetched_at
 snapshots           id, user_id, taken_at, gross_usd, debt_usd, net_usd, is_partial, payload jsonb
 snapshot_items      snapshot_id FK, asset_id, wallet_id?, quantity, price_usd, value_usd, protocol?
