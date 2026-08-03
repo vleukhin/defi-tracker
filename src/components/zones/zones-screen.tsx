@@ -1,31 +1,23 @@
 "use client";
 
 import { CircleAlert, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
   PositionDto,
   PositionsSummaryDto,
-  StrategyZone,
-  ZoneBreakdownDto,
+  StableBorrowRateDto,
   ZonesSummaryDto,
 } from "@/lib/api/types";
-import { pnlClass } from "@/components/pnl";
-import {
-  tablePct,
-  tablePctSigned,
-  tableUsd,
-  tableUsdSigned,
-  usdDecimals,
-} from "@/lib/format";
+import { tableUsd } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
-import { cn } from "@/lib/utils";
+import { PositionCard } from "./position-card";
+import { LABEL, type MarkPatch } from "./shared";
+import { ZoneCard } from "./zone-card";
 
 /**
  * Экран «Зоны» (Фаза 6) — разрез портфеля по стратегии Capital Growth
@@ -43,36 +35,22 @@ import { cn } from "@/lib/utils";
  * не обойтись: остаток «стоимость − свое» бывает и заемной частью, и
  * начисленным доходом. На депозите Fluid такой остаток был доходом,
  * а показывался как долг.
+ *
+ * Разметка живет в поповере за кнопкой, а не в карточке: правят ее редко —
+ * при заведении позиции и при выводе, — а читают каждый день. Форма
+ * из четырех контролов в каждой строке отнимала место у чисел, ради
+ * которых на экран и заходят.
+ *
+ * Сами карточки разбираются по протоколу (components/zones/*-card.tsx):
+ * у депозита лендинга и у пула ликвидности разные вопросы к позиции.
  */
-
-const LABEL =
-  "text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase";
-
-/** Цвет зоны: тот же язык, что у категорий портфеля. */
-const ZONE_ACCENT: Record<StrategyZone, string> = {
-  growth: "var(--color-chart-1)",
-  yield: "var(--color-chart-2)",
-  stability: "var(--color-chart-3)",
-};
-
-const ZONE_OPTIONS: { value: StrategyZone; label: string }[] = [
-  { value: "growth", label: "Growth" },
-  { value: "yield", label: "Yield" },
-  { value: "stability", label: "Stability" },
-];
-
-/** Что можно поправить у позиции за один запрос. */
-interface MarkPatch {
-  zone?: StrategyZone;
-  ownPrincipalUsd?: number | null;
-  borrowedPrincipalUsd?: number | null;
-  withdrawnUsd?: number | null;
-}
 
 interface ZonesResponse {
   zones: ZonesSummaryDto;
   positions: PositionDto[];
   positionsSummary: PositionsSummaryDto;
+  /** Стоимость заемных стейблов — порог для ставок Yield-позиций. */
+  stableBorrow: StableBorrowRateDto;
   assetsUsd: number | null;
   stableCategoryUsd: number;
 }
@@ -80,7 +58,11 @@ interface ZonesResponse {
 export function ZonesScreen() {
   const { data, error, loading, refetch } = useApi<ZonesResponse>("/api/zones");
   const [busy, setBusy] = useState(false);
+  // Одно «сейчас» на весь список: таймеры карточек не должны разъезжаться
+  // между соседними позициями
+  const nowMs = useNowMs();
 
+  /** true = сохранилось; форма в поповере по этому признаку закрывается. */
   async function mark(position: PositionDto, patch: MarkPatch) {
     setBusy(true);
     try {
@@ -90,10 +72,12 @@ export function ZonesScreen() {
         body: JSON.stringify({ protocol, chain, externalId, ...patch }),
       });
       await refetch();
+      return true;
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Не удалось сохранить разметку",
       );
+      return false;
     } finally {
       setBusy(false);
     }
@@ -129,8 +113,14 @@ export function ZonesScreen() {
 
   if (!data) return null;
 
-  const { zones, positions, positionsSummary, assetsUsd, stableCategoryUsd } =
-    data;
+  const {
+    zones,
+    positions,
+    positionsSummary,
+    stableBorrow,
+    assetsUsd,
+    stableCategoryUsd,
+  } = data;
 
   return (
     <div className="space-y-4">
@@ -141,9 +131,9 @@ export function ZonesScreen() {
             Позиций без разметки: {zones.unmarkedPositions}
           </AlertTitle>
           <AlertDescription>
-            Пока не указаны обе вложенные суммы, доход позиции не считается,
-            а неразмеченная собственная часть занижает категорию «Стейблы».
-            После перезаливки диапазона CLMM разметку нужно проставить заново.
+            Пока не указаны обе вложенные суммы, доход позиции не считается, а
+            неразмеченная собственная часть занижает категорию «Стейблы». После
+            перезаливки диапазона CLMM разметку нужно проставить заново.
           </AlertDescription>
         </Alert>
       )}
@@ -192,35 +182,54 @@ export function ZonesScreen() {
         <Card className="p-6 text-center">
           <p className="text-base font-medium">Позиций нет</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Здесь появятся депозиты Fluid, GM-пулы и LP-позиции, когда они
-            будут прочитаны с кошельков.
+            Здесь появятся депозиты Fluid, GM-пулы и LP-позиции, когда они будут
+            прочитаны с кошельков.
           </p>
         </Card>
       ) : (
-        <Card className="p-4">
-          <h2 className="text-sm font-semibold">Разметка позиций</h2>
+        /* Карточки позиций лежат на фоне страницы, а не внутри общей
+           карточки: вложенная карточка в карточке спорит с elevation —
+           у каждой позиции своя поверхность, и вторая рамка вокруг них
+           только съедает ширину */
+        <section>
+          <h2 className="text-sm font-semibold">Позиции</h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Укажите, сколько в позицию вложено своих и сколько заемных, а в
-            «Выведено» — стоимость того, что из нее забрали. Доход считается
-            как «стоимость + выведено − вложено»: иначе продажа части GM
-            с переводом BTC/ETH в залог выглядела бы убытком, хотя капитал
-            просто переехал в Growth. Из текущих собственных долей
-            складывается категория «Стейблы».
+            Доход считается как «стоимость + выведено − вложено»: иначе продажа
+            части GM с переводом BTC/ETH в залог выглядела бы убытком, хотя
+            капитал просто переехал в Growth. Из текущих собственных долей
+            складывается категория «Стейблы». Зона и вложенные суммы правятся в
+            разметке позиции — кнопка справа в шапке карточки.
           </p>
-          <ul className="mt-3 divide-y divide-border">
+          <ul className="mt-3 space-y-3">
             {positions.map((p) => (
-              <PositionRow
+              <PositionCard
                 key={p.id}
                 position={p}
+                positions={positions}
                 busy={busy}
                 onMark={mark}
+                stableBorrow={stableBorrow}
+                nowMs={nowMs}
               />
             ))}
           </ul>
-        </Card>
+        </section>
       )}
     </div>
   );
+}
+
+/**
+ * «Сейчас» с обновлением раз в минуту: обратный отсчет 48 часов на карточке
+ * LP должен идти, а не застывать на времени открытия экрана.
+ */
+function useNowMs(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
 }
 
 function splitKey(key: string): [string, string, string] {
@@ -233,244 +242,6 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline gap-2">
       <dt className={LABEL}>{label}</dt>
       <dd className="font-mono text-sm font-semibold">{value}</dd>
-    </div>
-  );
-}
-
-function ZoneCard({ zone }: { zone: ZoneBreakdownDto }) {
-  return (
-    <Card
-      className="p-4"
-      style={{ boxShadow: `inset 3px 0 0 ${ZONE_ACCENT[zone.zone]}` }}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">{zone.label}</h2>
-        <span className="font-mono text-xs text-muted-foreground">
-          {zone.percent === null ? "—" : tablePct(zone.percent, 1)}
-        </span>
-      </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">{zone.purpose}</p>
-
-      <p
-        className={cn(
-          "mt-2 font-mono text-2xl leading-none font-semibold tracking-tight",
-          zone.valueUsd === null && "text-muted-foreground",
-        )}
-      >
-        {zone.valueUsd === null ? "—" : tableUsd(zone.valueUsd)}
-      </p>
-
-      <dl className="mt-3 space-y-1 text-xs">
-        <Row label="Залог" value={zone.collateralUsd} hideZero />
-        <Row label="Свободные стейблы" value={zone.manualUsd} hideZero />
-        <Row
-          label={`Позиции (${zone.positionCount})`}
-          value={zone.positionsUsd}
-          hideZero={zone.positionCount === 0}
-        />
-      </dl>
-    </Card>
-  );
-}
-
-function Row({
-  label,
-  value,
-  hideZero,
-}: {
-  label: string;
-  value: number | null;
-  hideZero?: boolean;
-}) {
-  if (hideZero && value === 0) return null;
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-mono">{value === null ? "—" : tableUsd(value)}</dd>
-    </div>
-  );
-}
-
-/** Одна позиция: зона кнопками, два поля вложенного и доход. */
-function PositionRow({
-  position,
-  busy,
-  onMark,
-}: {
-  position: PositionDto;
-  busy: boolean;
-  onMark: (p: PositionDto, patch: MarkPatch) => void;
-}) {
-  const unmarked =
-    position.ownPrincipalUsd === null || position.borrowedPrincipalUsd === null;
-
-  return (
-    <li className="space-y-2 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className="truncate text-sm">{position.title}</span>
-            {unmarked && <Badge variant="warning">не размечено</Badge>}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {position.protocolLabel}
-            {" · стоит "}
-            {position.valueUsd === null ? "—" : tableUsd(position.valueUsd)}
-            {position.ownCurrentUsd !== null && !unmarked && (
-              <>
-                {" · своих сейчас "}
-                {tableUsd(position.ownCurrentUsd)}
-              </>
-            )}
-          </span>
-        </span>
-
-        <span className="flex gap-1">
-          {ZONE_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              disabled={busy}
-              onClick={() => onMark(position, { zone: o.value })}
-              aria-pressed={position.zone === o.value}
-              className={cn(
-                "rounded-md px-2 py-1 text-xs outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
-                position.zone === o.value
-                  ? "bg-accent font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60",
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-2">
-        <PrincipalInput
-          id={`own-${position.id}`}
-          label="Вложено своих, $"
-          value={position.ownPrincipalUsd}
-          busy={busy}
-          onSave={(v) => onMark(position, { ownPrincipalUsd: v })}
-        />
-        <PrincipalInput
-          id={`brw-${position.id}`}
-          label="Вложено заемных, $"
-          value={position.borrowedPrincipalUsd}
-          busy={busy}
-          onSave={(v) => onMark(position, { borrowedPrincipalUsd: v })}
-        />
-        <PrincipalInput
-          id={`out-${position.id}`}
-          label="Выведено, $"
-          value={position.withdrawnUsd}
-          busy={busy}
-          onSave={(v) => onMark(position, { withdrawnUsd: v })}
-          hint="Стоимость того, что забрали из позиции: BTC/ETH с продажи GM, ушедшие в залог"
-        />
-
-        {/* Доход = стоимость − вложено. Пока размечена лишь часть, показать
-            его нельзя: остаток мог бы оказаться незаявленной заемной долей */}
-        <div className="pb-1">
-          <span className={LABEL}>Доход</span>
-          <span
-            className={cn(
-              "ml-2 font-mono text-sm font-semibold",
-              position.profitUsd === null
-                ? "text-muted-foreground"
-                : pnlClass(position.profitUsd),
-            )}
-            title={
-              position.profitUsd === null
-                ? "Размечены не обе вложенные суммы — доход не выводится"
-                : undefined
-            }
-          >
-            {position.profitUsd === null
-              ? "—"
-              : tableUsdSigned(
-                  position.profitUsd,
-                  usdDecimals(position.profitUsd),
-                )}
-            {position.profitPct !== null && (
-              <span className="ml-1.5 text-xs font-normal">
-                ({tablePctSigned(position.profitPct, 1)})
-              </span>
-            )}
-          </span>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-/**
- * Поле вложенной суммы. Пустое значение = «не размечено», и это не ноль:
- * ноль означал бы «вложено ничего» и объявил бы доходом всю стоимость.
- */
-function PrincipalInput({
-  id,
-  label,
-  value,
-  busy,
-  onSave,
-  hint,
-}: {
-  id: string;
-  label: string;
-  value: number | null;
-  busy: boolean;
-  onSave: (value: number | null) => void;
-  hint?: string;
-}) {
-  const saved = value === null ? "" : String(value);
-  const [draft, setDraft] = useState(saved);
-  const dirty = draft.trim() !== saved;
-
-  function save() {
-    const raw = draft.trim().replace(",", ".");
-    if (raw === "") {
-      onSave(null);
-      return;
-    }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      toast.error("Сумма должна быть неотрицательным числом");
-      return;
-    }
-    onSave(parsed);
-  }
-
-  return (
-    <div className="space-y-1">
-      <label htmlFor={id} className={LABEL} title={hint}>
-        {label}
-      </label>
-      <div className="flex items-center gap-1">
-        <Input
-          id={id}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") save();
-          }}
-          inputMode="decimal"
-          placeholder="не указано"
-          className="h-8 w-32 font-mono"
-        />
-        {dirty && (
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy}
-            onClick={save}
-            className="h-8"
-          >
-            OK
-          </Button>
-        )}
-      </div>
     </div>
   );
 }

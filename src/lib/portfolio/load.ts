@@ -1,14 +1,23 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AAVE_PROTOCOL, type AavePositionPayload } from "@/lib/chains/aave";
-import { AAVE_DEBT_SOURCE } from "@/lib/chains/aave-debt";
+import {
+  AAVE_DEBT_SOURCE,
+  type AaveDebtPositionPayload,
+} from "@/lib/chains/aave-debt";
+import { isStableSymbol } from "@/lib/stables";
 import type {
   PortfolioOverviewDto,
   PositionDto,
   PositionsSummaryDto,
+  StableBorrowRateDto,
   StrategyZone,
   ZonesSummaryDto,
 } from "@/lib/api/types";
+import {
+  buildStableBorrow,
+  type StableBorrowReserveInput,
+} from "@/lib/positions/borrow-rate";
 import {
   POSITION_PROTOCOLS,
   buildPositions,
@@ -91,6 +100,8 @@ export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
   positionsSummary: PositionsSummaryDto;
   /** Разрез по зонам стратегии Capital Growth (Фаза 6). */
   zones: ZonesSummaryDto;
+  /** Сколько стоят заемные стейблы на Aave — порог для ставок Yield-позиций. */
+  stableBorrow: StableBorrowRateDto;
   oldestCollateralAt: string | null;
 }
 
@@ -164,6 +175,12 @@ export async function loadPortfolio(
   // --- Залог Aave ---
   const collateral: CollateralInput[] = [];
   let oldestCollateralAt: string | null = null;
+  /**
+   * Долг в стейблах по резервам — стоимость заемных денег (Фаза 7).
+   * Ключ «сеть:символ»: один и тот же резерв встречается у нескольких
+   * кошельков, а ставка у него общая, поэтому долг складывается.
+   */
+  const stableDebtByReserve = new Map<string, StableBorrowReserveInput>();
   if (wallets.length > 0) {
     // Фильтр по кошелькам пользователя — не только для admin-режима: под RLS
     // он избыточен, но делает выборку одинаковой на обоих путях
@@ -180,8 +197,30 @@ export async function loadPortfolio(
         | (AavePositionPayload & { kind?: string })
         | null;
       // Долговые строки (payload.kind = 'debt', Фаза 4) — отдельный контур:
-      // в категории и знаменатель портфеля они не входят никогда
-      if (payload?.kind === "debt") continue;
+      // в категории и знаменатель портфеля они не входят никогда.
+      // Стейблы из них дают стоимость заемных денег — порог, ниже которого
+      // депозит на стороннем лендинге держать незачем (docs/07 §3)
+      if (payload?.kind === "debt") {
+        const debt = row.payload as AaveDebtPositionPayload & {
+          borrowRatePercent?: number | null;
+        };
+        const quantity = Number(row.quantity ?? 0);
+        if (isStableSymbol(debt.symbol) && quantity > 0) {
+          const chain = row.chain as string;
+          const key = `${chain}:${debt.symbol}`;
+          const seen = stableDebtByReserve.get(key);
+          // Стейбл оценивается константой, как и везде в портфеле: цена
+          // доллара в кэше не нужна, а без нее вес был бы неизвестен
+          const debtUsd = quantity * STABLE_PRICE_USD;
+          stableDebtByReserve.set(key, {
+            chain,
+            symbol: debt.symbol,
+            debtUsd: (seen?.debtUsd ?? 0) + debtUsd,
+            ratePercent: debt.borrowRatePercent ?? seen?.ratePercent ?? null,
+          });
+        }
+        continue;
+      }
       if (!payload?.category || !payload.coingeckoId) continue;
       const wallet = walletById.get(row.wallet_id as string);
       collateral.push({
@@ -491,6 +530,7 @@ export async function loadPortfolio(
     positions: positions.positions,
     positionsSummary: positions.summary,
     zones,
+    stableBorrow: buildStableBorrow([...stableDebtByReserve.values()]),
     oldestCollateralAt,
   };
 }

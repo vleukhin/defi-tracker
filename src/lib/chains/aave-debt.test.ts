@@ -4,6 +4,7 @@ import {
   AAVE_DEBT_RESERVES,
   AAVE_POOLS,
   MAX_UINT256,
+  borrowRatePercent,
   mapAccountData,
   readChainAaveDebt,
   type AaveDebtRpcClient,
@@ -182,5 +183,79 @@ describe("readChainAaveDebt", () => {
     expect(res.error).toContain("RPC down");
     expect(res.account).toBeNull();
     expect(res.debts).toEqual([]);
+  });
+});
+
+/**
+ * Ставка займа — порог, ниже которого депозит на стороннем лендинге держать
+ * незачем (docs/07 §3). Читается тем же multicall, что и долг.
+ */
+describe("ставка variable-займа", () => {
+  it("ray (1e27) -> проценты годовых", () => {
+    // 6,25% APR
+    expect(
+      borrowRatePercent({ currentVariableBorrowRate: 62_500_000_000_000_000_000_000_000n }),
+    ).toBeCloseTo(6.25, 9);
+  });
+
+  it("форма ответа не та -> null, а не выдуманное число", () => {
+    expect(borrowRatePercent(0n)).toBeNull();
+    expect(borrowRatePercent(null)).toBeNull();
+    expect(borrowRatePercent({ liquidityIndex: 1n })).toBeNull();
+    // Неправдоподобная величина: декодировали не то поле
+    expect(
+      borrowRatePercent({ currentVariableBorrowRate: 10n ** 30n }),
+    ).toBeNull();
+  });
+
+  it("ставка попадает в стейбл-резервы и не попадает в остальные", async () => {
+    const rate = 50_000_000_000_000_000_000_000_000n; // 5%
+    const client: AaveDebtRpcClient = {
+      async multicall({ contracts }) {
+        return contracts.map((c) => {
+          if (c.functionName === "getUserAccountData") {
+            return { status: "success" as const, result: accountTuple({}) };
+          }
+          if (c.functionName === "getReserveData") {
+            return {
+              status: "success" as const,
+              result: { currentVariableBorrowRate: rate },
+            };
+          }
+          return { status: "success" as const, result: 1_000n };
+        });
+      },
+    };
+    const res = await readChainAaveDebt(client, "arbitrum", WALLET, noopLog);
+
+    const usdc = res.debts.find((d) => d.symbol === "USDCn" || d.symbol === "USDC");
+    expect(usdc?.borrowRatePercent).toBeCloseTo(5, 9);
+    const weth = res.debts.find((d) => d.symbol === "WETH");
+    // По не-стейблам ставку не читаем: сравнивать ее не с чем
+    expect(weth?.borrowRatePercent).toBeNull();
+  });
+
+  it("упавший getReserveData -> ставка null, разбивка долга живет", async () => {
+    const client: AaveDebtRpcClient = {
+      async multicall({ contracts }) {
+        return contracts.map((c) => {
+          if (c.functionName === "getUserAccountData") {
+            return { status: "success" as const, result: accountTuple({}) };
+          }
+          if (c.functionName === "getReserveData") {
+            return {
+              status: "failure" as const,
+              error: new Error("execution reverted"),
+            };
+          }
+          return { status: "success" as const, result: 7n };
+        });
+      },
+    };
+    const res = await readChainAaveDebt(client, "base", WALLET, noopLog);
+
+    expect(res.debts).toHaveLength(AAVE_DEBT_RESERVES.base.length);
+    expect(res.debts.every((d) => d.borrowRatePercent === null)).toBe(true);
+    expect(res.debts[0].raw).toBe(7n);
   });
 });

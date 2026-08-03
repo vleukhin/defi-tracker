@@ -6,6 +6,7 @@ import {
   amount1ForLiquidity,
   getSqrtRatioAtTick,
   positionAmounts,
+  tickToPrice,
 } from "./uniswap-math";
 
 /**
@@ -128,5 +129,32 @@ describe("формулы количеств", () => {
     const a = getSqrtRatioAtTick(100);
     expect(amount1ForLiquidity(a, a, 10n ** 20n)).toBe(0n);
     expect(amount0ForLiquidity(a, a, 10n ** 20n)).toBe(0n);
+  });
+});
+
+describe("tickToPrice", () => {
+  it("нулевой тик = паритет с поправкой на decimals", () => {
+    // Одинаковые decimals: 1.0001^0 = 1
+    expect(tickToPrice(0, 18, 18)).toBeCloseTo(1, 12);
+    // WETH(18)/USDC(6): множитель 10^12 переводит «за штуку»
+    expect(tickToPrice(0, 18, 6)!).toBeCloseTo(1e12, 0);
+  });
+
+  it("шаг тика — 0,01% цены", () => {
+    const a = tickToPrice(0, 18, 18)!;
+    const b = tickToPrice(1, 18, 18)!;
+    expect(b / a).toBeCloseTo(1.0001, 9);
+  });
+
+  it("реальный тик WETH/USDC считается в доллары за ETH", () => {
+    // Тик −201 240 у пары WETH(18)/USDC(6) — это ~1820 USDC за WETH
+    const price = tickToPrice(-201_240, 18, 6)!;
+    expect(price).toBeGreaterThan(1750);
+    expect(price).toBeLessThan(1900);
+  });
+
+  it("мусор вместо тика -> null, а не NaN на экране", () => {
+    expect(tickToPrice(Number.NaN, 18, 18)).toBeNull();
+    expect(tickToPrice(Number.POSITIVE_INFINITY, 18, 18)).toBeNull();
   });
 });
