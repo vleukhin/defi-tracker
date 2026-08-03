@@ -1,29 +1,33 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { pnlClass } from "@/components/pnl";
+import { Verdict } from "@/components/dc/card";
+import { Metric } from "@/components/dc/metrics";
 import type { PositionDto, StableBorrowRateDto } from "@/lib/api/types";
+import { chainLabel, dcUsd } from "@/lib/format";
 import {
-  tablePctSigned,
-  tableUsd,
-  tableUsdSigned,
-  usdDecimals,
-} from "@/lib/format";
-import { cn } from "@/lib/utils";
+  CardHead,
+  MetricRow,
+  ownershipDelta,
+  PositionShell,
+  principalOf,
+  profitDelta,
+  UnmarkedChip,
+} from "./card-parts";
 import { FluidCard } from "./fluid-card";
 import { GmxCard } from "./gmx-card";
-import { UniswapCard } from "./uniswap-card";
 import { MarkPopover } from "./mark-popover";
-import { LABEL, ZoneChip, type MarkFn } from "./shared";
+import { type MarkFn } from "./shared";
+import { UniswapCard } from "./uniswap-card";
 
 /**
- * Карточка позиции. Разбор идет по протоколу: у депозита лендинга и у пула
- * ликвидности разные вопросы к позиции, и общая строка отвечала на них
- * одинаково плохо — Fluid живет ставкой, а GM переоценкой.
+ * Карточка позиции. Каркас у всех типов один (см. card-parts.tsx),
+ * разбор идёт по протоколу: у депозита лендинга и у пула ликвидности
+ * разные вопросы к позиции, и общий набор метрик отвечал на них
+ * одинаково плохо — Fluid живёт ставкой, LP диапазоном, а GM переоценкой.
  *
- * Карточки есть у всех трех протоколов размещения — Fluid, Uniswap v3 и
- * GMX v2. Общая карточка остается запасным вариантом: строка читателя
- * с незнакомым протоколом должна показываться, а не пропадать.
+ * Третий тип из дизайна — заём — в списке позиций не приходит: в модели
+ * данных это долговая строка Aave. Его карточка лежит рядом
+ * (aave-card.tsx) и собирается из ответа /api/debt.
  */
 export function PositionCard({
   position,
@@ -75,7 +79,11 @@ export function PositionCard({
   return <GenericCard position={position} busy={busy} onMark={onMark} />;
 }
 
-/** Позиция без своей карточки: что это, как размечено и что принесло. */
+/**
+ * Позиция без своей карточки: тот же каркас, только три метрики вместо
+ * четырёх. Строка читателя с незнакомым протоколом должна показываться,
+ * а не пропадать.
+ */
 function GenericCard({
   position,
   busy,
@@ -85,97 +93,52 @@ function GenericCard({
   busy: boolean;
   onMark: MarkFn;
 }) {
-  const unmarked =
-    position.ownPrincipalUsd === null || position.borrowedPrincipalUsd === null;
+  const principal = principalOf(position);
+  const withdrawn = position.withdrawnUsd;
 
   return (
-    <li className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border border-border bg-card p-4 shadow-sm dark:shadow-none">
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="truncate text-sm">{position.title}</span>
-          <ZoneChip zone={position.zone} />
-          {unmarked && <Badge variant="warning">не размечено</Badge>}
-        </div>
+    <PositionShell>
+      <CardHead
+        protocol={position.protocol}
+        name={position.protocolLabel}
+        zone={position.zone}
+        kind={<UnmarkedChip position={position} />}
+        meta={[position.title, position.subtitle, chainLabel(position.chain)]}
+        menu={<MarkPopover position={position} busy={busy} onMark={onMark} />}
+      />
 
-        <p className="truncate text-xs text-muted-foreground">
-          {position.protocolLabel}
-          {" · стоит "}
-          {position.valueUsd === null ? "—" : tableUsd(position.valueUsd)}
-          {position.ownCurrentUsd !== null && !unmarked && (
-            <>
-              {" · своих сейчас "}
-              {tableUsd(position.ownCurrentUsd)}
-            </>
-          )}
-        </p>
+      <MetricRow>
+        <Metric
+          label="Стоимость"
+          value={position.valueUsd === null ? null : dcUsd(position.valueUsd)}
+          delta={profitDelta(position)}
+        />
+        <Metric
+          label="Вложено"
+          value={principal === null ? null : dcUsd(principal)}
+          delta={ownershipDelta(position)}
+        />
+        <Metric
+          label="Своих сейчас"
+          hint="Текущая собственная доля стоимости позиции: доход и убыток относятся на своё и заёмное пропорционально вложенному."
+          value={
+            position.ownCurrentUsd === null
+              ? null
+              : dcUsd(position.ownCurrentUsd)
+          }
+          delta="из них складывается категория «Стейблы»"
+        />
+        <Metric
+          label="Выведено"
+          value={withdrawn === null ? null : dcUsd(withdrawn)}
+          delta="входит в доход позиции"
+        />
+      </MetricRow>
 
-        {/* Разметка ушла в поповер, но остается фактом о позиции: без нее
-            не прочитать ни доход, ни собственную долю */}
-        <p className="text-xs text-muted-foreground">
-          {"Вложено: свои "}
-          <Amount value={position.ownPrincipalUsd} />
-          {" · заемные "}
-          <Amount value={position.borrowedPrincipalUsd} />
-          {position.withdrawnUsd !== null && position.withdrawnUsd > 0 && (
-            <>
-              {" · выведено "}
-              <Amount value={position.withdrawnUsd} />
-            </>
-          )}
-        </p>
-      </div>
-
-      <div className="flex items-start gap-1">
-        <div className="text-right">
-          <span className={cn(LABEL, "block")}>Доход</span>
-          <ProfitValue position={position} />
-        </div>
-        <MarkPopover position={position} busy={busy} onMark={onMark} />
-      </div>
-    </li>
-  );
-}
-
-/** Сумма разметки; «—» означает «не сказали», а не ноль. */
-export function Amount({ value }: { value: number | null }) {
-  if (value === null) return <span>—</span>;
-  return <span className="font-mono">{tableUsd(value)}</span>;
-}
-
-/**
- * Доход = стоимость + выведено − вложено. Пока размечена лишь часть,
- * показать его нельзя: остаток мог бы оказаться незаявленной заемной долей.
- */
-export function ProfitValue({
-  position,
-  className,
-}: {
-  position: PositionDto;
-  className?: string;
-}) {
-  return (
-    <span
-      className={cn(
-        "font-mono text-sm font-semibold",
-        position.profitUsd === null
-          ? "text-muted-foreground"
-          : pnlClass(position.profitUsd),
-        className,
-      )}
-      title={
-        position.profitUsd === null
-          ? "Размечены не обе вложенные суммы — доход не выводится"
-          : undefined
-      }
-    >
-      {position.profitUsd === null
-        ? "—"
-        : tableUsdSigned(position.profitUsd, usdDecimals(position.profitUsd))}
-      {position.profitPct !== null && (
-        <span className="ml-1.5 text-xs font-normal">
-          ({tablePctSigned(position.profitPct, 1)})
-        </span>
-      )}
-    </span>
+      <Verdict>
+        Протокол читается без своей карточки — видно разметку и доход, но не
+        устройство позиции.
+      </Verdict>
+    </PositionShell>
   );
 }

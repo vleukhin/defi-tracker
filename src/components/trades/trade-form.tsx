@@ -1,12 +1,14 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { DcCard } from "@/components/dc/card";
+import { HelpTip } from "@/components/dc/help-tip";
+import { Segmented } from "@/components/dc/segmented";
 import { CategoryDot } from "@/components/portfolio/category";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import type {
   PortfolioCategory,
   TradeDto,
@@ -14,22 +16,23 @@ import type {
 } from "@/lib/api/types";
 import { ApiError, apiFetch } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import { CATEGORY_UNIT, TRADE_CATEGORIES } from "./categories";
+import { CATEGORY_LABEL, CATEGORY_UNIT, TRADE_CATEGORIES } from "./categories";
+import { DeleteTradeDialog } from "./delete-trade-dialog";
 
 /**
- * Форма сделки (S2.1): категория, сторона, количество, «цена за единицу ИЛИ
- * сумма всего» (второе выводится из количества автоматически), дата (не в
- * будущем), опциональная заметка.
+ * Форма сделки: категория, сторона, количество, «цена за единицу ИЛИ сумма
+ * всего» (второе выводится из количества автоматически), дата (не в будущем),
+ * опциональная заметка.
  *
- * Одна форма на добавление и редактирование: «Изменить» в списке передает
- * trade — родитель перемонтирует форму через key, initializers useState
+ * Форма не висит в потоке, а раскрывается по кнопке «Новая сделка» и
+ * закрывается по «✕»/«Отмена» (дизайн-код §8, чек-лист). Раскрытием и
+ * монтированием управляет TradesManager — здесь только содержимое.
+ *
+ * Одна форма на добавление и редактирование: «правка» в таблице передаёт
+ * trade — родитель перемонтирует форму через key, инициализаторы useState
  * подхватывают значения. Отправляется всегда priceUsd — производная от
  * суммы, если пользователь заполнял сумму.
  */
-
-/** Сегмент радио-контрола: состояние — от скрытого input (has-checked). */
-const SEGMENT =
-  "flex h-9 cursor-pointer select-none items-center justify-center gap-2 rounded-md border border-input px-2 text-sm transition-colors duration-120 ease-out hover:bg-accent/60 has-checked:border-ring has-checked:bg-accent has-checked:font-medium has-focus-visible:ring-3 has-focus-visible:ring-ring/50";
 
 /** Десятичная строка инпута в число; запятая толерантна, как в API. */
 function parseDecimal(raw: string): number | null {
@@ -41,10 +44,7 @@ function parseDecimal(raw: string): number | null {
 /** Число обратно в инпут: без экспоненты, хвостовые нули срезаны. */
 function toInput(n: number): string {
   if (!Number.isFinite(n)) return "";
-  return n
-    .toFixed(8)
-    .replace(/0+$/, "")
-    .replace(/\.$/, "");
+  return n.toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 /** Сегодня в локальном поясе для value/max нативного input type="date". */
@@ -60,15 +60,54 @@ function humanIssue(issue: string): string {
   return issue.replace(/^[a-zA-Z.]+: /, "");
 }
 
+/** Поле формы: подпись --type-label, при необходимости «?» рядом. */
+function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+  className,
+}: {
+  label: string;
+  htmlFor?: string;
+  hint?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-[7px]", className)}>
+      <div className="flex items-center gap-1.5">
+        {/* Сегментам подпись не привязывается: у radiogroup своя aria-label */}
+        {htmlFor === undefined ? (
+          <span className="t-label">{label}</span>
+        ) : (
+          <label className="t-label" htmlFor={htmlFor}>
+            {label}
+          </label>
+        )}
+        {hint && <HelpTip>{hint}</HelpTip>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const SIDE_OPTIONS = [
+  { value: "buy" as const, label: "Купить", arrow: "↓" },
+  { value: "sell" as const, label: "Продать", arrow: "↑" },
+];
+
 export function TradeForm({
   trade,
   onSaved,
   onCancel,
+  onDeleted,
 }: {
   /** Сделка для редактирования; null — форма добавления. */
   trade: TradeDto | null;
   onSaved: () => void;
   onCancel: () => void;
+  onDeleted: () => void;
 }) {
   const isEdit = trade !== null;
   const [category, setCategory] = useState<PortfolioCategory>(
@@ -76,12 +115,17 @@ export function TradeForm({
   );
   const [side, setSide] = useState<"buy" | "sell">(trade?.side ?? "buy");
   const [quantity, setQuantity] = useState(trade?.quantity ?? "");
-  const [price, setPrice] = useState(trade?.priceUsd ?? "");
+  const [price, setPrice] = useState(() => {
+    if (!trade) return "";
+    // Сделка без цены хранится нулём — в форме это пустое поле, а не «0»
+    const p = parseDecimal(trade.priceUsd);
+    return p !== null && p > 0 ? trade.priceUsd : "";
+  });
   const [total, setTotal] = useState(() => {
     if (!trade) return "";
     const q = parseDecimal(trade.quantity);
     const p = parseDecimal(trade.priceUsd);
-    return q !== null && p !== null ? toInput(q * p) : "";
+    return q !== null && p !== null && p > 0 ? toInput(q * p) : "";
   });
   // Что пользователь заполнял сам — цену или сумму; второе производное
   const [priceSource, setPriceSource] = useState<"price" | "total">("price");
@@ -95,15 +139,20 @@ export function TradeForm({
 
   const cardRef = useRef<HTMLDivElement>(null);
   const quantityRef = useRef<HTMLInputElement>(null);
+  const priceRef = useRef<HTMLInputElement>(null);
 
-  // «Изменить» из списка: форма выше по странице — показать и сфокусировать
+  // Форма раскрылась (новая сделка или правка) — показать её целиком
+  // и поставить курсор в первое поле
   useEffect(() => {
-    if (!isEdit) return;
     cardRef.current?.scrollIntoView({ block: "nearest" });
     quantityRef.current?.focus();
-  }, [isEdit]);
+  }, []);
 
   const unit = CATEGORY_UNIT[category];
+  // Производное поле подписано «рассчитано»: пользователь должен видеть,
+  // какое из двух чисел он ввёл, а какое посчитала форма
+  const derivedTotal = priceSource === "price" && total !== "";
+  const derivedPrice = priceSource === "total" && price !== "";
 
   function syncFromQuantity(next: string) {
     setQuantity(next);
@@ -134,7 +183,7 @@ export function TradeForm({
   }
 
   function resetAfterAdd() {
-    // Сброс всего, кроме категории (S2.1): серии сделок одной категории
+    // Сброс всего, кроме категории: серии сделок обычно одной категории
     setSide("buy");
     setQuantity("");
     setPrice("");
@@ -144,11 +193,30 @@ export function TradeForm({
     setNote("");
   }
 
+  /** Обязательны количество и одно из «цена/сумма» — до запроса. */
+  function validate(): string | null {
+    const q = parseDecimal(quantity);
+    if (q === null || q <= 0) {
+      quantityRef.current?.focus();
+      return "Укажите количество больше нуля";
+    }
+    if (parseDecimal(price) === null && parseDecimal(total) === null) {
+      priceRef.current?.focus();
+      return "Укажите цену за единицу или сумму сделки";
+    }
+    return null;
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    setIssues([]);
+    const invalid = validate();
+    if (invalid !== null) {
+      setError(invalid);
+      return;
+    }
     setPending(true);
     setError(null);
-    setIssues([]);
     const payload = {
       category,
       side,
@@ -186,110 +254,124 @@ export function TradeForm({
   }
 
   return (
-    <Card ref={cardRef} className="p-4">
-      <form onSubmit={submit} className="space-y-3">
-        <h2 className="text-sm font-semibold">
-          {isEdit ? "Изменить сделку" : "Новая сделка"}
-        </h2>
+    // Обводка --line-strong: раскрытый блок отделяется от карточек в потоке
+    <DcCard as="section" className="border-line-strong">
+      <div className="flex items-center gap-2.5 border-line border-b px-card py-[15px]">
+        <h2 className="t-h3">{isEdit ? "Правка сделки" : "Новая сделка"}</h2>
+        <span className="flex-1" />
+        {isEdit && <DeleteTradeDialog trade={trade} onDeleted={onDeleted} />}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onCancel}
+          aria-label="Закрыть форму"
+        >
+          <X aria-hidden />
+        </Button>
+      </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <fieldset>
-            <legend className="text-sm font-medium">Категория</legend>
-            <div className="mt-1.5 grid grid-cols-3 gap-2">
-              {TRADE_CATEGORIES.map((c) => (
-                <label key={c.key} className={SEGMENT}>
-                  <input
-                    type="radio"
-                    name="trade-category"
-                    value={c.key}
-                    checked={category === c.key}
-                    onChange={() => setCategory(c.key)}
-                    className="sr-only"
-                  />
-                  <CategoryDot category={c.key} />
-                  <span className="truncate">{c.label}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+      <form onSubmit={submit} className="flex flex-col gap-4 p-card">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Категория">
+            <Segmented
+              ariaLabel="Категория"
+              value={category}
+              onChange={setCategory}
+              className="flex w-full [&>button]:flex-1"
+              options={TRADE_CATEGORIES.map((c) => ({
+                value: c.key,
+                label: (
+                  <span className="flex items-center justify-center gap-1.5">
+                    <CategoryDot category={c.key} size={6} />
+                    {c.label}
+                  </span>
+                ),
+              }))}
+            />
+          </Field>
 
-          <fieldset>
-            <legend className="text-sm font-medium">Сторона</legend>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              <label className={cn(SEGMENT, "has-checked:text-success")}>
-                <input
-                  type="radio"
-                  name="trade-side"
-                  value="buy"
-                  checked={side === "buy"}
-                  onChange={() => setSide("buy")}
-                  className="sr-only"
-                />
-                Купить
-              </label>
-              <label className={cn(SEGMENT, "has-checked:text-destructive")}>
-                <input
-                  type="radio"
-                  name="trade-side"
-                  value="sell"
-                  checked={side === "sell"}
-                  onChange={() => setSide("sell")}
-                  className="sr-only"
-                />
-                Продать
-              </label>
-            </div>
-          </fieldset>
+          <Field label="Сторона">
+            <Segmented
+              ariaLabel="Сторона сделки"
+              value={side}
+              onChange={setSide}
+              className="flex w-full [&>button]:flex-1"
+              options={SIDE_OPTIONS.map((o) => ({
+                value: o.value,
+                label: (
+                  // Направление несёт стрелка: зелёный и красный принадлежат
+                  // прибыли и убытку, а не стороне сделки (дизайн-код §2)
+                  <span className="flex items-center justify-center gap-[7px]">
+                    <span aria-hidden className="text-text-3">
+                      {o.arrow}
+                    </span>
+                    {o.label}
+                  </span>
+                ),
+              }))}
+            />
+          </Field>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="trade-quantity">Количество ({unit})</Label>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label={`Количество, ${unit}`} htmlFor="trade-quantity">
             <Input
               id="trade-quantity"
               ref={quantityRef}
               type="text"
-              required
               inputMode="decimal"
               value={quantity}
               onChange={(e) => syncFromQuantity(e.target.value)}
-              placeholder={unit === "USD" ? "5000" : "0.1"}
-              className="text-right font-mono"
+              placeholder={unit === "USD" ? "5000" : "0,1"}
+              className="border-line-strong font-mono"
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="trade-price">Цена за единицу, $</Label>
-            <Input
-              id="trade-price"
-              type="text"
-              inputMode="decimal"
-              value={price}
-              onChange={(e) => syncFromPrice(e.target.value)}
-              placeholder={unit === "USD" ? "1.00" : "60000"}
-              className="text-right font-mono"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="trade-total">Сумма всего, $</Label>
-            <Input
-              id="trade-total"
-              type="text"
-              inputMode="decimal"
-              value={total}
-              onChange={(e) => syncFromTotal(e.target.value)}
-              placeholder="6000"
-              className="text-right font-mono"
-            />
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Заполните цену или сумму — второе рассчитается из количества
-          автоматически.
-        </p>
+          </Field>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="trade-date">Дата</Label>
+          <Field label="Цена за единицу, $" htmlFor="trade-price">
+            <CalculatedField calculated={derivedPrice}>
+              <Input
+                id="trade-price"
+                ref={priceRef}
+                type="text"
+                inputMode="decimal"
+                value={price}
+                onChange={(e) => syncFromPrice(e.target.value)}
+                placeholder={unit === "USD" ? "1,00" : "60000"}
+                className={cn(
+                  "font-mono",
+                  derivedPrice
+                    ? "pr-[92px] text-text-3"
+                    : "border-line-strong",
+                )}
+              />
+            </CalculatedField>
+          </Field>
+
+          <Field
+            label="Сумма, $"
+            htmlFor="trade-total"
+            hint="Заполните цену или сумму — второе рассчитается из количества автоматически."
+          >
+            <CalculatedField calculated={derivedTotal}>
+              <Input
+                id="trade-total"
+                type="text"
+                inputMode="decimal"
+                value={total}
+                onChange={(e) => syncFromTotal(e.target.value)}
+                placeholder="6000"
+                className={cn(
+                  "font-mono",
+                  derivedTotal ? "pr-[92px] text-text-3" : "border-line-strong",
+                )}
+              />
+            </CalculatedField>
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-[200px_1fr]">
+          <Field label="Дата" htmlFor="trade-date">
             <Input
               id="trade-date"
               type="date"
@@ -297,11 +379,10 @@ export function TradeForm({
               value={date}
               max={todayLocal()}
               onChange={(e) => setDate(e.target.value)}
-              className="font-mono"
+              className="border-line-strong font-mono"
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="trade-note">Заметка (не обяз.)</Label>
+          </Field>
+          <Field label="Заметка" htmlFor="trade-note">
             <Input
               id="trade-note"
               type="text"
@@ -310,12 +391,12 @@ export function TradeForm({
               onChange={(e) => setNote(e.target.value)}
               placeholder="Биржа, повод"
             />
-          </div>
+          </Field>
         </div>
 
-        {/* Ошибка — инлайн, должна остаться на экране (§6.2) */}
+        {/* Ошибка — инлайн, должна остаться на экране */}
         {error && (
-          <div role="status" className="text-sm text-destructive">
+          <div role="status" className="t-meta text-loss">
             <p>{error}</p>
             {issues.length > 0 && (
               <ul className="mt-1 list-inside list-disc">
@@ -327,7 +408,7 @@ export function TradeForm({
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Button type="submit" disabled={pending}>
             {pending
               ? "Сохранение…"
@@ -335,13 +416,37 @@ export function TradeForm({
                 ? "Сохранить"
                 : "Добавить сделку"}
           </Button>
-          {isEdit && (
-            <Button type="button" variant="secondary" onClick={onCancel}>
-              Отмена
-            </Button>
-          )}
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Отмена
+          </Button>
+          <span className="flex-1" />
+          <span className="t-meta text-text-3">
+            {side === "buy"
+              ? `средняя цена ${CATEGORY_LABEL[category]} пересчитается после сохранения`
+              : "продажа среднюю цену не меняет — только реализованный результат"}
+          </span>
         </div>
       </form>
-    </Card>
+    </DcCard>
+  );
+}
+
+/** Поле с пометкой «рассчитано» — число, которое посчитала форма. */
+function CalculatedField({
+  calculated,
+  children,
+}: {
+  calculated: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      {children}
+      {calculated && (
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[12px] text-text-3">
+          рассчитано
+        </span>
+      )}
+    </div>
   );
 }

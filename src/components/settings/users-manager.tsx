@@ -13,10 +13,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DcCard, SectionHead } from "@/components/dc/card";
+import { Chip } from "@/components/dc/chip";
+import { ProtocolTile } from "@/components/dc/page-header";
 import { apiFetch, ApiError } from "@/lib/use-api";
 
 type AdminUser = {
@@ -30,8 +31,34 @@ type AdminUser = {
 /**
  * Управление пользователями — видно только администратору (страница
  * рендерит компонент условно; API дополнительно проверяет роль, 403 иначе).
- * Дизайн §5.4: успех — тостом, ошибка — инлайн; удаление — AlertDialog.
+ * README §9: строка создания на фоне sunken, ниже список — аватар-инициалы,
+ * email Mono, чипы роли, справа danger-действие. Успех — тостом, ошибка —
+ * инлайн; удаление — AlertDialog.
  */
+
+/** «30.07.2026, 22:44» — дата с временем: последний вход без времени бесполезен. */
+function formatSignIn(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return "—";
+  return new Date(ts).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Инициалы для аватара: две буквы из локальной части email. */
+function initials(email: string | undefined): string {
+  const local = email?.split("@")[0] ?? "";
+  const parts = local.split(/[.\-_]+/).filter(Boolean);
+  const first = parts[0] ?? "";
+  const second = parts[1];
+  const abbr = second ? `${first[0]}${second[0]}` : first.slice(0, 2);
+  return abbr ? abbr.toUpperCase() : "—";
+}
+
 export function UsersManager({ selfId }: { selfId: string }) {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [email, setEmail] = useState("");
@@ -73,7 +100,7 @@ export function UsersManager({ selfId }: { selfId: string }) {
     setError(null);
     try {
       await apiFetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
-      toast.success(`Пользователь ${user.email} удален`);
+      toast.success(`Пользователь ${user.email} удалён`);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось удалить");
@@ -81,18 +108,15 @@ export function UsersManager({ selfId }: { selfId: string }) {
   }
 
   return (
-    <Card className="p-0">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Пользователи</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Публичной регистрации нет — аккаунты создает администратор. Email
-          нового пользователя считается подтвержденным сразу.
-        </p>
-      </div>
+    <DcCard as="section">
+      <SectionHead
+        title="Пользователи"
+        count="публичной регистрации нет — аккаунты создаёт администратор"
+      />
 
       <form
         onSubmit={handleCreate}
-        className="flex flex-col gap-2 px-4 py-3 sm:flex-row"
+        className="flex flex-col gap-2.5 border-line border-y bg-sunken px-card py-3.5 sm:flex-row sm:items-center"
       >
         <Input
           type="email"
@@ -101,7 +125,7 @@ export function UsersManager({ selfId }: { selfId: string }) {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="email@example.com"
           aria-label="Email нового пользователя"
-          className="flex-1"
+          className="flex-1 bg-surface"
         />
         <Input
           type="password"
@@ -109,42 +133,46 @@ export function UsersManager({ selfId }: { selfId: string }) {
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Пароль (мин. 8 символов)"
+          placeholder="Пароль, минимум 8 символов"
           aria-label="Пароль нового пользователя"
-          className="flex-1"
+          className="flex-1 bg-surface"
         />
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant="secondary" disabled={pending}>
           {pending ? "Создание…" : "Создать"}
         </Button>
       </form>
 
       {error && (
-        <p className="px-4 pb-2 text-sm text-destructive" role="status">
+        <p role="alert" className="t-meta border-line border-b px-card py-2.5 text-loss">
           {error}
         </p>
       )}
 
-      <ul className="divide-y divide-border border-t border-border">
+      <ul className="divide-y divide-line">
         {users === null && (
-          <li className="px-4 py-3 text-xs text-muted-foreground">Загрузка…</li>
+          <li className="flex items-center gap-3 px-card py-3.5">
+            <div className="size-[30px] shrink-0 rounded-[10px] bg-chip" />
+            <div className="space-y-1.5">
+              <div className="h-3 w-40 rounded-pill bg-chip" />
+              <div className="h-2.5 w-32 rounded-pill bg-chip" />
+            </div>
+          </li>
         )}
         {users?.map((u) => (
-          <li
-            key={u.id}
-            className="flex items-center justify-between gap-2 px-4 py-2.5"
-          >
-            <div className="min-w-0">
-              <p className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="truncate">{u.email}</span>
-                {u.role === "admin" && <Badge variant="muted">админ</Badge>}
+          <li key={u.id} className="flex items-center gap-3 px-card py-3.5">
+            <ProtocolTile abbr={initials(u.email)} color="var(--text-2)" size={30} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="truncate font-mono text-[13px]">{u.email}</span>
+                {u.role === "admin" && <Chip>админ</Chip>}
                 {u.id === selfId && (
-                  <span className="text-xs text-muted-foreground">(вы)</span>
+                  <span className="text-[11.5px] text-text-3">это вы</span>
                 )}
-              </p>
-              <p className="text-xs text-muted-foreground">
+              </div>
+              <p className="mt-0.5 text-[12px] text-text-3">
                 {u.lastSignInAt
-                  ? `последний вход: ${new Date(u.lastSignInAt).toLocaleString("ru-RU")}`
-                  : "еще не входил"}
+                  ? `последний вход ${formatSignIn(u.lastSignInAt)}`
+                  : "ещё не входил"}
               </p>
             </div>
             {u.id !== selfId && (
@@ -152,9 +180,9 @@ export function UsersManager({ selfId }: { selfId: string }) {
                 <AlertDialogTrigger asChild>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="destructive"
                     size="sm"
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    className="shrink-0"
                   >
                     Удалить
                   </Button>
@@ -165,7 +193,7 @@ export function UsersManager({ selfId }: { selfId: string }) {
                       Удалить пользователя {u.email}?
                     </AlertDialogTitle>
                     <AlertDialogDescription>
-                      Пользователь будет удален вместе со всеми его данными.
+                      Пользователь будет удалён вместе со всеми его данными.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -185,6 +213,6 @@ export function UsersManager({ selfId }: { selfId: string }) {
           </li>
         ))}
       </ul>
-    </Card>
+    </DcCard>
   );
 }

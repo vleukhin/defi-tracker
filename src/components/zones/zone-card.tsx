@@ -1,103 +1,68 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
+import { zoneColor } from "@/components/dc/chip";
+import { HelpTip } from "@/components/dc/help-tip";
+import { AccentCard } from "@/components/portfolio/accent-card";
+import { countLabel } from "@/components/portfolio/plural";
 import type { ZoneBreakdownDto } from "@/lib/api/types";
-import { tablePct, tableUsd } from "@/lib/format";
+import { dcUsd, tablePct } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ZONE_ACCENT, zoneTint } from "./shared";
 
 /**
- * Карточка зоны стратегии: из чего сложилась и сколько стоит.
+ * Карточка зоны стратегии: сколько капитала решает эту задачу.
  *
- * Цвет зоны здесь — точка, кромка и тинт; тот же цвет стоит точкой у зоны
- * на карточке позиции. Разрез читается без легенды: видно, какая позиция
- * в какой зоне лежит, не переводя взгляд на подписи.
+ * Задача зоны — не абзац в интерфейсе, а одно предложение под «?» (§1.3):
+ * читают карточку ради суммы, а формулировку стратегии перечитывают редко.
+ * Цвет зоны здесь кромка и точка — тот же цвет стоит у зоны на карточке
+ * позиции, и разрез читается без легенды.
  */
 export function ZoneCard({ zone }: { zone: ZoneBreakdownDto }) {
   return (
-    <Card
-      className="p-4"
-      style={{
-        boxShadow: `inset 3px 0 0 ${ZONE_ACCENT[zone.zone]}`,
-        background: zoneTint(zone.zone),
-      }}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="flex items-baseline gap-2 text-sm font-semibold">
-          <span
-            aria-hidden
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: ZONE_ACCENT[zone.zone] }}
-          />
+    <AccentCard color={zoneColor(zone.zone)}>
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="size-[7px] shrink-0 rounded-full"
+          style={{ background: zoneColor(zone.zone) }}
+        />
+        <h3 className="text-[14px] font-semibold tracking-[-0.01em]">
           {zone.label}
-        </h2>
-        <span className="font-mono text-xs text-muted-foreground">
+        </h3>
+        <HelpTip>{zone.purpose}</HelpTip>
+        <span className="ml-auto text-[13px] font-medium text-text-2">
           {zone.percent === null ? "—" : tablePct(zone.percent, 1)}
         </span>
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">{zone.purpose}</p>
 
       <p
         className={cn(
-          "mt-2 font-mono text-2xl leading-none font-semibold tracking-tight",
-          zone.valueUsd === null && "text-muted-foreground",
+          "mt-3.5 t-metric-lg",
+          zone.valueUsd === null && "text-text-3",
         )}
+        title={
+          zone.valueUsd === null
+            ? "Стоимость части позиций зоны неизвестна — сумма не выводится"
+            : undefined
+        }
       >
-        {zone.valueUsd === null ? "—" : tableUsd(zone.valueUsd)}
+        {zone.valueUsd === null ? "—" : dcUsd(zone.valueUsd)}
       </p>
 
-      <Breakdown zone={zone} />
-    </Card>
+      <p className="mt-1.5 text-[12.5px] text-text-3">{composition(zone)}</p>
+    </AccentCard>
   );
 }
 
 /**
- * Из чего сложилась зона. Разбивка нужна, когда слагаемых несколько:
- * единственное слагаемое просто повторяет итог другим шрифтом, и вместо
- * ответа на вопрос «из чего» карточка показывает то же число дважды.
- *
- * Когда разбивка свернута, число позиций все равно говорится — оно про
- * состав зоны, а не про деньги, и из итога его не видно.
+ * Из чего сложилась зона — строкой, а не таблицей: слагаемых максимум три,
+ * и вопрос к карточке «сколько», а не «как именно».
  */
-function Breakdown({ zone }: { zone: ZoneBreakdownDto }) {
-  const parts = [
-    { label: "Залог", value: zone.collateralUsd },
-    { label: "Свободные стейблы", value: zone.manualUsd },
-    { label: `Позиции (${zone.positionCount})`, value: zone.positionsUsd },
-  ].filter(
-    (p) => p.value !== 0 && !(p.value === null && zone.positionCount === 0),
-  );
-
-  // Округление до доллара: суммы сходятся с итогом с точностью до центов
-  const single =
-    parts.length <= 1 &&
-    (parts.length === 0 ||
-      (parts[0].value !== null &&
-        zone.valueUsd !== null &&
-        Math.abs(parts[0].value - zone.valueUsd) < 0.5));
-
-  if (single) {
-    if (zone.positionCount === 0) return null;
-    return (
-      <p className="mt-3 text-xs text-muted-foreground">
-        Позиций: <span className="font-mono">{zone.positionCount}</span>
-      </p>
-    );
+function composition(zone: ZoneBreakdownDto): string {
+  const parts: string[] = [];
+  if (zone.positionCount > 0) {
+    parts.push(countLabel(zone.positionCount, "позиция", "позиции", "позиций"));
   }
-
-  return (
-    <dl className="mt-3 space-y-1 text-xs">
-      {parts.map((p) => (
-        <div
-          key={p.label}
-          className="flex items-baseline justify-between gap-2"
-        >
-          <dt className="text-muted-foreground">{p.label}</dt>
-          <dd className="font-mono">
-            {p.value === null ? "—" : tableUsd(p.value)}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
+  if (zone.collateralUsd > 0) parts.push("залог");
+  if (zone.manualUsd > 0) parts.push("свободные стейблы");
+  return parts.length === 0 ? "пока пусто" : parts.join(" · ");
 }

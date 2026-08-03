@@ -4,79 +4,209 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ------- Светлая тема ------- */
-:root {
-  --background: oklch(0.977 0.004 250);        /* #f5f8fa — холодный белый */
-  --foreground: oklch(0.22 0.02 258);          /* #151b24 */
-  --card: oklch(1 0 0);                        /* #ffffff */
-  --card-foreground: oklch(0.22 0.02 258);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.02 258);
-  --primary: oklch(0.50 0.23 262);             /* #0151e3 — банковский синий */
-  --primary-foreground: oklch(0.985 0 0);      /* #fafafa */
-  --secondary: oklch(0.96 0.008 250);          /* #eef2f7 */
-  --secondary-foreground: oklch(0.25 0.02 258);
-  --muted: oklch(0.955 0.006 250);             /* #edf0f4 */
-  --muted-foreground: oklch(0.50 0.02 257);    /* #5c646f */
-  --accent: oklch(0.95 0.01 255);              /* #eaeff5 — hover-поверхность */
-  --accent-foreground: oklch(0.22 0.02 258);
-  --destructive: oklch(0.514 0.19 27);         /* #bc2021 */
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.90 0.008 250);             /* ≈#dde2e8 */
-  --input: oklch(0.87 0.01 250);               /* ≈#d1d7e0 */
-  --ring: oklch(0.50 0.23 262);
-  --success: oklch(0.50 0.13 155);             /* #007840 */
-  --warning: oklch(0.53 0.12 66);              /* #995b00 */
-  --link: oklch(0.47 0.20 262);                /* #0e4ec8 */
-  --chart-btc: oklch(0.62 0.15 55);            /* #c9690c */
-  --chart-eth: oklch(0.51 0.19 275);           /* #4c52d0 */
-  --chart-stable: oklch(0.56 0.10 180);        /* #098777 */
-  /* Зоны стратегии Capital Growth (docs/07): свой ряд цветов, не категорийный —
-     зона отвечает «какую задачу решает», категория «в чем лежит» */
-  --zone-growth: oklch(0.58 0.15 38);          /* #c25430 — жженый оранжевый */
-  --zone-yield: oklch(0.55 0.14 135);          /* #4b8323 — травяной зеленый */
-  --zone-stability: oklch(0.55 0.12 245);      /* #2677b2 — стальной синий */
-  --radius: 0.625rem;
+/* ===========================================================================
+   DeFi Portfolio — design tokens 1.0 (дизайн-код, раздел 2 и tokens.css).
+   Тёмная тема — основная; светлая переопределяет значения, роли те же.
+   Четыре роли цвета: поверхности, текст, интерактив, данные.
+   Семантика (profit/loss/warn) — только числа P/L и статусы риска.
+   ========================================================================= */
+
+:root,
+.dark,
+[data-theme="dark"] {
+  /* поверхности */
+  --bg-canvas: #0a0c0f;
+  --bg-sunken: #0f1216;   /* вложенные блоки внутри карточки */
+  --bg-surface: #12151a;  /* карточка */
+  --bg-raised: #1d222a;   /* активный таб, тултип, secondary-кнопка */
+  --bg-raised-hover: #242b34;
+  --bg-chip: #151a20;     /* нейтральный чип */
+
+  /* линии */
+  --line: #1a1f26;        /* разделитель внутри карточки */
+  --line-card: #1f252d;   /* обводка карточки */
+  --line-strong: #2c333e; /* обводка контролов, «?» */
+  --line-hover: #39424f;
+
+  /* текст */
+  --text-1: #e9ecf1;
+  --text-2: #98a2af;
+  --text-3: #667080;
+  --text-4: #39424f;      /* точки-разделители в строке мета */
+  --text-on-accent: #08111f;
+
+  /* семантика — только числа P/L и статусы риска */
+  --profit: #3ecf8e;
+  --loss: #f2585f;
+  --warn: #e7a94a;
+
+  /* интерактив */
+  --accent: #4c8fff;
+  --accent-hover: #6ba1ff;
+  --focus-ring: rgb(76 143 255 / 0.12);
+
+  /* зоны стратегии (docs/07): «какую задачу решает капитал» */
+  --zone-growth: #d6a159;
+  --zone-growth-text: #e6bc84;
+  --zone-yield: #8a7bf0;
+  --zone-yield-text: #a99ef5;
+  --zone-stability: #38a9c4;
+  --zone-stability-text: #6fc3d8;
+
+  /* категории активов: «в чём лежит капитал» */
+  --asset-btc: #e8993a;
+  --asset-eth: #6e7cf5;
+  --asset-stable: #2fbfa0;
+  --money-own: #98a2af;      /* свои средства */
+  --money-borrowed: #39424f; /* заёмные средства */
+
+  --shadow-pop: 0 14px 38px rgb(0 0 0 / 0.6);
 }
 
-/* ------- Темная тема (по умолчанию) ------- */
-.dark {
-  --background: oklch(0.165 0.013 255);        /* #0b0f14 — сине-угольный */
-  --foreground: oklch(0.955 0.004 250);        /* #eef0f3 */
-  --card: oklch(0.205 0.015 255);              /* #13181e — elevation 1 */
-  --card-foreground: oklch(0.955 0.004 250);
-  --popover: oklch(0.225 0.016 255);           /* #171c23 — elevation 2 */
-  --popover-foreground: oklch(0.955 0.004 250);
-  --primary: oklch(0.546 0.245 262.9);         /* #165dfc */
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.27 0.02 255);           /* #202730 */
-  --secondary-foreground: oklch(0.955 0.004 250);
-  --muted: oklch(0.25 0.016 255);              /* #1d2229 */
-  --muted-foreground: oklch(0.72 0.02 255);    /* #9ca5b1 */
-  --accent: oklch(0.245 0.02 258);             /* #1b212a — hover-поверхность */
-  --accent-foreground: oklch(0.955 0.004 250);
-  --destructive: oklch(0.68 0.19 25);          /* #f75d59 */
-  --destructive-foreground: oklch(0.16 0.03 25); /* ≈#180807 */
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.62 0.19 255);                /* #1d84f5 */
-  --success: oklch(0.75 0.15 155);             /* #4ec983 */
-  --warning: oklch(0.80 0.14 80);              /* #edb345 */
-  --link: oklch(0.74 0.13 255);                /* #70adfb */
-  --chart-btc: oklch(0.75 0.15 60);            /* #f2943c */
-  --chart-eth: oklch(0.67 0.15 278);           /* #8189ef */
-  --chart-stable: oklch(0.76 0.12 180);        /* #42cab4 */
-  --zone-growth: oklch(0.74 0.16 38);          /* #fe825c */
-  --zone-yield: oklch(0.78 0.17 135);          /* #86cf57 */
-  --zone-stability: oklch(0.72 0.13 242);      /* #4fadef */
+.light,
+[data-theme="light"] {
+  --bg-canvas: #fbfbfa;
+  --bg-sunken: #f4f4f2;
+  --bg-surface: #ffffff;
+  --bg-raised: #ededea;
+  --bg-raised-hover: #e4e4e1;
+  --bg-chip: #f4f4f2;
+
+  --line: #e9e9e6;
+  --line-card: #e4e4e1;
+  --line-strong: #d6d6d2;
+  --line-hover: #b9b9b4;
+
+  --text-1: #1a1d22;
+  --text-2: #6b7280;
+  --text-3: #8a9099;
+  --text-4: #c2c6cb;
+  --text-on-accent: #ffffff;
+
+  --profit: #1e9e68;
+  --loss: #d93a47;
+  --warn: #b57a15;
+
+  --accent: #2b6cf6;
+  --accent-hover: #1e5ad8;
+  --focus-ring: rgb(43 108 246 / 0.14);
+
+  --zone-growth: #b5822f;
+  --zone-growth-text: #8e6520;
+  --zone-yield: #6b58d9;
+  --zone-yield-text: #5b49c4;
+  --zone-stability: #1f7f97;
+  --zone-stability-text: #196876;
+
+  --asset-btc: #c4761c;
+  --asset-eth: #5461da;
+  --asset-stable: #158e76;
+  --money-own: #6b7280;
+  --money-borrowed: #c2c6cb;
+
+  --shadow-pop: 0 12px 30px rgb(20 22 26 / 0.14);
+}
+
+/* ---------------------------------------------------------------------------
+   Геометрия и типографика — одни на обе темы (tokens.css, раздел «геометрия»).
+   ------------------------------------------------------------------------- */
+:root {
+  --page-max: 1120px;
+  --page-pad: 28px;
+  --card-pad: 18px;
+  --gap-grid: 12px;
+  --gap-block: 16px;
+
+  --radius-card: 14px;
+  --radius-block: 12px;
+  --radius-control: 8px;
+  --radius-chip: 7px;
+  --radius-pill: 6px;
+
+  --bar-h: 7px;      /* полоса данных */
+  --bar-radius: 4px;
+  --control-h: 34px;
+  --header-h: 60px;
+  --hairline: 1px;
+
+  /* Совместимость с примитивами shadcn, считающими радиус от --radius */
+  --radius: var(--radius-block);
+}
+
+/* ---------------------------------------------------------------------------
+   Мост к семантическим именам shadcn: примитивы в src/components/ui/*
+   продолжают работать, но берут цвет из токенов дизайн-кода.
+   Внимание: shadcn-овский `accent` — это ПОВЕРХНОСТЬ hover, а `--accent`
+   дизайн-кода — синий интерактив. Развязано на уровне @theme:
+   `bg-accent` → bg-raised-hover, `bg-primary` → --accent.
+   ------------------------------------------------------------------------- */
+:root,
+.dark,
+.light,
+[data-theme] {
+  --background: var(--bg-canvas);
+  --foreground: var(--text-1);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-1);
+  --popover: var(--bg-raised);
+  --popover-foreground: var(--text-1);
+  --primary: var(--accent);
+  --primary-foreground: var(--text-on-accent);
+  --secondary: var(--bg-raised);
+  --secondary-foreground: var(--text-1);
+  --muted: var(--bg-sunken);
+  --muted-foreground: var(--text-2);
+  --destructive: var(--loss);
+  --destructive-foreground: var(--bg-canvas);
+  --border: var(--line-card);
+  --input: var(--line-strong);
+  --ring: var(--accent);
+  --success: var(--profit);
+  --warning: var(--warn);
+  --link: var(--accent);
 }
 
 /* ------- Маппинг в утилиты Tailwind 4 ------- */
 @theme inline {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-jbmono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-plex-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
   --font-heading: var(--font-sans);
 
+  /* поверхности и линии — прямые имена дизайн-кода */
+  --color-canvas: var(--bg-canvas);
+  --color-sunken: var(--bg-sunken);
+  --color-surface: var(--bg-surface);
+  --color-raised: var(--bg-raised);
+  --color-raised-hover: var(--bg-raised-hover);
+  --color-chip: var(--bg-chip);
+  --color-line: var(--line);
+  --color-line-card: var(--line-card);
+  --color-line-strong: var(--line-strong);
+  --color-line-hover: var(--line-hover);
+
+  /* четыре уровня текста */
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-text-4: var(--text-4);
+
+  /* семантика и данные */
+  --color-profit: var(--profit);
+  --color-loss: var(--loss);
+  --color-warn: var(--warn);
+  --color-zone-growth: var(--zone-growth);
+  --color-zone-growth-text: var(--zone-growth-text);
+  --color-zone-yield: var(--zone-yield);
+  --color-zone-yield-text: var(--zone-yield-text);
+  --color-zone-stability: var(--zone-stability);
+  --color-zone-stability-text: var(--zone-stability-text);
+  --color-asset-btc: var(--asset-btc);
+  --color-asset-eth: var(--asset-eth);
+  --color-asset-stable: var(--asset-stable);
+  --color-money-own: var(--money-own);
+  --color-money-borrowed: var(--money-borrowed);
+
+  /* семантические имена shadcn */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -89,8 +219,8 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--bg-raised-hover);
+  --color-accent-foreground: var(--text-1);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
@@ -99,49 +229,124 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-link: var(--link);
-  --color-chart-btc: var(--chart-btc);
-  --color-chart-eth: var(--chart-eth);
-  --color-chart-stable: var(--chart-stable);
-  --color-zone-growth: var(--zone-growth);
-  --color-zone-yield: var(--zone-yield);
-  --color-zone-stability: var(--zone-stability);
 
-  --radius-sm: calc(var(--radius) - 4px);   /* 6px  — бейджи, мелкие элементы */
-  --radius-md: calc(var(--radius) - 2px);   /* 8px  — кнопки, инпуты */
-  --radius-lg: var(--radius);               /* 10px — поповеры, алерты */
-  --radius-xl: calc(var(--radius) + 4px);   /* 14px — карточки */
+  /* радиусы: имена дизайн-кода + алиасы, на которые опираются примитивы */
+  --radius-card: 14px;
+  --radius-block: 12px;
+  --radius-control: 8px;
+  --radius-chip: 7px;
+  --radius-pill: 6px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+
+  /* Именованные шаги сетки: работают во всех размерных утилитах —
+     px-page, px-card, h-control, size-control, h-header.
+     Ширины контента здесь НЕТ намеренно: `max-w-*` в Tailwind 4 падает
+     на ту же шкалу spacing, и `max-w-page` молча означал бы 28px.
+     Ширина контента — класс .page-shell ниже. */
+  --spacing-page: 28px;
+  --spacing-card: 18px;
+  --spacing-control: 34px;
+  --spacing-header: 60px;
 }
 
-/* ------- База -------
-   В @layer base: нелейерные правила перебивали бы утилиты Tailwind
-   (border-transparent, border-warning/30 и т.д.) — база должна уступать. */
+/* ------- База ------- */
 @layer base {
-  * { border-color: var(--border); }
+  * { border-color: var(--line-card); }
 
   body {
     font-family: var(--font-sans);
-    background-color: var(--background);
-    color: var(--foreground);
-    /* Финтех-глубина: едва заметное синее «свечение» из-за верхней кромки.
-       Радиальный градиент, а не заливка: на скролле фон остается спокойным. */
-    background-image: radial-gradient(
-      80rem 36rem at 50% -12rem,
-      color-mix(in oklab, var(--primary) 8%, transparent),
-      transparent 70%
-    );
-    background-repeat: no-repeat;
-  }
-  .dark body,
-  body:where(.dark, .dark *) {
-    background-image: radial-gradient(
-      80rem 36rem at 50% -12rem,
-      color-mix(in oklab, var(--primary) 10%, transparent),
-      transparent 70%
-    );
+    background-color: var(--bg-canvas);
+    color: var(--text-1);
+    font-size: 14px;
+    line-height: 1.5;
+    /* Обязательно: числа не должны «прыгать» при обновлении данных */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* Все числовые данные: моноширинные табличные цифры */
-  .font-mono { font-variant-numeric: tabular-nums; }
+  ::selection { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+}
+
+@layer components {
+  /* Контейнер контента: 1120px по центру (дизайн-код §6).
+     «Настройки» сужают его до 840px своим max-width поверх — поэтому
+     он и остаётся в components: утилита должна его перебивать. */
+  .page-shell {
+    width: 100%;
+    max-width: var(--page-max);
+    margin-inline: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Типографические роли (дизайн-код, раздел 3). Композитные — размер, вес,
+   начертание и трекинг заданы вместе: разъединённые, они разъезжаются.
+   Mono — только денежные суммы от 24px и точные количества токенов.
+
+   Объявлены через @utility, а не в @layer components: слой components
+   проигрывает утилитам, и на примитиве с собственным `text-sm` роль молча
+   не срабатывала — размер оставался 14px.
+   ------------------------------------------------------------------------- */
+@utility t-display {
+  font: 500 42px/1.05 var(--font-mono);
+  letter-spacing: -0.035em;
+}
+/* Число экрана там, где оно делит карточку с графиком: «Историю» display
+   в 42px перевешивает, но метрикой это число тоже не является */
+@utility t-display-sm {
+  font: 500 34px/1.05 var(--font-mono);
+  letter-spacing: -0.035em;
+}
+@utility t-metric {
+  font: 500 24px/1 var(--font-mono);
+  letter-spacing: -0.03em;
+}
+/* Сумма карточки зоны и категории: крупнее метрики, но это ещё не
+   число экрана — между .t-metric и .t-display */
+@utility t-metric-lg {
+  font: 500 27px/1 var(--font-mono);
+  letter-spacing: -0.03em;
+}
+/* Проценты и ставки: Mono для них избыточен — это не деньги */
+@utility t-metric-alt {
+  font: 500 24px/1 var(--font-sans);
+  letter-spacing: -0.02em;
+}
+@utility t-metric-sm {
+  font: 500 19px/1.2 var(--font-sans);
+  letter-spacing: -0.015em;
+}
+@utility t-h1 {
+  font: 600 26px/1.2 var(--font-sans);
+  letter-spacing: -0.022em;
+}
+@utility t-h2 {
+  font: 600 17px/1.3 var(--font-sans);
+  letter-spacing: -0.015em;
+}
+@utility t-h3 {
+  font: 600 15px/1.35 var(--font-sans);
+  letter-spacing: -0.012em;
+}
+@utility t-body {
+  font: 400 14px/1.5 var(--font-sans);
+}
+@utility t-meta {
+  font: 400 12.5px/1.45 var(--font-sans);
+}
+@utility t-label {
+  font: 600 10.5px/1.2 var(--font-sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+/* Подпись оси графика — единственное место, где Mono мельче 24px */
+@utility t-axis {
+  font: 400 11.5px/1.2 var(--font-mono);
+  color: var(--text-3);
 }
 
 @media (prefers-reduced-motion: reduce) {

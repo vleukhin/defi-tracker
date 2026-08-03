@@ -1,20 +1,19 @@
 "use client";
 
-import { Camera, ChartLine, CircleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DcCard, Disclaimer, EmptyState } from "@/components/dc/card";
+import { HelpTip } from "@/components/dc/help-tip";
+import { MetaDot, PageHeader } from "@/components/dc/page-header";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type {
   SnapshotDto,
   SnapshotPeriod,
   SnapshotResponseDto,
   SnapshotsResponseDto,
 } from "@/lib/api/types";
-import { tableDate, tableUsd } from "@/lib/format";
+import { NBSP, tableDate } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { CompositionChart } from "./composition-chart";
@@ -24,13 +23,12 @@ import { SnapshotsList } from "./snapshots-list";
 import { ValueChart } from "./value-chart";
 
 /**
- * Экран «История» (Фаза 3, S3.1 + S3.2): динамика стоимости и пропорций
- * по снепшотам, список снепшотов с проваливанием в состав на дату
- * и ручной съем «Снепшот сейчас».
+ * Экран «История» (README, экран 5): динамика стоимости крупным числом,
+ * три компактные карточки количеств (главная метрика стратегии — монеты,
+ * а не доллары) и таблица снепшотов.
  *
- * Три сценария рисуются намеренно по-разному: истории нет вовсе,
- * история из одной точки (линия по одной точке — не график, а обман)
- * и полноценная серия.
+ * Три сценария рисуются намеренно по-разному: истории нет вовсе, история
+ * из одной точки (линия по одной точке — не график, а обман) и полная серия.
  */
 
 /** Ежедневный серверный снепшот (S3.1) — та же формулировка на всех экранах. */
@@ -50,11 +48,11 @@ export function HistoryScreen() {
         method: "POST",
       });
       // POST перезаписывает снепшот за сегодня — сообщение честно
-      // различает первый съем за день и повторный
+      // различает первый съём за день и повторный
       const existed =
         data?.snapshots.some((s) => s.takenOn === res.snapshot.takenOn) ??
         false;
-      const title = existed ? "Снепшот за сегодня обновлен" : "Снепшот создан";
+      const title = existed ? "Снепшот за сегодня обновлён" : "Снепшот создан";
       const reasons = res.partialReasons ?? [];
       if (reasons.length > 0) {
         toast.warning(`${title} — данные неполные`, {
@@ -80,160 +78,171 @@ export function HistoryScreen() {
   }
 
   const snapshots = data?.snapshots ?? [];
+  const periodLabel = periodFull(period);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">История</h1>
-        <Button
-          size="sm"
-          onClick={() => void takeSnapshot()}
-          disabled={taking}
-          title="Снять снепшот портфеля прямо сейчас"
-        >
-          <Camera className={cn("size-4", taking && "animate-pulse")} />
-          {taking ? "Снимаем…" : "Снепшот сейчас"}
-        </Button>
+    <TooltipProvider>
+      <div className="flex flex-col gap-4">
+        <PageHeader
+          title="История"
+          meta={
+            data === null ? (
+              <span className="inline-block h-3.5 w-48 rounded-pill bg-chip" />
+            ) : (
+              <>
+                <span>{snapshotCount(snapshots.length)}</span>
+                <MetaDot />
+                <span>{lastTaken(snapshots.at(-1) ?? null)}</span>
+                <HelpTip>
+                  {CRON_NOTE} Кнопка «Снепшот сейчас» снимает точку немедленно и
+                  перезаписывает сегодняшнюю, если она уже есть.
+                </HelpTip>
+              </>
+            )
+          }
+          action={
+            <div className="flex flex-wrap items-center gap-2.5">
+              <PeriodSwitcher period={period} onChange={setPeriod} />
+              {/* Единственная primary-кнопка экрана — создающее действие */}
+              <Button
+                onClick={() => void takeSnapshot()}
+                disabled={taking}
+                title="Снять снепшот портфеля прямо сейчас"
+              >
+                {taking ? "Снимаем…" : "Снепшот сейчас"}
+              </Button>
+            </div>
+          }
+        />
+
+        {loading && data === null && <HistorySkeleton />}
+
+        {error !== null && data === null && (
+          <DcCard as="section">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-card py-4">
+              <p className="t-body text-text-2">
+                Не удалось загрузить историю: {error}
+              </p>
+              <Button variant="outline" onClick={() => void refetch()}>
+                Повторить
+              </Button>
+            </div>
+          </DcCard>
+        )}
+
+        {data !== null && snapshots.length === 0 && (
+          <DcCard as="section">
+            <EmptyState
+              title={
+                period === "all"
+                  ? "Истории пока нет"
+                  : "За этот период снепшотов нет"
+              }
+              action={
+                period === "all" ? (
+                  <p className="t-meta max-w-md text-text-3">
+                    {CRON_NOTE} Кнопка «Снепшот сейчас» снимает первую точку — с
+                    неё и начнётся график.
+                  </p>
+                ) : (
+                  <Button variant="outline" onClick={() => setPeriod("all")}>
+                    Показать всё время
+                  </Button>
+                )
+              }
+            />
+          </DcCard>
+        )}
+
+        {data !== null && snapshots.length >= 1 && (
+          <>
+            {/* Порядок: стоимость → количества → пропорции → список.
+                Доллары отвечают на вопрос «сколько», монеты — «чего именно
+                стало больше», пропорции остаются контекстом */}
+            <ValueChart snapshots={snapshots} periodLabel={periodLabel} />
+            <QuantityCharts snapshots={snapshots} periodLabel={periodLabel} />
+            <CompositionChart snapshots={snapshots} periodLabel={periodLabel} />
+            {/* key по периоду: смена периода возвращает список на первую страницу */}
+            <SnapshotsList key={period} snapshots={snapshots} />
+          </>
+        )}
+
+        <Disclaimer />
       </div>
+    </TooltipProvider>
+  );
+}
 
-      <PeriodSwitcher period={period} onChange={setPeriod} />
+/** «31 снепшот» / «2 снепшота» / «5 снепшотов». */
+function snapshotCount(count: number): string {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  const word =
+    mod100 >= 11 && mod100 <= 14
+      ? "снепшотов"
+      : mod10 === 1
+        ? "снепшот"
+        : mod10 >= 2 && mod10 <= 4
+          ? "снепшота"
+          : "снепшотов";
+  return `${count}${NBSP}${word}`;
+}
 
-      {loading && !data && (
-        <>
-          <Skeleton className="h-64 rounded-xl" aria-hidden="true" />
-          <Skeleton className="h-44 rounded-xl" aria-hidden="true" />
-        </>
-      )}
+/** «последний сегодня в 09:14 UTC» — время съёма, а не время загрузки. */
+function lastTaken(snapshot: SnapshotDto | null): string {
+  if (snapshot === null) return "снепшотов нет";
+  const time = new Date(snapshot.takenAt).toISOString().slice(11, 16);
+  const today = new Date().toISOString().slice(0, 10);
+  const when =
+    snapshot.takenOn === today ? "сегодня" : tableDate(snapshot.takenOn);
+  return `последний ${when} в ${time}${NBSP}UTC`;
+}
 
-      {error && !data && (
-        <Alert variant="destructive">
-          <CircleAlert className="size-4" />
-          <AlertTitle>Не удалось загрузить историю: {error}</AlertTitle>
-          <AlertDescription>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void refetch()}
-              className="mt-2"
-            >
-              Повторить
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+/**
+ * Скелетоны в цвете --bg-chip размерами конечных элементов: крупные числа
+ * не заменяются спиннером, место под них держится (README, «Loading»).
+ */
+function HistorySkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col gap-4">
+      <DcCard as="section">
+        <div className="flex flex-wrap items-end justify-between gap-4 px-5 pt-[18px] pb-3.5">
+          <div className="flex flex-col gap-2.5">
+            <Bar className="h-2.5 w-36" />
+            <Bar className="h-8 w-52" />
+          </div>
+          <div className="flex gap-7">
+            <div className="flex flex-col items-end gap-2">
+              <Bar className="h-2.5 w-20" />
+              <Bar className="h-4 w-28" />
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <Bar className="h-2.5 w-28" />
+              <Bar className="h-4 w-36" />
+            </div>
+          </div>
+        </div>
+        <div className="border-line border-t bg-sunken px-4 py-4">
+          <Bar className="h-[150px] w-full sm:h-[190px]" />
+          <Bar className="mt-3 h-3 w-full" />
+        </div>
+      </DcCard>
 
-      {data !== null && snapshots.length === 0 && (
-        <EmptyState period={period} onAllTime={() => setPeriod("all")} />
-      )}
-
-      {data !== null && snapshots.length === 1 && (
-        <SinglePointCard snapshot={snapshots[0]} />
-      )}
-
-      {data !== null && snapshots.length >= 2 && (
-        <ValueChart snapshots={snapshots} periodLabel={periodFull(period)} />
-      )}
-
-      {/* Порядок: стоимость → количество → пропорции → список. Две
-          динамики (доллары и монеты) идут первыми, пропорции — контекст */}
-      {data !== null && snapshots.length >= 1 && (
-        <>
-          <QuantityCharts
-            snapshots={snapshots}
-            periodLabel={periodFull(period)}
-          />
-          <CompositionChart
-            snapshots={snapshots}
-            periodLabel={periodFull(period)}
-          />
-          {/* key по периоду: смена периода возвращает список на первую страницу */}
-          <SnapshotsList key={period} snapshots={snapshots} />
-        </>
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        {CRON_NOTE} Пропущенные дни на графиках остаются разрывами — история не
-        достраивается расчетом.
-      </p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {["btc", "eth", "stable"].map((key) => (
+          <DcCard key={key}>
+            <div className="flex flex-col gap-2.5 px-card pt-4 pb-3">
+              <Bar className="h-3 w-32" />
+              <Bar className="h-5 w-24" />
+            </div>
+            <Bar className="h-[88px] w-full rounded-none" />
+          </DcCard>
+        ))}
+      </div>
     </div>
   );
 }
 
-/** Истории нет: за выбранный период или вообще. */
-function EmptyState({
-  period,
-  onAllTime,
-}: {
-  period: SnapshotPeriod;
-  onAllTime: () => void;
-}) {
-  const narrowed = period !== "all";
-  return (
-    <Card className="p-6 text-center">
-      <div className="mb-3 flex justify-center">
-        <ChartLine
-          aria-hidden="true"
-          className="size-6 text-muted-foreground opacity-60"
-        />
-      </div>
-      <p className="text-base font-medium">
-        {narrowed ? "За этот период снепшотов нет" : "Истории пока нет"}
-      </p>
-      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        {narrowed
-          ? `${CRON_NOTE} Возможно, история началась раньше выбранного периода.`
-          : `${CRON_NOTE} Кнопка «Снепшот сейчас» снимает точку немедленно — с нее и начнется график.`}
-      </p>
-      {narrowed && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-4"
-          onClick={onAllTime}
-        >
-          Показать все время
-        </Button>
-      )}
-    </Card>
-  );
-}
-
-/** Одна точка: линия по ней была бы вымыслом — показываем сам факт. */
-function SinglePointCard({ snapshot }: { snapshot: SnapshotDto }) {
-  return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="text-sm font-semibold">Стоимость портфеля</h2>
-        {snapshot.isPartial && <Badge variant="warning">частичный</Badge>}
-      </div>
-      <div className="mt-3 flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className={cn(
-            "size-3 shrink-0 rounded-full",
-            snapshot.isPartial
-              ? "border-2 border-warning bg-background"
-              : "bg-primary",
-          )}
-        />
-        <div>
-          <p className="font-mono text-2xl leading-none font-semibold tracking-tight">
-            {tableUsd(snapshot.totalUsd)}
-          </p>
-          <p className="mt-1.5 font-mono text-xs text-muted-foreground">
-            {tableDate(snapshot.takenOn)}
-          </p>
-        </div>
-      </div>
-      {/* Пользователь ищет графики динамики и не находит их: у одной точки
-          нет ни кривой стоимости, ни кривой количества. Говорим прямо,
-          чего именно не хватает и когда это появится — данные при этом
-          не достраиваются ни расчетом, ни задним числом */}
-      <p className="mt-3 text-sm text-muted-foreground">
-        Пока только одна точка — графикам динамики нужна минимум вторая.
-        Кривые стоимости портфеля и количества монет (BTC, ETH, стейблы)
-        появятся со второго снепшота. {CRON_NOTE}
-      </p>
-    </Card>
-  );
+function Bar({ className }: { className?: string }) {
+  return <span className={cn("block rounded-pill bg-chip", className)} />;
 }

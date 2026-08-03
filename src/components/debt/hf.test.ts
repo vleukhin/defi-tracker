@@ -48,9 +48,9 @@ describe("formatHf", () => {
 });
 
 describe("formatHfThreshold", () => {
-  it("хвостовые нули срезаются", () => {
-    expect(formatHfThreshold(1.5)).toBe("1,5");
-    expect(formatHfThreshold(2)).toBe("2");
+  it("два знака всегда — порог стоит рядом с HF и точкой ликвидации", () => {
+    expect(formatHfThreshold(1.5)).toBe("1,50");
+    expect(formatHfThreshold(2)).toBe("2,00");
   });
 
   it("значимые знаки сохраняются", () => {

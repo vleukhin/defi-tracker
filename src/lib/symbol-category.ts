@@ -18,6 +18,11 @@ import { isStableSymbol } from "@/lib/stables";
 const BTC_SYMBOLS = new Set([
   "BTC",
   "WBTC",
+  // Мостовые варианты пишутся суффиксом (как USDC.E в stables.ts).
+  // WBTC.b — рынок BTC/USD у GMX на Arbitrum: без него BTC-пул терял
+  // цель 70% и подписывался «рынок вне двух базовых активов».
+  "WBTC.B",
+  "WBTC.E",
   "CBBTC",
   "TBTC",
   "LBTC",
@@ -30,6 +35,7 @@ const BTC_SYMBOLS = new Set([
 const ETH_SYMBOLS = new Set([
   "ETH",
   "WETH",
+  "WETH.E",
   "STETH",
   "WSTETH",
   "WEETH",
@@ -55,8 +61,9 @@ export function symbolCategory(symbol: string): PortfolioCategory | null {
 /** Цвет категории — только заливкой (точки, сегменты полос), не текстом. */
 export function categoryColor(symbol: string): string {
   const category = symbolCategory(symbol);
-  if (category === "btc") return "var(--color-chart-btc)";
-  if (category === "eth") return "var(--color-chart-eth)";
-  if (category === "stable") return "var(--color-chart-stable)";
-  return "var(--color-muted-foreground)";
+  if (category === "btc") return "var(--asset-btc)";
+  if (category === "eth") return "var(--asset-eth)";
+  if (category === "stable") return "var(--asset-stable)";
+  // Токен вне трёх категорий: красить его категорийным цветом было бы враньём
+  return "var(--text-3)";
 }

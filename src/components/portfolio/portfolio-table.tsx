@@ -1,47 +1,45 @@
 "use client";
 
-import { ChevronRight, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
-import { pnlClass } from "@/components/pnl";
-import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DcCard } from "@/components/dc/card";
+import { HelpTip } from "@/components/dc/help-tip";
+import { Dash, DcTable, Td, Th, TotalRow, Tr } from "@/components/dc/table";
 import type { PortfolioRowDto } from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
   chainLabel,
+  dcUsd,
+  dcUsdSigned,
   tableNumber,
-  tableQuantity,
   tablePct,
   tablePctSigned,
+  tableQuantity,
   tableSigned,
   tableUsd,
-  tableUsdSigned,
   usdDecimals,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CATEGORY_VAR, CategoryDot } from "./category";
+import { CategoryDot } from "./category";
 
 /**
- * Таблица портфеля в виде рабочей таблицы пользователя (S1.7):
- * сетка с границами ячеек, числа выровнены по правому краю, десятичная
- * запятая, фиксированная точность с сохранением нулей, итог — в колонке
- * стоимости. Столбцы 1:1 повторяют исходную таблицу:
- * Количество · Стоимость USD · Цена · Доля · Цель · Отклонение · К ребалансировке.
+ * Таблица портфеля: три категории по колонкам «сколько — почём — какая
+ * доля — насколько мимо цели».
  *
- * Отделка — «Terminal Blue» (ТЗ §5.1.6): структура не меняется, зебры нет
- * (сетка границ уже структурирует), числа — JetBrains Mono.
+ * Ширины не хватает на десять колонок ниже 900px, и таблица получает
+ * горизонтальный скролл, а не разваливается в список «label — значение»:
+ * ради сравнения строк между собой она здесь и стоит.
  *
- * На узких экранах (< md) сетка заменяется стеком карточек: таблица из
- * восьми колонок на 375 px нечитаема.
+ * Цветом отмечено ровно две вещи: отклонение за порогом (warn) и P/L
+ * (profit/loss). Строка целиком не красится никогда — отрицательный P/L
+ * не делает всю категорию «плохой».
  */
+
+const REBALANCE_HINT =
+  "Сколько нужно купить или продать, чтобы вернуть долю к цели. Расчёт, а не финансовый совет.";
+const NO_AVG_HINT = "нет данных о цене покупки";
+const STALE_PRICE_HINT = "Цена устарела: не удалось обновить";
 
 /** Знаков в количестве: у стейблов дробная часть не нужна. */
 function amountDecimals(unit: string): number {
@@ -51,7 +49,7 @@ function amountDecimals(unit: string): number {
 /**
  * Точность количества к ребалансировке подстраивается под масштаб:
  * −0,071486 BTC нужно видеть целиком, а у −3 732,86 ETH шесть знаков
- * только ломают верстку.
+ * только ломают вёрстку.
  */
 function balanceDecimals(unit: string, value: number): number {
   if (unit === "USD") return 0;
@@ -67,104 +65,239 @@ function balanceHint(value: number, unit: string): string {
   return value > 0 ? `Купить ${body}` : `Продать ${body}`;
 }
 
-/** Отклонение за порогом — warning; направление уже кодируется знаком. */
-function deviationClass(diff: number): string {
-  return Math.abs(diff) > DEVIATION_THRESHOLD_PP
-    ? "font-medium text-warning"
-    : "";
+function pnlClass(value: number): string {
+  if (value > 0) return "text-profit";
+  if (value < 0) return "text-loss";
+  return "text-text-2";
 }
 
-/** «К ребалансировке»: плюс — купить (success), минус — продать (destructive). */
-function balanceClass(value: number): string {
-  if (value > 0) return "text-success";
-  if (value < 0) return "text-destructive";
-  return "";
-}
-
-const COLUMNS = [
-  "Количество",
-  "Стоимость USD",
-  "Цена",
-  "Доля",
-  "Цель",
-  "Отклонение",
-  "К ребалансировке",
-  // Фаза 2 (S2.2): средняя цена покупки и unrealized P/L из леджера сделок
-  "Средняя",
-  "P/L",
-];
-
-/** «—» без данных леджера: нет цены покупки — не фиктивный ноль (S2.2). */
-const NO_AVG_TITLE = "нет данных о цене покупки";
-
-/** Средняя цена покупки: null-safe. */
-function AvgPriceValue({ value }: { value: number | null }) {
-  if (value === null) {
-    return (
-      <span className="text-muted-foreground" title={NO_AVG_TITLE}>
-        —
-      </span>
-    );
-  }
-  return <>{tableUsd(value, usdDecimals(value))}</>;
-}
-
-/**
- * Unrealized P/L: «+$1 234 (+5,2%)», цвет по знаку; null → «—».
- * Доллары и процент — отдельные flex-элементы: при нехватке ширины
- * (десять колонок в max-w-5xl) процент переносится на вторую строку,
- * и таблица остается без внутреннего скролла.
- */
-function UnrealizedPnlValue({
-  usd,
-  pct,
-}: {
-  usd: number | null;
-  pct: number | null;
-}) {
-  if (usd === null) {
-    return (
-      <span className="text-muted-foreground" title={NO_AVG_TITLE}>
-        —
-      </span>
-    );
-  }
+function hasWarnings(row: PortfolioRowDto): boolean {
   return (
-    <span
-      className={cn(
-        "inline-flex max-w-full flex-wrap justify-end gap-x-1",
-        pnlClass(usd),
-      )}
-    >
-      <span>{tableUsdSigned(usd, usdDecimals(usd))}</span>
-      {pct !== null && <span>({tablePctSigned(pct, 1)})</span>}
-    </span>
+    row.warnings.length > 0 ||
+    row.ledger.warnings.length > 0 ||
+    row.ledger.discrepancy !== null
+  );
+}
+
+export function PortfolioTable({
+  rows,
+  totalUsd,
+}: {
+  rows: PortfolioRowDto[];
+  totalUsd: number;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+
+  const pnlRows = rows.filter((r) => r.ledger.unrealizedPnlUsd !== null);
+  const totalPnl =
+    pnlRows.length === 0
+      ? null
+      : pnlRows.reduce((sum, r) => sum + (r.ledger.unrealizedPnlUsd ?? 0), 0);
+
+  return (
+    <DcCard>
+      <DcTable minWidth={980}>
+        <thead>
+          <tr>
+            <Th>Актив</Th>
+            <Th numeric>Кол-во</Th>
+            <Th numeric>Стоимость</Th>
+            <Th numeric>Цена</Th>
+            <Th numeric>Доля</Th>
+            <Th numeric>Цель</Th>
+            <Th numeric>Отклон., п.п.</Th>
+            <Th numeric>
+              <span className="inline-flex items-center gap-1.5">
+                К ребаланс.
+                <HelpTip>{REBALANCE_HINT}</HelpTip>
+              </span>
+            </Th>
+            <Th numeric>Средняя</Th>
+            <Th numeric>P/L</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const expanded = open === row.category;
+            const beyond =
+              row.percentDiff !== null &&
+              Math.abs(row.percentDiff) > DEVIATION_THRESHOLD_PP;
+            const pnl = row.ledger.unrealizedPnlUsd;
+
+            return (
+              <Fragment key={row.category}>
+                <Tr>
+                  <Td className="font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setOpen(expanded ? null : row.category)}
+                      aria-expanded={expanded}
+                      className="flex items-center gap-2 rounded-pill text-[13.5px] outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      <span
+                        aria-hidden
+                        className="w-[9px] text-[11px] text-text-4"
+                      >
+                        {expanded ? "▾" : "▸"}
+                      </span>
+                      <CategoryDot category={row.category} size={7} />
+                      {row.label}
+                    </button>
+                  </Td>
+
+                  <Td numeric mono>
+                    {row.amount === null ? (
+                      <span className="font-sans text-text-3">нет цены</span>
+                    ) : (
+                      tableNumber(row.amount, amountDecimals(row.unit))
+                    )}
+                  </Td>
+
+                  <Td numeric mono>
+                    {dcUsd(row.amountUsd)}
+                  </Td>
+
+                  <Td numeric mono muted>
+                    {row.price === null ? <Dash /> : tableUsd(row.price, usdDecimals(row.price))}
+                    {row.priceStale && (
+                      <span className="ml-1.5" title={STALE_PRICE_HINT}>
+                        <TriangleAlert
+                          aria-hidden="true"
+                          className="inline size-3 text-warn"
+                        />
+                      </span>
+                    )}
+                  </Td>
+
+                  <Td numeric>{tablePct(row.percent)}</Td>
+
+                  <Td numeric muted>
+                    {row.targetPercent === null ? (
+                      <Dash />
+                    ) : (
+                      tablePct(row.targetPercent)
+                    )}
+                  </Td>
+
+                  <Td numeric className={cn(beyond && "font-medium text-warn")}>
+                    {/* Отклонение от цели — процентные пункты, а не проценты
+                        (§4): «доля 53,02%» и «на 3,02 п.п. выше цели» —
+                        разные величины, и карточка над таблицей пишет п.п. */}
+                    {row.percentDiff === null ? (
+                      <Dash />
+                    ) : (
+                      tableSigned(row.percentDiff, 2)
+                    )}
+                  </Td>
+
+                  <Td numeric mono muted>
+                    {row.amountToBalance === null ? (
+                      <Dash />
+                    ) : (
+                      <span title={balanceHint(row.amountToBalance, row.unit)}>
+                        {tableSigned(
+                          row.amountToBalance,
+                          balanceDecimals(row.unit, row.amountToBalance),
+                        )}
+                      </span>
+                    )}
+                  </Td>
+
+                  <Td numeric mono muted>
+                    {row.ledger.avgPriceUsd === null ? (
+                      <span title={NO_AVG_HINT}>
+                        <Dash />
+                      </span>
+                    ) : (
+                      tableUsd(
+                        row.ledger.avgPriceUsd,
+                        usdDecimals(row.ledger.avgPriceUsd),
+                      )
+                    )}
+                  </Td>
+
+                  <Td numeric>
+                    {pnl === null ? (
+                      <span title={NO_AVG_HINT}>
+                        <Dash />
+                      </span>
+                    ) : (
+                      <span className={cn("flex flex-col items-end gap-px", pnlClass(pnl))}>
+                        <span className="font-mono">{dcUsdSigned(pnl)}</span>
+                        {row.ledger.unrealizedPnlPct !== null && (
+                          <span className="text-[12px] opacity-80">
+                            {tablePctSigned(row.ledger.unrealizedPnlPct, 1)}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </Td>
+                </Tr>
+
+                {hasWarnings(row) && (
+                  <tr className="border-line border-b">
+                    <td colSpan={10} className="bg-sunken px-card py-2">
+                      <RowWarnings row={row} />
+                    </td>
+                  </tr>
+                )}
+
+                {expanded && (
+                  <tr className="border-line border-b">
+                    <td colSpan={10} className="bg-sunken px-card py-3">
+                      <RowDetail row={row} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <TotalRow>
+            <Td muted>Итого</Td>
+            <Td />
+            <Td numeric mono className="font-medium">
+              {dcUsd(totalUsd)}
+            </Td>
+            <Td />
+            <Td numeric muted>
+              {tablePct(100)}
+            </Td>
+            <Td />
+            <Td />
+            <Td />
+            <Td />
+            <Td numeric mono className={totalPnl === null ? "" : pnlClass(totalPnl)}>
+              {totalPnl === null ? <Dash /> : dcUsdSigned(totalPnl)}
+            </Td>
+          </TotalRow>
+        </tfoot>
+      </DcTable>
+    </DcCard>
   );
 }
 
 /**
- * Предупреждения строки: деградация данных (Фаза 1) + аномалии леджера и
- * мягкое расхождение «леджер ↔ факт» со ссылкой на сверку (S2.2).
+ * Предупреждения строки: деградация данных и мягкое расхождение
+ * «леджер ↔ факт». Фон строки цветом не красится — предупреждение несёт
+ * чип-подобная подпись, а не заливка (§2).
  */
 function RowWarnings({ row }: { row: PortfolioRowDto }) {
   const { discrepancy } = row.ledger;
   return (
-    <>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] whitespace-normal text-warn">
       {[...row.warnings, ...row.ledger.warnings].map((w) => (
-        <span key={w} className="mr-3 inline-flex items-center gap-1">
-          <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
-          {w}
-        </span>
+        <span key={w}>{w}</span>
       ))}
       {discrepancy !== null && (
-        <span className="mr-3 inline-flex flex-wrap items-center gap-1">
-          <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
+        <span className="flex flex-wrap items-center gap-x-1.5">
           <span>
-            Леджер:{" "}
+            Леджер{" "}
             <span className="font-mono">
               {tableNumber(discrepancy.ledgerQty, amountDecimals(row.unit))}
             </span>{" "}
-            {row.unit}, факт:{" "}
+            {row.unit}, факт{" "}
             <span className="font-mono">
               {tableNumber(discrepancy.actualQty, amountDecimals(row.unit))}
             </span>{" "}
@@ -176,429 +309,64 @@ function RowWarnings({ row }: { row: PortfolioRowDto }) {
           </span>
           <Link
             href="/trades"
-            className="underline underline-offset-4 hover:text-foreground"
+            className="text-link underline-offset-4 hover:underline"
           >
             Сверить в сделках
           </Link>
         </span>
       )}
-    </>
+    </div>
   );
 }
 
-/** Есть ли что показывать в строке предупреждений. */
-function hasRowWarnings(row: PortfolioRowDto): boolean {
-  return (
-    row.warnings.length > 0 ||
-    row.ledger.warnings.length > 0 ||
-    row.ledger.discrepancy !== null
-  );
-}
-
-/** Общие классы ячейки: границы сетки + числа mono по правому краю. */
-/* px-2, не px-3: с колонками «Средняя» и «P/L» таблица из десяти колонок
-   на px-3 шире контейнера max-w-5xl и получала внутренний скролл. */
-const CELL = "border border-border px-2 py-2 text-right font-mono text-sm";
-const HEAD =
-  "h-auto border border-border bg-muted/60 px-2 py-2 text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground";
-
-export function PortfolioTable({
-  rows,
-  totalUsd,
-}: {
-  rows: PortfolioRowDto[];
-  totalUsd: number;
-}) {
-  const [openCategory, setOpenCategory] = useState<string | null>(null);
-
-  return (
-    <>
-      {/* Табличный вид — от md и шире */}
-      <Card className="hidden overflow-hidden p-0 md:block">
-        <Table className="border-collapse">
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              {/* Угловая ячейка пустая — как в исходной таблице */}
-              <TableHead className={`${HEAD} text-left`} />
-              {COLUMNS.map((c) => (
-                <TableHead key={c} className={`${HEAD} text-right`} scope="col">
-                  {c}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => {
-              const open = openCategory === row.category;
-              const detailCount =
-                row.collateralDetail.length + row.manualEntries.length;
-              return (
-                <Fragment key={row.category}>
-                  <TableRow className="transition-colors duration-120 hover:bg-accent/50">
-                    <th
-                      scope="row"
-                      className="border border-border px-2 py-2 text-left font-normal"
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenCategory(open ? null : row.category)
-                        }
-                        aria-expanded={open}
-                        className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                        title={
-                          detailCount > 0
-                            ? "Показать состав"
-                            : "Состав пока пуст"
-                        }
-                      >
-                        <ChevronRight
-                          aria-hidden="true"
-                          className={cn(
-                            "size-3.5 text-muted-foreground transition-transform duration-150",
-                            open && "rotate-90",
-                          )}
-                        />
-                        <CategoryDot category={row.category} />
-                        {row.label}
-                      </button>
-                    </th>
-
-                    <TableCell className={CELL}>
-                      {row.amount === null ? (
-                        <span className="font-sans text-muted-foreground">
-                          нет цены
-                        </span>
-                      ) : (
-                        tableNumber(row.amount, amountDecimals(row.unit))
-                      )}
-                    </TableCell>
-
-                    <TableCell className={CELL}>
-                      {tableUsd(row.amountUsd)}
-                    </TableCell>
-
-                    <TableCell className={CELL}>
-                      {row.price === null ? "—" : tableUsd(row.price)}
-                      {row.priceStale && (
-                        // Существующая подсказка сохраняется (ТЗ §6.2)
-                        <span
-                          className="ml-1"
-                          title="Цена устарела: не удалось обновить"
-                        >
-                          <TriangleAlert
-                            aria-hidden="true"
-                            className="inline size-3 text-warning"
-                          />
-                        </span>
-                      )}
-                    </TableCell>
-
-                    <TableCell className={CELL}>
-                      {tablePct(row.percent)}
-                    </TableCell>
-
-                    <TableCell className={CELL}>
-                      {row.targetPercent === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        tablePct(row.targetPercent)
-                      )}
-                    </TableCell>
-
-                    <TableCell
-                      className={`${CELL} ${
-                        row.percentDiff === null
-                          ? ""
-                          : deviationClass(row.percentDiff)
-                      }`}
-                    >
-                      {row.percentDiff === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        tablePctSigned(row.percentDiff)
-                      )}
-                    </TableCell>
-
-                    <TableCell
-                      className={`${CELL} ${
-                        row.amountToBalance === null
-                          ? ""
-                          : balanceClass(row.amountToBalance)
-                      }`}
-                    >
-                      {row.amountToBalance === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span title={balanceHint(row.amountToBalance, row.unit)}>
-                          {tableSigned(
-                            row.amountToBalance,
-                            balanceDecimals(row.unit, row.amountToBalance),
-                          )}
-                        </span>
-                      )}
-                    </TableCell>
-
-                    <TableCell className={CELL}>
-                      <AvgPriceValue value={row.ledger.avgPriceUsd} />
-                    </TableCell>
-
-                    <TableCell className={CELL}>
-                      <UnrealizedPnlValue
-                        usd={row.ledger.unrealizedPnlUsd}
-                        pct={row.ledger.unrealizedPnlPct}
-                      />
-                    </TableCell>
-                  </TableRow>
-
-                  {hasRowWarnings(row) && (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell
-                        colSpan={COLUMNS.length + 1}
-                        className="border border-border bg-warning/10 px-3 py-1.5 text-xs whitespace-normal text-warning"
-                      >
-                        <RowWarnings row={row} />
-                      </TableCell>
-                    </TableRow>
-                  )}
-
-                  {open && (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell
-                        colSpan={COLUMNS.length + 1}
-                        className="border border-border bg-muted/40 px-3 py-2"
-                        style={{
-                          boxShadow: `inset 2px 0 0 ${CATEGORY_VAR[row.category]}`,
-                        }}
-                      >
-                        <RowDetail row={row} />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              );
-            })}
-
-            {/* Итог — в колонке стоимости, как в исходной таблице */}
-            <TableRow className="hover:bg-transparent">
-              <th scope="row" className={`${HEAD} text-left`} />
-              <TableCell className={`${CELL} bg-muted/60`} />
-              <TableCell className={`${CELL} bg-muted/60 font-semibold`}>
-                {tableUsd(totalUsd)}
-              </TableCell>
-              <TableCell className={`${CELL} bg-muted/60`} colSpan={7} />
-            </TableRow>
-          </TableBody>
-        </Table>
-      </Card>
-
-      {/* Мобильный вид: восемь колонок на 375 px нечитаемы */}
-      <Card className="p-0 md:hidden">
-        <ul className="divide-y divide-border">
-          {rows.map((row) => (
-            <MobileCard
-              key={row.category}
-              row={row}
-              open={openCategory === row.category}
-              onToggle={() =>
-                setOpenCategory(
-                  openCategory === row.category ? null : row.category,
-                )
-              }
-            />
-          ))}
-          <li className="flex items-baseline justify-between rounded-b-xl bg-muted/60 px-4 py-2.5">
-            <span className="text-sm text-muted-foreground">Итого</span>
-            <span className="font-mono text-base font-semibold">
-              {tableUsd(totalUsd)}
-            </span>
-          </li>
-        </ul>
-      </Card>
-    </>
-  );
-}
-
-function MobileCard({
-  row,
-  open,
-  onToggle,
-}: {
-  row: PortfolioRowDto;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const pairs: [string, React.ReactNode][] = [
-    [
-      "Количество",
-      row.amount === null ? (
-        <span className="font-sans text-muted-foreground">нет цены</span>
-      ) : (
-        tableNumber(row.amount, amountDecimals(row.unit))
-      ),
-    ],
-    ["Стоимость USD", tableUsd(row.amountUsd)],
-    [
-      "Цена",
-      row.price === null ? (
-        "—"
-      ) : (
-        <>
-          {tableUsd(row.price)}
-          {row.priceStale && (
-            <span className="ml-1" title="Цена устарела: не удалось обновить">
-              <TriangleAlert
-                aria-hidden="true"
-                className="inline size-3 text-warning"
-              />
-            </span>
-          )}
-        </>
-      ),
-    ],
-    ["Доля", tablePct(row.percent)],
-    ["Цель", row.targetPercent === null ? "—" : tablePct(row.targetPercent)],
-    [
-      "Отклонение",
-      row.percentDiff === null ? (
-        "—"
-      ) : (
-        <span className={deviationClass(row.percentDiff)}>
-          {tablePctSigned(row.percentDiff)}
-        </span>
-      ),
-    ],
-    [
-      "К ребалансировке",
-      row.amountToBalance === null ? (
-        "—"
-      ) : (
-        <span className={balanceClass(row.amountToBalance)}>
-          {tableSigned(
-            row.amountToBalance,
-            balanceDecimals(row.unit, row.amountToBalance),
-          )}
-        </span>
-      ),
-    ],
-    ["Средняя", <AvgPriceValue key="avg" value={row.ledger.avgPriceUsd} />],
-    [
-      "P/L",
-      <UnrealizedPnlValue
-        key="pnl"
-        usd={row.ledger.unrealizedPnlUsd}
-        pct={row.ledger.unrealizedPnlPct}
-      />,
-    ],
-  ];
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="w-full px-4 py-3 text-left outline-none transition-colors duration-120 active:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <span className="flex items-center gap-1.5">
-          <ChevronRight
-            aria-hidden="true"
-            className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
-              open && "rotate-90",
-            )}
-          />
-          <CategoryDot category={row.category} />
-          <span className="text-sm font-medium">{row.label}</span>
-          <span className="ml-auto font-mono text-sm font-semibold">
-            {tableUsd(row.amountUsd)}
-          </span>
-        </span>
-        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
-          {pairs.slice(0, 1).concat(pairs.slice(2)).map(([label, value]) => (
-            <div key={label}>
-              <dt className="text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground">
-                {label}
-              </dt>
-              <dd className="font-mono text-sm">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </button>
-
-      {hasRowWarnings(row) && (
-        <div className="bg-warning/10 px-4 py-1.5 text-xs text-warning">
-          <RowWarnings row={row} />
-        </div>
-      )}
-
-      {open && (
-        <div
-          className="bg-muted/40 px-4 py-2"
-          style={{
-            boxShadow: `inset 2px 0 0 ${CATEGORY_VAR[row.category]}`,
-          }}
-        >
-          <RowDetail row={row} />
-        </div>
-      )}
-    </li>
-  );
-}
-
-/** Состав категории: залог по сетям и ручные записи. */
+/** Состав категории: залог в лендинге и ручные записи. */
 function RowDetail({ row }: { row: PortfolioRowDto }) {
   const empty =
     row.collateralDetail.length === 0 && row.manualEntries.length === 0;
 
   if (empty) {
     return (
-      <p className="text-xs text-muted-foreground">
-        Пока пусто. Залог подтянется из лендинга, остальное вносится вручную на
-        странице «Цели и записи».
+      <p className="t-meta text-text-3">
+        Пока пусто. Залог подтянется из лендинга, остальное вносится вручную
+        на странице «Цели».
       </p>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-3">
       {row.collateralDetail.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            Залог в лендинге ·{" "}
-            <span className="font-mono">
-              {tableUsd(row.breakdown.collateralUsd)}
-            </span>
+          <p className="t-label">
+            Залог в лендинге · {dcUsd(row.breakdown.collateralUsd)}
           </p>
-          <ul className="mt-0.5 divide-y divide-border text-sm">
+          <ul className="mt-1.5 flex flex-col gap-1">
             {row.collateralDetail.map((d) => (
               <li
                 key={`${d.walletId}-${d.chain}-${d.symbol}`}
-                className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
+                className="flex flex-wrap items-baseline justify-between gap-x-4 text-[13px]"
               >
                 <span>
                   {d.symbol}
-                  <span className="ml-1.5 text-xs text-muted-foreground">
+                  <span className="ml-2 text-[12px] text-text-3">
                     {chainLabel(d.chain)}
                     {d.walletLabel ? ` · ${d.walletLabel}` : ""}
                   </span>
                 </span>
                 <span
-                  className="font-mono text-muted-foreground"
+                  className="font-mono text-text-2"
                   title={tableQuantity(d.quantity, true)}
                 >
                   {tableQuantity(d.quantity)}
                   {d.priceUsd === null ? (
-                    <span className="ml-1.5 font-sans text-warning">
-                      нет цены
-                    </span>
+                    <span className="ml-2 font-sans text-warn">нет цены</span>
                   ) : (
                     <>
-                      <span className="mx-1.5">×</span>
-                      {tableUsd(d.priceUsd)}
-                      <span className="mx-1.5">=</span>
-                      <span className="font-medium text-foreground">
-                        {tableUsd(d.valueUsd)}
+                      <span className="mx-1.5 text-text-4">×</span>
+                      {tableUsd(d.priceUsd, usdDecimals(d.priceUsd))}
+                      <span className="mx-1.5 text-text-4">=</span>
+                      <span className="font-medium text-text-1">
+                        {dcUsd(d.valueUsd)}
                       </span>
                     </>
                   )}
@@ -611,25 +379,22 @@ function RowDetail({ row }: { row: PortfolioRowDto }) {
 
       {row.manualEntries.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            Внесено вручную ·{" "}
-            <span className="font-mono">
-              {tableUsd(row.breakdown.manualUsd)}
-            </span>
+          <p className="t-label">
+            Внесено вручную · {dcUsd(row.breakdown.manualUsd)}
           </p>
-          <ul className="mt-0.5 divide-y divide-border text-sm">
+          <ul className="mt-1.5 flex flex-col gap-1">
             {row.manualEntries.map((m) => (
               <li
                 key={m.id}
-                className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"
+                className="flex flex-wrap items-baseline justify-between gap-x-4 text-[13px]"
               >
                 <span>{m.label}</span>
-                <span className="font-mono text-muted-foreground">
+                <span className="font-mono text-text-2">
                   {tableQuantity(m.amount)}
-                  <span className="ml-1 font-sans text-xs">{row.unit}</span>
-                  <span className="mx-1.5">=</span>
-                  <span className="font-medium text-foreground">
-                    {tableUsd(m.valueUsd)}
+                  <span className="ml-1 font-sans text-[12px]">{row.unit}</span>
+                  <span className="mx-1.5 text-text-4">=</span>
+                  <span className="font-medium text-text-1">
+                    {dcUsd(m.valueUsd)}
                   </span>
                 </span>
               </li>

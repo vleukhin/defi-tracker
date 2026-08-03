@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Логомарк «Terminal Blue» (ТЗ §4.4): три вертикальные скругленные полоски
- * категорийных цветов — эхо полосы аллокации (BTC / ETH / Stablecoins),
- * высоты 16/10/13 из 16. Инлайн-SVG, без файлов-ассетов.
- * size="sm" — навигация (16px), size="lg" — auth-экраны (24px).
+ * Знак продукта (README, «Assets»): три полосы возрастающей высоты цветами
+ * зон Growth / Yield / Stability. Знак говорит про зоны, а не про категории:
+ * зоны — то, как стратегия делит капитал по задачам, и это её главный разрез.
+ *
+ * Вариант «в плитке» — 24–30px, radius 7–9, на --bg-chip с обводкой.
  */
 export function LogoMark({
   size = "sm",
@@ -13,37 +14,56 @@ export function LogoMark({
   size?: "sm" | "lg";
   className?: string;
 }) {
-  const px = size === "lg" ? 24 : 16;
+  const box = size === "lg" ? 30 : 24;
+  const scale = box / 24;
   return (
-    <svg
-      width={px}
-      height={px}
-      viewBox="0 0 16 16"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      className={cn("shrink-0", className)}
+    <span
+      aria-hidden
+      className={cn(
+        "inline-flex shrink-0 items-end rounded-[7px] border border-line-strong bg-chip",
+        className,
+      )}
+      style={{
+        width: box,
+        height: box,
+        gap: 2.5 * scale,
+        padding: `${4 * scale}px ${4 * scale}px ${5 * scale}px`,
+      }}
     >
-      {/* Полоски прижаты к низу — мотив стековой полосы аллокации */}
-      <rect x="0" y="0" width="4" height="16" rx="2" className="fill-chart-btc" />
-      <rect x="6" y="6" width="4" height="10" rx="2" className="fill-chart-eth" />
-      <rect x="12" y="3" width="4" height="13" rx="2" className="fill-chart-stable" />
-    </svg>
+      <span
+        className="rounded-[1px] bg-[var(--zone-growth)]"
+        style={{ width: 3 * scale, height: 6 * scale }}
+      />
+      <span
+        className="rounded-[1px] bg-[var(--zone-yield)]"
+        style={{ width: 3 * scale, height: 10 * scale }}
+      />
+      <span
+        className="rounded-[1px] bg-[var(--zone-stability)]"
+        style={{ width: 3 * scale, height: 14 * scale }}
+      />
+    </span>
   );
 }
 
+/**
+ * Имя продукта: «DeFi» основным цветом, «Portfolio» — --text-3 весом 450.
+ * Два начертания одного шрифта, а не два шрифта: дизайн-код запрещает
+ * больше двух начертаний на экране, и они уже потрачены.
+ */
 export function Logo({ size = "sm" }: { size?: "sm" | "lg" }) {
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="inline-flex items-center gap-2.5">
       <LogoMark size={size} />
-      {size === "lg" ? (
-        <span className="text-lg font-semibold tracking-tight">
-          DeFi Portfolio Tracker
-        </span>
-      ) : (
-        <span className="text-sm font-semibold tracking-tight">
-          DeFi Portfolio
-        </span>
-      )}
+      <span
+        className={cn(
+          "font-semibold tracking-[-0.01em]",
+          size === "lg" ? "text-[17px]" : "text-[14.5px]",
+        )}
+      >
+        DeFi
+        <span className="font-[450] text-text-3"> Portfolio</span>
+      </span>
     </span>
   );
 }

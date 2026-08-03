@@ -1,23 +1,23 @@
 /**
- * Футер на всех страницах (ТЗ §5.6.4). Атрибуция CoinGecko обязательна
- * по условиям API (ТЗ S1.4). pb-20 на мобильных — чтобы нижняя навигация
- * не перекрывала текст; «·» на мобильных заменяется переносом строки.
+ * Футер на всех страницах. Дисклеймер «Расчёт, а не финансовый совет» —
+ * один раз внизу страницы, 12px, --text-3 (дизайн-код §7).
+ * Атрибуция CoinGecko обязательна по условиям API (ТЗ S1.4).
  */
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-transparent px-4 py-3 pb-20 text-center text-xs text-muted-foreground sm:pb-3">
-      <span className="block sm:inline">
-        Расчеты, а не финансовые советы
-      </span>
-      <span className="hidden sm:inline"> · </span>
-      <a
-        href="https://www.coingecko.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block hover:text-foreground hover:underline sm:inline"
-      >
-        Price data by CoinGecko
-      </a>
+    <footer className="page-shell px-4 py-6 text-[12px] text-text-3 sm:px-page">
+      <div className="border-line border-t pt-4">
+        <span className="block sm:inline">Расчёт, а не финансовый совет</span>
+        <span className="hidden sm:inline"> · </span>
+        <a
+          href="https://www.coingecko.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block transition-colors duration-120 ease-out hover:text-text-1 sm:inline"
+        >
+          Price data by CoinGecko
+        </a>
+      </div>
     </footer>
   );
 }

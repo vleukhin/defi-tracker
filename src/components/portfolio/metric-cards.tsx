@@ -1,135 +1,99 @@
+"use client";
+
 import type { PortfolioRowDto } from "@/lib/api/types";
-import { formatPnl, pnlClass } from "@/components/pnl";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import {
   DEVIATION_THRESHOLD_PP,
+  dcPp,
+  dcUsd,
+  dcUsdSigned,
   tablePct,
   tablePctSigned,
-  tableUsd,
-  tableUsdSigned,
-  usdDecimals,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CategoryDot, categoryTint } from "./category";
+import { AccentCard } from "./accent-card";
+import { CATEGORY_VAR, CategoryDot } from "./category";
 
 /**
- * Карточки-метрики категорий (ТЗ §5.1.3): фон с категорийным тинтом,
- * бейдж отклонения, стоимость и «доля → цель». Итог в карточку не выносится
- * (он в шапке). Карточки некликабельны, hover-эффектов нет.
- * На мобильных (< sm) — мини-версия в три колонки (ТЗ §5.1.7).
+ * Карточки категорий: «в чём лежит капитал» и насколько это расходится
+ * с целевой долей.
+ *
+ * Цвет актива — только кромка сверху 2px и точка (§2: заливать карточку
+ * цветом данных нельзя). Единственное крупное число в карточке — сумма;
+ * доля, цель и P/L набраны мелко и спорить с ней не могут.
  */
 export function MetricCards({ rows }: { rows: PortfolioRowDto[] }) {
   return (
-    <>
-      <div className="hidden gap-3 sm:grid sm:grid-cols-3">
-        {rows.map((row) => (
-          <MetricCard key={row.category} row={row} />
-        ))}
-      </div>
-      <div className="grid grid-cols-3 gap-2 sm:hidden">
-        {rows.map((row) => (
-          <MiniMetricCard key={row.category} row={row} />
-        ))}
-      </div>
-    </>
+    <section className="grid gap-3 md:grid-cols-3">
+      {rows.map((row) => (
+        <CategoryCard key={row.category} row={row} />
+      ))}
+    </section>
   );
 }
 
-function isBeyondThreshold(row: PortfolioRowDto): boolean {
-  return (
+function CategoryCard({ row }: { row: PortfolioRowDto }) {
+  const beyond =
     row.percentDiff !== null &&
-    Math.abs(row.percentDiff) > DEVIATION_THRESHOLD_PP
-  );
-}
+    Math.abs(row.percentDiff) > DEVIATION_THRESHOLD_PP;
+  const pnl = row.ledger.unrealizedPnlUsd;
 
-function MetricCard({ row }: { row: PortfolioRowDto }) {
   return (
-    <Card
-      className="space-y-1.5 p-4"
-      style={{ background: categoryTint(row.category) }}
-    >
+    <AccentCard color={CATEGORY_VAR[row.category]}>
       <div className="flex items-center gap-2">
-        <CategoryDot category={row.category} />
-        <span className="text-sm font-medium">{row.label}</span>
-        {row.percentDiff !== null && (
-          <Badge
-            variant={isBeyondThreshold(row) ? "warning" : "muted"}
-            className="ml-auto font-mono"
-          >
-            {tablePctSigned(row.percentDiff)}
-          </Badge>
-        )}
+        <CategoryDot category={row.category} size={7} />
+        <h3 className="text-[14px] font-semibold tracking-[-0.01em]">
+          {row.label}
+        </h3>
+        <span className="ml-auto text-[13px] font-medium text-text-2">
+          {tablePct(row.percent)}
+        </span>
       </div>
-      <p className="font-mono text-lg font-semibold">
-        {tableUsd(row.amountUsd)}
-      </p>
-      <p className="font-mono text-xs text-muted-foreground">
-        {row.targetPercent === null
-          ? tablePct(row.percent)
-          : `${tablePct(row.percent)} → цель ${tablePct(row.targetPercent)}`}
-      </p>
-      {/* Unrealized P/L из леджера сделок (Фаза 2, S2.2); без сделок — нет строки */}
-      {row.ledger.unrealizedPnlUsd !== null && (
-        <p
-          className={cn(
-            "font-mono text-xs",
-            pnlClass(row.ledger.unrealizedPnlUsd) || "text-muted-foreground",
-          )}
-        >
-          P/L:{" "}
-          {/* nowrap: перенос внутри числа после «−» ломает чтение */}
-          <span className="whitespace-nowrap">
-            {formatPnl(
-              row.ledger.unrealizedPnlUsd,
-              row.ledger.unrealizedPnlPct,
-            )}
-          </span>
-        </p>
-      )}
-    </Card>
-  );
-}
 
-/** Мини-карточка 375px: бейдж заменяется цветом доли (ТЗ §5.1.7). */
-function MiniMetricCard({ row }: { row: PortfolioRowDto }) {
-  return (
-    <Card
-      className="space-y-1 p-3"
-      style={{ background: categoryTint(row.category) }}
-    >
-      <div className="flex items-center gap-1.5">
-        <CategoryDot category={row.category} />
-        <span className="truncate text-xs">{row.label}</span>
-      </div>
-      <p className="font-mono text-sm font-semibold">
-        {tableUsd(row.amountUsd)}
+      <p className="mt-3.5 t-metric-lg">
+        {dcUsd(row.amountUsd)}
       </p>
-      <p
-        className={cn(
-          "font-mono text-[11px]",
-          isBeyondThreshold(row) ? "text-warning" : "text-muted-foreground",
+
+      <p className="mt-2 flex flex-wrap items-center gap-x-[7px] text-[12.5px] text-text-3">
+        <span>
+          {row.targetPercent === null
+            ? "цель не задана"
+            : `цель ${tablePct(row.targetPercent)}`}
+        </span>
+        {row.percentDiff !== null && (
+          <>
+            <span aria-hidden className="text-text-4">
+              ·
+            </span>
+            <span className={cn(beyond && "text-warn")}>
+              {dcPp(row.percentDiff)}
+            </span>
+          </>
         )}
-      >
-        {tablePct(row.percent)}
       </p>
-      {/* Мини-версия P/L: только доллары — проценты не влезают в треть 375px */}
-      {row.ledger.unrealizedPnlUsd !== null && (
-        <p
-          className={cn(
-            "font-mono text-[11px]",
-            pnlClass(row.ledger.unrealizedPnlUsd) || "text-muted-foreground",
-          )}
-        >
-          P/L:{" "}
-          <span className="whitespace-nowrap">
-            {tableUsdSigned(
-              row.ledger.unrealizedPnlUsd,
-              usdDecimals(row.ledger.unrealizedPnlUsd),
+
+      <p className="mt-2 flex flex-wrap items-center gap-x-[7px] text-[12.5px]">
+        <span className="text-text-3">P/L</span>
+        {pnl === null ? (
+          <span className="text-text-3">—</span>
+        ) : (
+          <span
+            className={cn(
+              "font-medium whitespace-nowrap",
+              pnl > 0 && "text-profit",
+              pnl < 0 && "text-loss",
+              pnl === 0 && "text-text-2",
+            )}
+          >
+            {dcUsdSigned(pnl)}
+            {row.ledger.unrealizedPnlPct !== null && (
+              <>
+                {" · "}
+                {tablePctSigned(row.ledger.unrealizedPnlPct, 1)}
+              </>
             )}
           </span>
-        </p>
-      )}
-    </Card>
+        )}
+      </p>
+    </AccentCard>
   );
 }

@@ -1,81 +1,80 @@
 "use client";
 
-import { useState } from "react";
-import { PortfolioDashboard } from "./portfolio-dashboard";
-import { ZonesScreen } from "@/components/zones/zones-screen";
-import { cn } from "@/lib/utils";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect } from "react";
+import { Segmented } from "@/components/dc/segmented";
 
 /**
- * Два разреза одного портфеля (Фаза 6).
+ * Разрез портфеля: «Категории» или «Зоны» — один и тот же капитал в двух
+ * проекциях (docs/07 §10.1). Категория отвечает «в чём лежит» (BTC / ETH /
+ * стейблы), зона — «какую задачу решает» (Growth / Yield / Stability).
+ * Стейблкоины есть и в Stability, и в Yield, поэтому один разрез через
+ * другой не выражается — это переключатель, а не два пункта навигации.
  *
- * «Категории» — BTC / ETH / стейблы: в чем лежат деньги, доли и отклонения
- * от целей. «Зоны» — Growth / Yield / Stability: какую задачу решают, по
- * стратегии Capital Growth.
+ * Источник истины — параметр `?view` в URL: ссылку на нужный разрез можно
+ * отправить себе же в заметку, и кнопка «назад» работает. localStorage
+ * только подставляет прошлый выбор, когда параметра нет.
  *
- * Именно вкладками, а не двумя пунктами навигации: это одни и те же деньги,
- * и переключение между разрезами должно быть в одно нажатие. Восьмой пункт
- * нижнего бара на 375 px к тому же ужался бы до нечитаемого.
+ * По умолчанию открываются «Зоны»: главный вопрос стратегии — как капитал
+ * распределён по задачам, а не в каких монетах он лежит.
  */
 
-const TABS = [
-  { key: "categories", label: "Категории", title: "Портфель" },
-  { key: "zones", label: "Зоны", title: "Зоны стратегии" },
-] as const;
+export type PortfolioView = "categories" | "zones";
 
-type TabKey = (typeof TABS)[number]["key"];
+const DEFAULT_VIEW: PortfolioView = "zones";
+const STORAGE_KEY = "portfolioView";
 
-export function PortfolioTabs() {
-  const [tab, setTab] = useState<TabKey>("categories");
-  const active = TABS.find((t) => t.key === tab)!;
+const VIEW_OPTIONS: { value: PortfolioView; label: string }[] = [
+  { value: "categories", label: "Категории" },
+  { value: "zones", label: "Зоны" },
+];
 
+function isView(value: string | null): value is PortfolioView {
+  return value === "categories" || value === "zones";
+}
+
+export interface PortfolioViewState {
+  view: PortfolioView;
+  setView: (view: PortfolioView) => void;
+}
+
+export function usePortfolioView(): PortfolioViewState {
+  const params = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const fromUrl = params.get("view");
+  const view = isView(fromUrl) ? fromUrl : DEFAULT_VIEW;
+
+  /* Параметра нет — подставляем прошлый выбор правкой URL, а не состоянием:
+     разметка первого рендера обязана совпасть с серверной, а localStorage
+     на сервере не существует */
+  useEffect(() => {
+    if (isView(fromUrl)) return;
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (isView(saved) && saved !== DEFAULT_VIEW) {
+      router.replace(`${pathname}?view=${saved}`, { scroll: false });
+    }
+  }, [fromUrl, pathname, router]);
+
+  const setView = useCallback(
+    (next: PortfolioView) => {
+      window.localStorage.setItem(STORAGE_KEY, next);
+      router.replace(`${pathname}?view=${next}`, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  return { view, setView };
+}
+
+export function PortfolioViewSwitch({ view, setView }: PortfolioViewState) {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {active.title}
-        </h1>
-
-        <div
-          role="tablist"
-          aria-label="Разрез портфеля"
-          className="inline-flex gap-1 rounded-lg bg-muted/60 p-1"
-        >
-          {TABS.map((t) => {
-            const on = tab === t.key;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                id={`ptab-${t.key}`}
-                aria-selected={on}
-                aria-controls={`ppanel-${t.key}`}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
-                  on
-                    ? "bg-background font-medium text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Панели монтируются по одной: каждая тянет свои запросы, держать
-          неактивную в DOM значит гонять лишний трафик при обновлении */}
-      <div
-        role="tabpanel"
-        id={`ppanel-${tab}`}
-        aria-labelledby={`ptab-${tab}`}
-        tabIndex={0}
-        className="outline-none"
-      >
-        {tab === "categories" ? <PortfolioDashboard /> : <ZonesScreen />}
-      </div>
-    </div>
+    <Segmented
+      options={VIEW_OPTIONS}
+      value={view}
+      onChange={setView}
+      ariaLabel="Разрез портфеля"
+    />
   );
 }

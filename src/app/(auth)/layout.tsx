@@ -12,7 +12,8 @@ export default function AuthLayout({
         <div className="mb-6 flex justify-center">
           <Logo size="lg" />
         </div>
-        <div className="rounded-xl border border-border bg-card p-6 shadow-lg shadow-black/5 dark:shadow-none">
+        {/* Тени у карточек нет (дизайн-код §9): глубину задаёт тон поверхности */}
+        <div className="rounded-card border border-line-card bg-surface p-6">
           {children}
         </div>
       </div>

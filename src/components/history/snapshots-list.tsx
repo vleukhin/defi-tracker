@@ -2,25 +2,18 @@
 
 import { ChevronRight } from "lucide-react";
 import { Fragment, useState } from "react";
+import { DcCard, SectionHead } from "@/components/dc/card";
+import { ASSET_COLOR } from "@/components/dc/protocols";
+import { Dash, DcTable, Td, Th, Tr } from "@/components/dc/table";
 import { Pagination } from "@/components/pagination";
-import { CATEGORY_VAR, CategoryDot } from "@/components/portfolio/category";
 import {
-  CATEGORY_LABEL,
   CATEGORY_UNIT,
   TRADE_CATEGORIES,
 } from "@/components/trades/categories";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
 import {
+  NBSP,
+  dcUsd,
   tableDate,
   tableNumber,
   tablePct,
@@ -28,21 +21,26 @@ import {
   usdDecimals,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PartialMarker } from "./chart-parts";
+import { HISTORY_CATEGORY_LABEL } from "./labels";
+import { QUANTITY_DECIMALS } from "./quantity-series";
 
 /**
- * Список снепшотов с проваливанием в полный состав на дату (S3.2).
- * Раскрытие — как в таблице портфеля (§5.1.6): кнопка с aria-expanded
- * в первой ячейке, состав в строке под ней.
+ * Таблица снепшотов (README, экран 5): ДАТА · СТОИМОСТЬ · BTC · ETH ·
+ * СТЕЙБЛЫ · ДОЛГ · HF. В колонках активов — КОЛИЧЕСТВА, а не доли:
+ * главная метрика стратегии — сколько монет, а не сколько процентов
+ * (AGENTS.md).
  *
- * Спред «нет данных»: количество и цена приходят null (а не нулем), когда
- * цены на момент съема не было, — показываем это словами, не «0».
+ * Строка раскрывается в полный состав на дату (S3.2) — как строки категорий
+ * в таблице портфеля. Количество и цена приходят null (а не нулём), когда
+ * цены на момент съёма не было: показываем «—», не «0».
  */
 
-const CELL = "border border-border px-2 py-2 text-right font-mono text-sm";
-const HEAD =
-  "h-auto border border-border bg-muted/60 px-2 py-2 text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground";
-const DT =
-  "text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground";
+const HF_HINT =
+  "Health Factor на дату снепшота не сохраняется — в истории колонка остаётся пустой. Текущее значение живёт на странице «Долг».";
+
+/** Снепшотов на странице: за год их сотни, весь список нечитаем. */
+const PAGE_SIZE = 20;
 
 /** Порядок состава фиксирован — как в таблице портфеля. */
 function orderedItems(snapshot: SnapshotDto): SnapshotItemDto[] {
@@ -61,33 +59,6 @@ function orderedItems(snapshot: SnapshotDto): SnapshotItemDto[] {
   );
 }
 
-function NoData({ title }: { title: string }) {
-  return (
-    <span className="font-sans text-muted-foreground" title={title}>
-      нет данных
-    </span>
-  );
-}
-
-function PartialBadge() {
-  return (
-    <Badge
-      variant="warning"
-      title="Данные на эту дату неполные: не прочиталась сеть или не было цены"
-    >
-      частичный
-    </Badge>
-  );
-}
-
-/** Знаков в количестве: у стейблов дробная часть не нужна. */
-function amountDecimals(unit: string): number {
-  return unit === "USD" ? 0 : 4;
-}
-
-/** Снепшотов на странице: за год их сотни, весь список нечитаем. */
-const PAGE_SIZE = 20;
-
 export function SnapshotsList({ snapshots }: { snapshots: SnapshotDto[] }) {
   // Новые сверху: список читается «что было вчера», в отличие от графика
   const all = [...snapshots].reverse();
@@ -101,159 +72,114 @@ export function SnapshotsList({ snapshots }: { snapshots: SnapshotDto[] }) {
   const rows = all.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
-    <div className="space-y-2">
-      <h2 className="text-sm font-semibold">Снепшоты</h2>
+    <DcCard as="section">
+      <SectionHead
+        title="Снепшоты"
+        count={all.length}
+        hint="Точка истории за календарный день. Строка раскрывается в состав портфеля на эту дату — количества, цены и разбивку «залог / вручную»."
+        className="border-line border-b"
+      />
 
-      {/* Табличный вид — от md и шире */}
-      <Card className="hidden overflow-hidden p-0 md:block">
-        <Table className="border-collapse">
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className={`${HEAD} text-left`} scope="col">
-                Дата
-              </TableHead>
-              <TableHead className={`${HEAD} text-right`} scope="col">
-                Итог
-              </TableHead>
-              {TRADE_CATEGORIES.map((c) => (
-                <TableHead
-                  key={c.key}
-                  className={`${HEAD} text-right`}
-                  scope="col"
-                >
-                  {c.label}
-                </TableHead>
-              ))}
-              <TableHead className={HEAD}>
-                <span className="sr-only">Признаки</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((snapshot) => {
-              const open = openId === snapshot.id;
-              const items = orderedItems(snapshot);
-              return (
-                <Fragment key={snapshot.id}>
-                  <TableRow className="transition-colors duration-120 hover:bg-accent/50">
-                    <th
-                      scope="row"
-                      className="border border-border px-2 py-2 text-left font-normal"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setOpenId(open ? null : snapshot.id)}
-                        aria-expanded={open}
-                        title="Показать состав на дату"
-                        className="flex items-center gap-1.5 rounded-sm font-mono text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                      >
-                        <ChevronRight
-                          aria-hidden="true"
-                          className={cn(
-                            "size-3.5 text-muted-foreground transition-transform duration-150",
-                            open && "rotate-90",
-                          )}
-                        />
-                        {tableDate(snapshot.takenOn)}
-                      </button>
-                    </th>
-                    <TableCell className={`${CELL} font-medium`}>
-                      {tableUsd(snapshot.totalUsd)}
-                    </TableCell>
-                    {items.map((item) => (
-                      <TableCell key={item.category} className={CELL}>
-                        {tablePct(item.percent)}
-                      </TableCell>
-                    ))}
-                    <TableCell className="border border-border px-2 py-2 text-right">
-                      {snapshot.isPartial && <PartialBadge />}
-                    </TableCell>
-                  </TableRow>
-
-                  {open && (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell
-                        colSpan={6}
-                        className="border border-border bg-muted/40 px-3 py-2"
-                      >
-                        <SnapshotDetail snapshot={snapshot} items={items} />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </Card>
-
-      {/* Мобильный вид: шесть колонок на 375 px нечитаемы — стек карточек */}
-      <Card className="p-0 md:hidden">
-        <ul className="divide-y divide-border">
+      <DcTable minWidth={820}>
+        <thead>
+          <tr>
+            <Th>Дата</Th>
+            <Th numeric>Стоимость</Th>
+            {TRADE_CATEGORIES.map((c) => (
+              <Th key={c.key} numeric>
+                {HISTORY_CATEGORY_LABEL[c.key]}
+              </Th>
+            ))}
+            <Th numeric>Долг</Th>
+            <Th numeric title={HF_HINT}>
+              HF
+            </Th>
+          </tr>
+        </thead>
+        <tbody>
           {rows.map((snapshot) => {
             const open = openId === snapshot.id;
             const items = orderedItems(snapshot);
             return (
-              <li key={snapshot.id}>
-                <button
-                  type="button"
-                  onClick={() => setOpenId(open ? null : snapshot.id)}
-                  aria-expanded={open}
-                  className="flex w-full items-center gap-2 px-4 py-3 text-left outline-none transition-colors duration-120 focus-visible:ring-3 focus-visible:ring-ring/50 active:bg-accent/50"
-                >
-                  <ChevronRight
-                    aria-hidden="true"
-                    className={cn(
-                      "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
-                      open && "rotate-90",
-                    )}
-                  />
-                  <span className="font-mono text-sm">
-                    {tableDate(snapshot.takenOn)}
-                  </span>
-                  {snapshot.isPartial && <PartialBadge />}
-                  <span className="ml-auto font-mono text-sm font-semibold">
-                    {tableUsd(snapshot.totalUsd)}
-                  </span>
-                </button>
-
-                <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 pb-3">
-                  {items.map((item) => (
-                    <span
-                      key={item.category}
-                      className="inline-flex items-center gap-1.5"
+              <Fragment key={snapshot.id}>
+                <Tr>
+                  <Td>
+                    <button
+                      type="button"
+                      onClick={() => setOpenId(open ? null : snapshot.id)}
+                      aria-expanded={open}
+                      title="Показать состав на дату"
+                      className="flex items-center gap-1.5 rounded-pill font-mono text-[12.5px] text-text-2 outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
-                      <CategoryDot category={item.category} />
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {tablePct(item.percent)}
-                      </span>
-                    </span>
+                      <ChevronRight
+                        aria-hidden
+                        className={cn(
+                          "size-3.5 text-text-4 transition-transform duration-150",
+                          open && "rotate-90",
+                        )}
+                      />
+                      {tableDate(snapshot.takenOn)}
+                      {snapshot.isPartial && (
+                        <PartialMarker className="ml-0.5 inline-block size-2 bg-surface align-middle" />
+                      )}
+                    </button>
+                  </Td>
+                  <Td numeric mono>
+                    {dcUsd(snapshot.totalUsd)}
+                  </Td>
+                  {items.map((item) => (
+                    <Td key={item.category} numeric mono muted>
+                      {item.quantity === null ? (
+                        <Dash />
+                      ) : (
+                        tableNumber(
+                          item.quantity,
+                          QUANTITY_DECIMALS[item.category],
+                        )
+                      )}
+                    </Td>
                   ))}
-                </div>
+                  <Td numeric mono muted>
+                    {snapshot.debtUsd === null ? (
+                      <Dash />
+                    ) : (
+                      dcUsd(snapshot.debtUsd)
+                    )}
+                  </Td>
+                  {/* Health Factor в снепшоте не хранится — колонка честно
+                      пустая, а не заполненная пересчётом задним числом */}
+                  <Td numeric mono muted>
+                    <Dash />
+                  </Td>
+                </Tr>
 
                 {open && (
-                  <div className="bg-muted/40 px-4 py-3">
-                    <SnapshotDetail snapshot={snapshot} items={items} />
-                  </div>
+                  <tr className="border-line border-b">
+                    <td colSpan={7} className="bg-sunken px-card py-3.5">
+                      <SnapshotDetail snapshot={snapshot} items={items} />
+                    </td>
+                  </tr>
                 )}
-              </li>
+              </Fragment>
             );
           })}
-        </ul>
-      </Card>
+        </tbody>
+      </DcTable>
 
-      <Pagination
-        page={safePage}
-        pageSize={PAGE_SIZE}
-        total={all.length}
-        totalPages={totalPages}
-        onPage={setPage}
-      />
-    </div>
+      <div className="border-line border-t bg-sunken px-card py-3">
+        <Pagination
+          page={safePage}
+          pageSize={PAGE_SIZE}
+          total={all.length}
+          totalPages={totalPages}
+          onPage={setPage}
+        />
+      </div>
+    </DcCard>
   );
 }
 
-/** Полный состав портфеля на дату: количество, цена, стоимость, доля, разбивка. */
+/** Полный состав портфеля на дату: количество, цена, стоимость, разбивка. */
 function SnapshotDetail({
   snapshot,
   items,
@@ -262,84 +188,91 @@ function SnapshotDetail({
   items: SnapshotItemDto[];
 }) {
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">
+    <div className="flex flex-col gap-3">
+      <p className="t-meta text-text-3">
         Состав на{" "}
         <span className="font-mono">{tableDate(snapshot.takenOn)}</span>
-        {" · "}снят{" "}
+        {NBSP}·{NBSP}снят{" "}
         <span className="font-mono">
           {new Date(snapshot.takenAt).toISOString().slice(11, 16)} UTC
         </span>
       </p>
 
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-px bg-line sm:grid-cols-3">
         {items.map((item) => {
           const unit = CATEGORY_UNIT[item.category];
+          const decimals = QUANTITY_DECIMALS[item.category];
           return (
-            <div
-              key={item.category}
-              className="rounded-md border border-border bg-card p-3"
-              style={{
-                boxShadow: `inset 2px 0 0 ${CATEGORY_VAR[item.category]}`,
-              }}
-            >
+            <div key={item.category} className="bg-surface px-card py-3.5">
               <div className="flex items-baseline gap-2">
-                <CategoryDot category={item.category} />
-                <span className="text-sm font-medium">
-                  {CATEGORY_LABEL[item.category]}
+                <span
+                  aria-hidden
+                  className="size-[7px] shrink-0 translate-y-[-1px] rounded-full"
+                  style={{ background: ASSET_COLOR[item.category] }}
+                />
+                <span className="text-[13px] font-medium">
+                  {HISTORY_CATEGORY_LABEL[item.category]}
                 </span>
-                <span className="ml-auto font-mono text-sm font-semibold">
-                  {tableUsd(item.valueUsd)}
+                <span className="ml-auto font-mono text-[13px]">
+                  {dcUsd(item.valueUsd)}
                 </span>
               </div>
 
-              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                <div>
-                  <dt className={DT}>Количество</dt>
-                  <dd className="font-mono text-sm">
-                    {item.quantity === null ? (
-                      <NoData title="цены на момент съема не было — количество не выводится" />
-                    ) : (
-                      <>
-                        {tableNumber(item.quantity, amountDecimals(unit))}
-                        <span className="ml-1 font-sans text-xs text-muted-foreground">
-                          {unit}
-                        </span>
-                      </>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className={DT}>Цена</dt>
-                  <dd className="font-mono text-sm">
-                    {item.priceUsd === null ? (
-                      <NoData title="цены на момент съема не было" />
-                    ) : (
-                      tableUsd(item.priceUsd, usdDecimals(item.priceUsd))
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className={DT}>Доля</dt>
-                  <dd className="font-mono text-sm">
-                    {tablePct(item.percent)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className={DT}>Залог / вручную</dt>
-                  <dd className="font-mono text-sm">
-                    {tableUsd(item.collateralUsd)}
-                    <span className="mx-1 font-sans text-muted-foreground">
-                      /
-                    </span>
-                    {tableUsd(item.manualUsd)}
-                  </dd>
-                </div>
+              <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
+                <Detail label="Количество">
+                  {item.quantity === null ? (
+                    <NoData title="цены на момент съёма не было — количество не выводится" />
+                  ) : (
+                    <>
+                      {tableNumber(item.quantity, decimals)}
+                      <span className="ml-1 font-sans text-[12px] text-text-3">
+                        {unit}
+                      </span>
+                    </>
+                  )}
+                </Detail>
+                <Detail label="Цена">
+                  {item.priceUsd === null ? (
+                    <NoData title="цены на момент съёма не было" />
+                  ) : (
+                    tableUsd(item.priceUsd, usdDecimals(item.priceUsd))
+                  )}
+                </Detail>
+                <Detail label="Доля">{tablePct(item.percent)}</Detail>
+                <Detail label="Залог / вручную">
+                  {dcUsd(item.collateralUsd)}
+                  <span className="mx-1 font-sans text-text-4">/</span>
+                  {dcUsd(item.manualUsd)}
+                </Detail>
               </dl>
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function Detail({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="t-label">{label}</dt>
+      <dd className="mt-1 font-mono text-[13px]">{children}</dd>
+    </div>
+  );
+}
+
+/** Ноль и «неизвестно» — разные вещи, и выглядят по-разному. */
+function NoData({ title }: { title: string }) {
+  return (
+    <span className="font-sans text-text-3" title={title}>
+      нет данных
+    </span>
   );
 }

@@ -43,9 +43,15 @@ export const HF_TEXT_CLASS: Record<HfStatus, string> = {
   none: "text-muted-foreground",
 };
 
-/** Порог без хвостовых нулей: «1,5», «1,75», «2». */
+/**
+ * Порог — всегда два знака: «1,50», «1,75», «2,00».
+ *
+ * Нули не срезаются намеренно: порог стоит в строке рядом с самим HF
+ * и точкой ликвидации («HF 1,68 · порог 1,50 · ликвидация 1,00»), и три
+ * числа разной точности в одной строке читаются как разные величины.
+ */
 export function formatHfThreshold(threshold: number): string {
-  return tableNumber(threshold, 2).replace(/,?0+$/, "");
+  return tableNumber(threshold, 2);
 }
 
 /** Подсказка к HF-индикатору: словами, не только цветом. */

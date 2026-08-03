@@ -71,6 +71,58 @@ export function usdDecimals(value: number): number {
   return Math.abs(value) >= 1000 ? 0 : 2;
 }
 
+/* ---------------------------------------------------------------------------
+ * Правила записи чисел дизайн-кода 1.0 (§4). Отличие от table*-хелперов:
+ * точность не передаётся вызывающим, а следует из смысла величины —
+ * так одна и та же сумма не окажется на двух экранах в разном виде.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Деньги: «$25 251» и «$302,91» — копейки только до $1000.
+ *
+ * Ровный ноль пишется «$0», а не «$0,00»: копейки на нуле ничего
+ * не сообщают, и дизайн-код называет «$0,00» отдельно (§4). Это именно
+ * ноль, а не «неизвестно» — неизвестное рисуется прочерком.
+ */
+export function dcUsd(value: number): string {
+  if (value === 0) return "$0";
+  return tableUsd(value, usdDecimals(value));
+}
+
+/** Деньги со знаком: «+$1 240» / «−$2 847». */
+export function dcUsdSigned(value: number): string {
+  return tableUsdSigned(value, usdDecimals(value));
+}
+
+/** Ставка — всегда два знака: «4,90%». */
+export function dcRate(value: number): string {
+  return tablePct(value, 2);
+}
+
+/**
+ * Разница ставок — в процентных пунктах: «+1,38 п.п.».
+ * Проценты и п.п. — разные величины, и путать их в одном экране нельзя:
+ * спред к займу это п.п., доля портфеля — проценты.
+ */
+export function dcPp(value: number, decimals = 2): string {
+  return `${tableSigned(value, decimals)}${NBSP}п.п.`;
+}
+
+/** Количество токена — 4 знака: «6,9777 WETH». */
+export function dcTokens(value: number, symbol?: string): string {
+  const body = tableNumber(value, 4);
+  return symbol ? `${body}${NBSP}${symbol}` : body;
+}
+
+/**
+ * Дельта карточки: «−$2 847 · −6,2%» — точка-разделитель, без скобок.
+ * Скобки читаются как «в скобках второстепенное», а процент здесь
+ * не менее важен, чем сумма.
+ */
+export function dcDelta(absolute: number, percent: number): string {
+  return `${dcUsdSigned(absolute)}${NBSP}·${NBSP}${tableSigned(percent, 1)}%`;
+}
+
 /** «29.07.2026» — дата сделки из ISO; UTC, чтобы дата не сдвигалась поясом. */
 export function tableDate(iso: string): string {
   const ts = Date.parse(iso);

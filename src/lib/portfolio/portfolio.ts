@@ -14,10 +14,15 @@
 export const PORTFOLIO_CATEGORIES = ["btc", "eth", "stable"] as const;
 export type PortfolioCategory = (typeof PORTFOLIO_CATEGORIES)[number];
 
+/**
+ * Подписи категорий. Латиницей в интерфейсе пишутся только зоны стратегии
+ * (дизайн-код §7), категории — по-русски: «Стейблы», не «Stablecoins».
+ * Тикеры BTC и ETH — имена активов, а не английские слова, и остаются как есть.
+ */
 export const CATEGORY_LABELS: Record<PortfolioCategory, string> = {
   btc: "BTC",
   eth: "ETH",
-  stable: "Stablecoins",
+  stable: "Стейблы",
 };
 
 /** Единица измерения количества категории — для подписи в UI. */

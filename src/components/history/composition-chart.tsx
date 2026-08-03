@@ -1,14 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CATEGORY_VAR, CategoryDot } from "@/components/portfolio/category";
-import {
-  CATEGORY_LABEL,
-  TRADE_CATEGORIES,
-} from "@/components/trades/categories";
-import { Card } from "@/components/ui/card";
+import { DcCard, SectionHead } from "@/components/dc/card";
+import { ASSET_COLOR } from "@/components/dc/protocols";
+import { TRADE_CATEGORIES } from "@/components/trades/categories";
 import type { PortfolioCategory, SnapshotDto } from "@/lib/api/types";
-import { tableDate, tablePct, tableUsd } from "@/lib/format";
+import { NBSP, dcUsd, tableDate, tablePct } from "@/lib/format";
 import {
   bandCenter,
   bandLeft,
@@ -18,24 +15,30 @@ import {
   timeScale,
 } from "./chart-geometry";
 import {
-  ChartLegend,
+  ChartNote,
   ChartTimeAxis,
   ChartTooltip,
   HoverLayer,
+  PartialMarker,
 } from "./chart-parts";
+import { HISTORY_CATEGORY_LABEL } from "./labels";
 
 /**
- * График пропорций трех категорий во времени (S3.2) на КАЛЕНДАРНОЙ оси:
+ * График пропорций трёх категорий во времени на КАЛЕНДАРНОЙ оси (S3.2):
  * при редкой истории — стековые полосы на 100% по одной на снепшот,
  * при плотной — стековая area по отрезкам подряд идущих дней (столбец
- * шириной в полпикселя дает только рябь швов).
+ * шириной в полпикселя даёт только рябь швов).
  *
- * В обоих режимах пропущенные дни остаются пустыми колонками, а area
- * рвется между отрезками: разрыв виден сам собой, без интерполяции.
+ * Цвета — только активов (дизайн-код §5, «полосы данных»); в обоих режимах
+ * пропущенные дни остаются пустыми колонками, а area рвётся между
+ * отрезками: разрыв виден сам собой, без интерполяции.
  */
 
 /** Порог перехода «столбцы → area», в днях периода. */
 const DENSE_SPAN = 45;
+
+const COMPOSITION_HINT =
+  "Доли категорий в стоимости портфеля на каждую дату. Пропорции показывают, куда сместился капитал, — количества монет при этом могли не меняться.";
 
 interface Slice {
   category: PortfolioCategory;
@@ -106,34 +109,57 @@ export function CompositionChart({
     `Пропорции категорий, ${periodLabel}. ` +
     `На ${tableDate(snapshots[snapshots.length - 1].takenOn)}: ` +
     lastSlices
-      .map((s) => `${CATEGORY_LABEL[s.category]} ${tablePct(s.pct)}`)
+      .map((s) => `${HISTORY_CATEGORY_LABEL[s.category]} ${tablePct(s.pct)}`)
       .join(", ") +
     (missing > 0 ? `. Дней без снепшота: ${missing}` : "");
 
   return (
-    <Card className="p-4">
-      <h2 className="text-sm font-semibold">Пропорции категорий</h2>
+    <DcCard as="section">
+      <SectionHead
+        title="Пропорции категорий"
+        hint={COMPOSITION_HINT}
+        className="border-line border-b"
+        action={
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {lastSlices.map((slice) => (
+              <span
+                key={slice.category}
+                className="inline-flex items-center gap-1.5"
+              >
+                <span
+                  aria-hidden
+                  className="size-[7px] shrink-0 rounded-full"
+                  style={{ background: ASSET_COLOR[slice.category] }}
+                />
+                <span className="t-meta text-text-2">
+                  {HISTORY_CATEGORY_LABEL[slice.category]}
+                </span>
+                <span className="t-meta font-mono">{tablePct(slice.pct)}</span>
+              </span>
+            ))}
+          </div>
+        }
+      />
 
-      {/* Тот же левый отступ, что у графика стоимости: обе оси времени
-          стоят на одной вертикали и читаются как один график */}
-      <div className="relative mt-3 pl-14 sm:pl-16">
-        {/* Полоса меток частичных точек — над столбцами, на фоне карточки:
+      <div className="bg-sunken px-4 pt-3">
+        {/* Полоса меток частичных точек — над столбцами, на фоне блока:
             поверх заливки категорий полая метка была бы неразличима */}
         <div className="relative h-3">
           {bars.map((bar) =>
             bar.snapshot.isPartial ? (
               <span
                 key={`partial-${bar.snapshot.takenOn}`}
-                aria-hidden="true"
                 title="частичные данные"
                 style={{ left: `${bar.center}%` }}
-                className="absolute top-0.5 size-2.5 -translate-x-1/2 rounded-full border-2 border-warning bg-background"
-              />
+                className="absolute top-0 -translate-x-1/2"
+              >
+                <PartialMarker className="block" />
+              </span>
             ) : null,
           )}
         </div>
 
-        <div className="relative h-32 overflow-hidden rounded-md sm:h-40">
+        <div className="relative h-[88px] overflow-hidden rounded-[6px] sm:h-[104px]">
           <svg
             role="img"
             aria-label={ariaLabel}
@@ -169,52 +195,46 @@ export function CompositionChart({
             }))}
             onActive={setActive}
           />
+
+          {active !== null && (
+            <ChartTooltip x={bars[active].center}>
+              <span className="font-mono text-text-2">
+                {tableDate(snapshots[active].takenOn)}
+              </span>
+              <span className="mt-1 grid gap-0.5">
+                {bars[active].slices.map((slice) => (
+                  <span
+                    key={slice.category}
+                    className="flex items-center gap-1.5"
+                  >
+                    <span
+                      aria-hidden
+                      className="size-[7px] shrink-0 rounded-full"
+                      style={{ background: ASSET_COLOR[slice.category] }}
+                    />
+                    <span>{HISTORY_CATEGORY_LABEL[slice.category]}</span>
+                    <span className="ml-auto pl-2 font-mono">
+                      {tablePct(slice.pct)}
+                    </span>
+                  </span>
+                ))}
+              </span>
+              {snapshots[active].isPartial && (
+                <span className="mt-1 block text-warn">частичные данные</span>
+              )}
+            </ChartTooltip>
+          )}
         </div>
 
-        {active !== null && (
-          <ChartTooltip x={bars[active].center}>
-            <span className="font-mono">
-              {tableDate(snapshots[active].takenOn)}
-            </span>
-            <span className="mt-1 grid gap-0.5">
-              {bars[active].slices.map((slice) => (
-                <span
-                  key={slice.category}
-                  className="flex items-center gap-1.5"
-                >
-                  <CategoryDot category={slice.category} />
-                  <span>{CATEGORY_LABEL[slice.category]}</span>
-                  <span className="ml-auto pl-2 font-mono">
-                    {tablePct(slice.pct)}
-                  </span>
-                </span>
-              ))}
-            </span>
-            {snapshots[active].isPartial && (
-              <span className="mt-1 block text-warning">частичные данные</span>
-            )}
-          </ChartTooltip>
-        )}
-
-        <ChartTimeAxis points={axisPoints} />
+        <ChartTimeAxis points={axisPoints} className="pt-[9px] pb-[13px]" />
       </div>
 
-      {/* Легенда категорий: доля на последнюю дату периода */}
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        {lastSlices.map((slice) => (
-          <span
-            key={slice.category}
-            className="inline-flex items-center gap-1.5"
-          >
-            <CategoryDot category={slice.category} />
-            <span className="text-xs">{CATEGORY_LABEL[slice.category]}</span>
-            <span className="font-mono text-xs">{tablePct(slice.pct)}</span>
-          </span>
-        ))}
-      </div>
-
-      <ChartLegend missing={missing} anyPartial={anyPartial} />
-    </Card>
+      <ChartNote
+        missing={missing}
+        anyPartial={anyPartial}
+        className="border-line border-t px-card py-3"
+      />
+    </DcCard>
   );
 }
 
@@ -238,7 +258,13 @@ function stackBounds(parts: Slice[]): number[] {
 function StackedBar({ bar, width }: { bar: Bar; width: number }) {
   if (bar.empty) {
     return (
-      <rect x={bar.left} y={0} width={width} height={100} fill="var(--muted)" />
+      <rect
+        x={bar.left}
+        y={0}
+        width={width}
+        height={100}
+        fill="var(--bg-raised)"
+      />
     );
   }
   const bounds = stackBounds(bar.slices);
@@ -252,7 +278,7 @@ function StackedBar({ bar, width }: { bar: Bar; width: number }) {
             y={bounds[k]}
             width={width}
             height={slice.pct}
-            fill={CATEGORY_VAR[slice.category]}
+            fill={ASSET_COLOR[slice.category]}
           />
         ),
       )}
@@ -275,7 +301,7 @@ function StackedArea({ run }: { run: Bar[] }) {
           <polygon
             key={slice.category}
             points={[...top, ...bottom].join(" ")}
-            fill={CATEGORY_VAR[slice.category]}
+            fill={ASSET_COLOR[slice.category]}
           />
         );
       })}
@@ -285,9 +311,9 @@ function StackedArea({ run }: { run: Bar[] }) {
 
 function pointLabel(snapshot: SnapshotDto, parts: Slice[]): string {
   return (
-    `${tableDate(snapshot.takenOn)}, ${tableUsd(snapshot.totalUsd)}: ` +
+    `${tableDate(snapshot.takenOn)},${NBSP}${dcUsd(snapshot.totalUsd)}: ` +
     parts
-      .map((s) => `${CATEGORY_LABEL[s.category]} ${tablePct(s.pct)}`)
+      .map((s) => `${HISTORY_CATEGORY_LABEL[s.category]} ${tablePct(s.pct)}`)
       .join(", ") +
     (snapshot.isPartial ? ", частичные данные" : "")
   );

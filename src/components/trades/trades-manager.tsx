@@ -1,12 +1,15 @@
 "use client";
 
-import { ArrowLeftRight, CircleAlert, SearchX, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CategoryDot, categoryTint } from "@/components/portfolio/category";
-import { formatPnl, pnlClass } from "@/components/pnl";
+import { CircleAlert, TriangleAlert } from "lucide-react";
+import { Tooltip as TooltipPrimitive } from "radix-ui";
+import { useEffect, useMemo, useState } from "react";
+import { DcCard, Disclaimer, EmptyState } from "@/components/dc/card";
+import { MetaDot, PageHeader } from "@/components/dc/page-header";
+import { Dash } from "@/components/dc/table";
+import { CategoryDot } from "@/components/portfolio/category";
+import { countLabel } from "@/components/portfolio/plural";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
   LedgerSummaryDto,
@@ -14,25 +17,33 @@ import type {
   TradeDto,
   TradesResponseDto,
 } from "@/lib/api/types";
-import { tableUsd, usdDecimals } from "@/lib/format";
+import { dcUsd, dcUsdSigned, tableDate } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 import { TRADE_CATEGORIES } from "./categories";
+import { Collapse } from "./collapse";
 import { TradeForm } from "./trade-form";
 import {
   EMPTY_FILTERS,
+  hasActiveFilters,
   TradesFilters,
-  TradesPagination,
   type TradeFilters,
 } from "./trades-filters";
 import { TradesList } from "./trades-list";
 
 /**
- * Экран «Сделки» (Фаза 2, S2.1): сводка леджера по категориям, форма
- * добавления/редактирования и список сделок. Средняя и P/L считаются
- * реплеем на бэкенде — здесь только отображение summary.
+ * Экран «Сделки»: заголовок со счётчиком, три карточки итогов по активам,
+ * раскрываемая форма и одна карточка «фильтры + таблица + футер».
+ *
+ * Форма не висит в потоке: primary-кнопка «Новая сделка» — единственная
+ * primary на экране, и пока форма раскрыта, она уступает место кнопке
+ * «Добавить сделку» внутри формы (дизайн-код §8).
  */
 
-/** Значение с задержкой: поиск по заметке не бьет в API на каждую букву. */
+/** Шаг «Показать ещё» и потолок pageSize в /api/trades. */
+const PAGE_STEP = 20;
+const MAX_PAGE_SIZE = 100;
+
+/** Значение с задержкой: поиск по заметке не бьёт в API на каждую букву. */
 function useDebounced<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -42,20 +53,12 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-/** «1 сделка / 2 сделки / 5 сделок». */
-function tradesWord(n: number): string {
-  const mod100 = n % 100;
-  const mod10 = n % 10;
-  if (mod100 >= 11 && mod100 <= 14) return "сделок";
-  if (mod10 === 1) return "сделка";
-  if (mod10 >= 2 && mod10 <= 4) return "сделки";
-  return "сделок";
-}
-
 export function TradesManager() {
   const [filters, setFilters] = useState<TradeFilters>(EMPTY_FILTERS);
+  // «Показать ещё» растит окно выборки, а не листает страницы: журнал
+  // читают сверху вниз. Дальше потолка pageSize окно едет страницами.
+  const [limit, setLimit] = useState(PAGE_STEP);
   const [page, setPage] = useState(1);
-  // Поиск по заметке дебаунсится: иначе запрос на каждое нажатие клавиши
   const debouncedQ = useDebounced(filters.q, 300);
 
   const url = useMemo(() => {
@@ -65,22 +68,47 @@ export function TradesManager() {
     if (filters.to) sp.set("to", filters.to);
     if (debouncedQ) sp.set("q", debouncedQ);
     if (page > 1) sp.set("page", String(page));
-    const qs = sp.toString();
-    return qs ? `/api/trades?${qs}` : "/api/trades";
-  }, [filters.category, filters.from, filters.to, debouncedQ, page]);
+    sp.set("pageSize", String(limit));
+    return `/api/trades?${sp.toString()}`;
+  }, [filters.category, filters.from, filters.to, debouncedQ, page, limit]);
 
   const { data, error, loading, refetch } = useApi<TradesResponseDto>(url);
   const [editing, setEditing] = useState<TradeDto | null>(null);
-  const formAnchorRef = useRef<HTMLDivElement>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
-  /** Смена фильтра всегда возвращает на первую страницу. */
+  const filtersActive = hasActiveFilters(filters);
+
+  // Даты последней сделки в API нет: берём её из первой строки выборки
+  // (список приходит новыми вперёд). Под фильтром первая строка — уже не
+  // последняя сделка леджера, поэтому дата уходит, а не врёт.
+  const lastTradedAt =
+    data !== null && !filtersActive && page === 1
+      ? (data.trades[0]?.tradedAt ?? null)
+      : null;
+
+  /** Смена фильтра всегда возвращает к началу выборки. */
   function applyFilters(next: TradeFilters) {
     setFilters(next);
     setPage(1);
+    setLimit(PAGE_STEP);
   }
 
+  function openNewTrade() {
+    setEditing(null);
+    setFormOpen(true);
+  }
 
-  // Экран не загрузился вовсе — Alert с повтором (§6.2)
+  function openEdit(trade: TradeDto) {
+    setEditing(trade);
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setEditing(null);
+  }
+
+  // Экран не загрузился вовсе — Alert с повтором
   if (error && !data) {
     return (
       <Alert variant="destructive">
@@ -111,12 +139,11 @@ export function TradesManager() {
         );
   const isEmpty = data !== null && ledgerTotal === 0;
   const noMatches = data !== null && !isEmpty && data.page.total === 0;
-  // Страница вышла за пределы выборки (например, сделки удалили из другой
-  // вкладки): показываем не пустоту, а возврат к первой странице
+  // Страница вышла за пределы выборки (сделки удалили из другой вкладки)
   const pageOutOfRange =
     data !== null && data.page.total > 0 && data.trades.length === 0;
 
-  // Oversell и прочие аномалии реплея — предупреждение, не блокировка (S2.1)
+  // Oversell и прочие аномалии реплея — предупреждение, не блокировка
   const ledgerWarnings =
     data === null
       ? []
@@ -128,203 +155,276 @@ export function TradesManager() {
           })),
         );
 
-  function focusForm() {
-    formAnchorRef.current?.scrollIntoView({ block: "nearest" });
-    document.getElementById("trade-quantity")?.focus();
-  }
-
   return (
-    <div className="space-y-4">
-      {/* Скелетоны формой повторяют будущий контент (§6.1) */}
-      {loading && !data && (
-        <Skeleton className="h-[104px] rounded-xl" aria-hidden="true" />
-      )}
-
-      {data !== null && !isEmpty && <SummaryStrip summary={data.summary} />}
-
-      {isEmpty && <EmptyState onAdd={focusForm} />}
-
-      <div ref={formAnchorRef}>
-        <TradeForm
-          key={editing?.id ?? "new"}
-          trade={editing}
-          onSaved={() => {
-            setEditing(null);
-            void refetch();
-          }}
-          onCancel={() => setEditing(null)}
+    // HelpTip'ы экрана: провайдера тултипов выше по дереву нет
+    <TooltipPrimitive.Provider delayDuration={200}>
+      <div className="flex flex-col gap-4">
+        <PageHeader
+          title="Сделки"
+          meta={
+            data === null ? null : (
+              <>
+                <span>
+                  {countLabel(ledgerTotal, "сделка", "сделки", "сделок")}
+                </span>
+                {lastTradedAt !== null && (
+                  <>
+                    <MetaDot />
+                    <span>последняя {tableDate(lastTradedAt)}</span>
+                  </>
+                )}
+              </>
+            )
+          }
+          action={
+            !formOpen && (
+              <Button type="button" onClick={openNewTrade}>
+                Новая сделка
+              </Button>
+            )
+          }
         />
-      </div>
 
-      {ledgerWarnings.length > 0 && (
-        <Alert variant="warning">
-          <TriangleAlert className="size-4" />
-          <AlertTitle>Продано больше, чем куплено</AlertTitle>
-          <AlertDescription>
-            <ul className="space-y-0.5">
-              {ledgerWarnings.map((w) => (
-                <li key={w.key}>
-                  {w.label}: {w.text}
-                </li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
+        {loading && data === null && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {TRADE_CATEGORIES.map((c) => (
+              <Skeleton
+                key={c.key}
+                aria-hidden="true"
+                className="h-[104px] rounded-card bg-chip"
+              />
+            ))}
+          </div>
+        )}
 
-      {loading && !data && (
-        <Skeleton className="h-40 rounded-xl" aria-hidden="true" />
-      )}
+        {data !== null && !isEmpty && <SummaryCards summary={data.summary} />}
 
-      {data !== null && !isEmpty && (
-        <TradesFilters
-          filters={filters}
-          onChange={applyFilters}
-          onReset={() => applyFilters(EMPTY_FILTERS)}
-        />
-      )}
-
-      {noMatches && (
-        <Card className="flex flex-col items-center gap-2 p-8 text-center">
-          <SearchX className="size-6 text-muted-foreground" />
-          <p className="text-sm font-medium">Ничего не найдено</p>
-          <p className="max-w-sm text-xs text-muted-foreground">
-            Под выбранные фильтры не подходит ни одна сделка. Средняя цена и
-            P/L по-прежнему считаются по всему леджеру.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => applyFilters(EMPTY_FILTERS)}
-          >
-            Сбросить фильтры
-          </Button>
-        </Card>
-      )}
-
-      {pageOutOfRange && (
-        <Card className="flex flex-col items-center gap-2 p-8 text-center">
-          <p className="text-sm font-medium">Страница пуста</p>
-          <p className="text-xs text-muted-foreground">
-            Сделок стало меньше, чем было при переходе на эту страницу.
-          </p>
-          <Button variant="outline" size="sm" onClick={() => setPage(1)}>
-            К первой странице
-          </Button>
-        </Card>
-      )}
-
-      {data !== null && !isEmpty && !noMatches && !pageOutOfRange && (
-        <>
-          <TradesList
-            trades={data.trades}
-            onEdit={(trade) => setEditing(trade)}
+        <Collapse open={formOpen}>
+          <TradeForm
+            key={editing?.id ?? "new"}
+            trade={editing}
+            onSaved={() => {
+              // Правка закрывает форму; добавление оставляет её открытой
+              // под серию сделок — поля уже сброшены
+              if (editing !== null) closeForm();
+              void refetch();
+            }}
+            onCancel={closeForm}
             onDeleted={() => {
-              // Удалили редактируемую — форма не должна сохранять призрака
-              setEditing(null);
+              closeForm();
               // Удалили последнюю строку страницы — уходим на предыдущую
-              if (data.trades.length === 1 && page > 1) setPage(page - 1);
+              if (data !== null && data.trades.length === 1 && page > 1) {
+                setPage(page - 1);
+              }
               void refetch();
             }}
           />
-          <TradesPagination
-            page={data.page.page}
-            pageSize={data.page.pageSize}
-            total={data.page.total}
-            totalPages={data.page.totalPages}
-            onPage={setPage}
-          />
-        </>
-      )}
+        </Collapse>
 
-      <p className="text-xs text-muted-foreground">
-        Средняя цена — взвешенная по покупкам; продажа среднюю не меняет.
-        Расчеты, а не финансовые советы.
-      </p>
-    </div>
+        {ledgerWarnings.length > 0 && (
+          <Alert variant="warning">
+            <TriangleAlert className="size-4" />
+            <AlertTitle>Продано больше, чем куплено</AlertTitle>
+            <AlertDescription>
+              <ul className="space-y-0.5">
+                {ledgerWarnings.map((w) => (
+                  <li key={w.key}>
+                    {w.label}: {w.text}
+                  </li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {loading && data === null && (
+          <Skeleton
+            aria-hidden="true"
+            className="h-[320px] rounded-card bg-chip"
+          />
+        )}
+
+        {isEmpty && (
+          <DcCard as="section">
+            <EmptyState
+              title="Сделок пока нет"
+              action={
+                <Button type="button" variant="outline" onClick={openNewTrade}>
+                  Добавить первую сделку
+                </Button>
+              }
+            />
+          </DcCard>
+        )}
+
+        {data !== null && !isEmpty && (
+          <DcCard as="section">
+            <TradesFilters
+              filters={filters}
+              onChange={applyFilters}
+              onReset={() => applyFilters(EMPTY_FILTERS)}
+            />
+
+            {noMatches && (
+              <EmptyState
+                title="Под фильтры не подходит ни одна сделка"
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => applyFilters(EMPTY_FILTERS)}
+                  >
+                    Сбросить фильтры
+                  </Button>
+                }
+              />
+            )}
+
+            {pageOutOfRange && (
+              <EmptyState
+                title="Сделок стало меньше, чем было при переходе сюда"
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPage(1)}
+                  >
+                    К началу списка
+                  </Button>
+                }
+              />
+            )}
+
+            {!noMatches && !pageOutOfRange && (
+              <>
+                <TradesList trades={data.trades} onEdit={openEdit} />
+                <TableFooter
+                  page={data.page.page}
+                  pageSize={data.page.pageSize}
+                  total={data.page.total}
+                  loading={loading}
+                  onMore={() => {
+                    if (limit < MAX_PAGE_SIZE) {
+                      setLimit(Math.min(limit + PAGE_STEP, MAX_PAGE_SIZE));
+                    } else {
+                      setPage(page + 1);
+                    }
+                  }}
+                  onBack={() => setPage(Math.max(1, page - 1))}
+                />
+              </>
+            )}
+          </DcCard>
+        )}
+
+        {data !== null && !isEmpty && (
+          <Disclaimer>
+            Сделки со суммой «—» внесены без цены: количество учтено, средняя
+            цена по ним не считается.
+          </Disclaimer>
+        )}
+      </div>
+    </TooltipPrimitive.Provider>
   );
 }
 
 /**
- * Сводка леджера по категориям со сделками: средняя цена покупки
- * и realized P/L (цвет по знаку, знак обязательно в тексте).
+ * Итоги леджера по трём активам. Средняя цена — крупное число карточки
+ * (Mono 24), реализованный результат — Sans 19 цветом семантики; нет
+ * покупок или продаж — «—», а не «$0,00» (дизайн-код §4).
  */
-function SummaryStrip({
+function SummaryCards({
   summary,
 }: {
   summary: Record<PortfolioCategory, LedgerSummaryDto>;
 }) {
-  const active = TRADE_CATEGORIES.filter((c) => summary[c.key].tradeCount > 0);
-  if (active.length === 0) return null;
-
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {active.map((c) => {
+    <section className="grid gap-3 sm:grid-cols-3">
+      {TRADE_CATEGORIES.map((c) => {
         const s = summary[c.key];
+        const realized = s.realizedPnlUsd;
         return (
-          <Card
-            key={c.key}
-            className="space-y-2 p-4"
-            style={{ background: categoryTint(c.key) }}
-          >
+          <DcCard key={c.key} className="px-card pt-4 pb-[18px]">
             <div className="flex items-center gap-2">
-              <CategoryDot category={c.key} />
-              <span className="text-sm font-medium">{c.label}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                <span className="font-mono">{s.tradeCount}</span>{" "}
-                {tradesWord(s.tradeCount)}
+              <CategoryDot category={c.key} size={7} />
+              <span className="text-[14px] font-semibold">{c.label}</span>
+              <span className="flex-1" />
+              <span className="t-meta text-text-3">
+                {countLabel(s.tradeCount, "сделка", "сделки", "сделок")}
               </span>
             </div>
-            <dl className="space-y-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <dt className="text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground">
-                  Средняя цена
-                </dt>
-                <dd className="font-mono text-sm">
-                  {s.avgPriceUsd === null ? (
-                    <span title="нет данных о цене покупки">—</span>
-                  ) : (
-                    tableUsd(s.avgPriceUsd, usdDecimals(s.avgPriceUsd))
-                  )}
-                </dd>
+            <div className="mt-3.5 flex items-end gap-6">
+              <div className="flex flex-col gap-1">
+                <span className="t-label whitespace-nowrap">Средняя цена</span>
+                <span className="t-metric">
+                  {s.avgPriceUsd === null ? <Dash /> : dcUsd(s.avgPriceUsd)}
+                </span>
               </div>
-              <div className="flex items-baseline justify-between gap-2">
-                <dt className="text-[11px] font-medium tracking-[0.06em] uppercase text-muted-foreground">
-                  Реализовано
-                </dt>
-                <dd
-                  className={`font-mono text-sm ${pnlClass(s.realizedPnlUsd)}`}
+              <div className="flex flex-col gap-1">
+                <span className="t-label whitespace-nowrap">Реализовано</span>
+                <span
+                  className={
+                    realized === 0
+                      ? "t-metric-sm text-text-3"
+                      : realized > 0
+                        ? "t-metric-sm text-profit"
+                        : "t-metric-sm text-loss"
+                  }
                 >
-                  {formatPnl(s.realizedPnlUsd, null)}
-                </dd>
+                  {realized === 0 ? <Dash /> : dcUsdSigned(realized)}
+                </span>
               </div>
-            </dl>
-          </Card>
+            </div>
+          </DcCard>
         );
       })}
-    </div>
+    </section>
   );
 }
 
-/** Пустой леджер: зачем он нужен + CTA к первой сделке (§6.3). */
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+/** Футер таблицы: «показаны 8 из 39» + «Показать ещё». */
+function TableFooter({
+  page,
+  pageSize,
+  total,
+  loading,
+  onMore,
+  onBack,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  loading: boolean;
+  onMore: () => void;
+  onBack: () => void;
+}) {
+  if (total === 0) return null;
+  const first = (page - 1) * pageSize + 1;
+  const last = Math.min(page * pageSize, total);
+  const hasMore = last < total;
+
   return (
-    <Card className="p-6 text-center">
-      <div className="mb-3 flex justify-center">
-        <ArrowLeftRight
-          aria-hidden="true"
-          className="size-6 text-muted-foreground opacity-60"
-        />
-      </div>
-      <p className="text-base font-medium">Сделок пока нет</p>
-      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        Журнал сделок считает среднюю цену покупки и P/L по каждой категории.
-        Запишите первую покупку — в таблице портфеля появятся столбцы «Средняя»
-        и «P/L».
-      </p>
-      <Button className="mt-4" onClick={onAdd}>
-        Добавить первую сделку
-      </Button>
-    </Card>
+    <div className="flex flex-wrap items-center gap-3 border-line border-t px-card py-3">
+      <span className="t-meta text-text-3" aria-live="polite">
+        показаны {page === 1 ? last : `${first}–${last}`} из {total}
+      </span>
+      <span className="flex-1" />
+      {page > 1 && (
+        <Button type="button" variant="outline" size="sm" onClick={onBack}>
+          Назад
+        </Button>
+      )}
+      {hasMore && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={loading}
+          onClick={onMore}
+        >
+          Показать ещё
+        </Button>
+      )}
+    </div>
   );
 }
