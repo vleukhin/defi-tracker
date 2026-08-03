@@ -6,6 +6,7 @@ import { Delta, Metric, MetricGrid } from "@/components/dc/metrics";
 import { dcPp, dcRate, dcUsd, tableNumber, tablePct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DEBT_UNREAD_HINT, formatHf } from "./hf";
+import { LtvTarget } from "./ltv-target";
 import {
   HF_CRITICAL,
   SAFETY_DANGER_PERCENT,
@@ -40,6 +41,9 @@ export interface DebtHeroProps {
   borrowRatePercent: number | null;
   /** Спред размещения к займу, п.п.: окупаются заёмные или нет. */
   spreadPp: number | null;
+  /** Рабочий уровень плеча по стратегии, % (настройка пользователя). */
+  targetLtvPct: number;
+  onTargetLtvSaved: (targetLtvPct: number) => void;
 }
 
 export function DebtHero({
@@ -53,6 +57,8 @@ export function DebtHero({
   liquidationLtvPercent,
   borrowRatePercent,
   spreadPp,
+  targetLtvPct,
+  onTargetLtvSaved,
 }: DebtHeroProps) {
   const tone = hfTone(healthFactor, threshold);
   const drop = liquidationDrop(healthFactor);
@@ -117,9 +123,12 @@ export function DebtHero({
           hint="Долг, делённый на залог. Ликвидация наступает, когда отношение доходит до порога протокола."
           value={ltvPercent === null ? null : tablePct(ltvPercent, 1)}
           delta={
-            liquidationLtvPercent === null
-              ? "порог ликвидации неизвестен"
-              : `ликвидация при ${tablePct(liquidationLtvPercent, 1)}`
+            // Цель первой: она задаёт действие, порог ликвидации — границу
+            `цель ${tablePct(targetLtvPct, 0)} · ${
+              liquidationLtvPercent === null
+                ? "порог ликвидации неизвестен"
+                : `ликвидация при ${tablePct(liquidationLtvPercent, 1)}`
+            }`
           }
         />
         <Metric
@@ -173,6 +182,14 @@ export function DebtHero({
           />
         </div>
       )}
+
+      <LtvTarget
+        collateralUsd={collateralUsd}
+        debtUsd={debtUsd}
+        targetLtvPct={targetLtvPct}
+        liquidationLtvPercent={liquidationLtvPercent}
+        onSaved={onTargetLtvSaved}
+      />
     </DcCard>
   );
 }

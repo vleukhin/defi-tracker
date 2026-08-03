@@ -330,6 +330,12 @@ export interface DepositResponseDto {
 export interface SettingsDto {
   /** Порог предупреждения по health factor; по умолчанию 1.5. */
   hfWarningThreshold: number;
+  /**
+   * Целевой LTV в процентах (долг / залог), к которому выравнивается плечо;
+   * по умолчанию 50 — рабочее значение стратегии. Не порог ликвидации:
+   * тот приходит от протокола и не настраивается.
+   */
+  targetLtvPct: number;
 }
 
 /** Долговая позиция из разбивки по v-токенам (best-effort). */

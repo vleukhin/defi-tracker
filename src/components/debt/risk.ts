@@ -168,3 +168,42 @@ export function liquidationLtvPercent(
   if (collateral <= 0 || weighted <= 0) return null;
   return (weighted / collateral) * 100;
 }
+
+/** Что нужно сделать с долгом, чтобы LTV встал на цель. */
+export interface LtvRebalance {
+  /** Каким станет долг на целевом LTV. */
+  targetDebtUsd: number;
+  /** Долг минус целевой: >0 — взять ещё, <0 — погасить. */
+  deltaUsd: number;
+  action: "borrow" | "repay" | "on-target";
+}
+
+/**
+ * Выравнивание плеча к целевому LTV (docs/07 §10.3, «Целевой LTV 50%»).
+ *
+ *   LTV = долг / залог,  целевой долг = цель × залог
+ *
+ * Залог считается неизменным: и погашение, и добор долга его не трогают —
+ * заёмные приходят стейблами, а они в залог не попадают. Поэтому выровнять
+ * LTV можно только долгом, и это ровно одно число.
+ *
+ * `on-target` отдаётся при расхождении меньше цента: копеечная разница —
+ * это дрожание цен между чтениями, а не задача к действию.
+ *
+ * null = нечего считать: без залога LTV не определён.
+ */
+export function ltvRebalance(
+  collateralUsd: number | null,
+  debtUsd: number | null,
+  targetLtvPct: number,
+): LtvRebalance | null {
+  if (collateralUsd === null || debtUsd === null) return null;
+  if (collateralUsd <= 0) return null;
+
+  const targetDebtUsd = (targetLtvPct / 100) * collateralUsd;
+  const deltaUsd = targetDebtUsd - debtUsd;
+  const action =
+    Math.abs(deltaUsd) < 0.01 ? "on-target" : deltaUsd > 0 ? "borrow" : "repay";
+
+  return { targetDebtUsd, deltaUsd, action };
+}

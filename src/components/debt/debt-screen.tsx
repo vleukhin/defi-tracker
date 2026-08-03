@@ -17,6 +17,7 @@ import type {
   LeverageResponseDto,
   PositionDto,
   RefreshResponseDto,
+  SettingsDto,
   StableBorrowRateDto,
 } from "@/lib/api/types";
 import {
@@ -24,13 +25,13 @@ import {
   formatRelativeTime,
   tableNumber,
 } from "@/lib/format";
+import { DEFAULT_TARGET_LTV_PCT } from "@/lib/settings-defaults";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { BorrowedWork, positionSpread } from "./borrowed-work";
 import { DebtChains } from "./debt-chains";
 import { DebtHero } from "./debt-hero";
 import { DebtScenarios } from "./debt-scenarios";
-import { LeverageCard } from "./leverage-screen";
 import { liquidationLtvPercent } from "./risk";
 
 /**
@@ -38,9 +39,12 @@ import { liquidationLtvPercent } from "./risk";
  * запасом при падении залога и окупаются ли заёмные деньги.
  *
  * Вкладки «Долг / Левередж» убраны — в дизайне их нет, и по смыслу это
- * одна страница: заём и его размещение читают вместе. Данные вкладки
- * «Левередж» переехали в карточку «Займы и размещение» внизу страницы,
- * а её позиции — в «Где работают заёмные» рядом со сценариями.
+ * одна страница: заём и его размещение читают вместе. Позиции с той вкладки
+ * переехали в «Где работают заёмные» рядом со сценариями.
+ *
+ * Привязки «займ → позиция» с экрана убраны намеренно: заём уходит в разные
+ * позиции по частям, и связка «один заём — одна позиция» этого не выражает.
+ * /api/leverage читается ради самих позиций, не ради связок.
  *
  * Данных трёх кэшей не хватает на один запрос: ставка займа и свободные
  * стейблы живут в /api/zones. Он читается отдельно и необязателен —
@@ -58,8 +62,13 @@ export function DebtScreen() {
   const debt = useApi<DebtResponseDto>("/api/debt");
   const leverage = useApi<LeverageResponseDto>("/api/leverage");
   const zones = useApi<ZonesSlice>("/api/zones");
+  // Цель LTV правится тут же, поэтому храним локально: перезапрашивать
+  // настройки ради собственной правки — лишний круг
+  const settings = useApi<SettingsDto>("/api/settings");
+  const [targetLtvOverride, setTargetLtvOverride] = useState<number | null>(
+    null,
+  );
   const [refreshing, setRefreshing] = useState(false);
-  const [busyLink, setBusyLink] = useState(false);
   // Тик раз в минуту — метка «залог N мин назад» не застывает
   const [, setTick] = useState(0);
 
@@ -80,40 +89,6 @@ export function DebtScreen() {
       );
     } finally {
       setRefreshing(false);
-    }
-  }
-
-  async function link(borrowId: string, positionId: string) {
-    await mutateLink(() =>
-      apiFetch("/api/borrow-links", {
-        method: "POST",
-        body: JSON.stringify({ borrowId, positionId }),
-      }),
-    );
-  }
-
-  async function unlink(borrowId: string, positionId: string) {
-    // Связка адресуется парой — отдельный id связки клиенту знать незачем
-    await mutateLink(() =>
-      apiFetch(
-        `/api/borrow-links?borrowId=${encodeURIComponent(borrowId)}&positionId=${encodeURIComponent(positionId)}`,
-        { method: "DELETE" },
-      ),
-    );
-  }
-
-  async function mutateLink(run: () => Promise<unknown>) {
-    if (busyLink) return;
-    setBusyLink(true);
-    try {
-      await run();
-      await leverage.refetch();
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Не удалось изменить привязку",
-      );
-    } finally {
-      setBusyLink(false);
     }
   }
 
@@ -138,6 +113,11 @@ export function DebtScreen() {
 
   const { summary, chains } = debt.data;
   const threshold = summary.hfWarningThreshold;
+  // Своя правка важнее ответа сервера: он мог быть прочитан до неё.
+  // Пока настройки не пришли — дефолт стратегии, а не «—»: цель нужна
+  // расчёту, и подставлять сюда пустоту значило бы гасить весь блок
+  const targetLtvPct =
+    targetLtvOverride ?? settings.data?.targetLtvPct ?? DEFAULT_TARGET_LTV_PCT;
   const positions: PositionDto[] = leverage.data?.positions ?? [];
   const borrowRatePercent = zones.data?.stableBorrow.ratePercent ?? null;
 
@@ -189,17 +169,6 @@ export function DebtScreen() {
     />
   );
 
-  const leverageCard =
-    leverage.data !== null &&
-    (leverage.data.borrows.length > 0 || positions.length > 0) ? (
-      <LeverageCard
-        data={leverage.data}
-        busy={busyLink}
-        onLink={(b, p) => void link(b, p)}
-        onUnlink={(b, p) => void unlink(b, p)}
-      />
-    ) : null;
-
   // Долг ни разу не читался и «долгов нет» — разные состояния, и выглядят
   // они по-разному: «—» это не ноль
   if (summary.totalDebtUsd === null || summary.totalDebtUsd === 0) {
@@ -227,7 +196,6 @@ export function DebtScreen() {
               }
             />
           </DcCard>
-          {leverageCard}
           <Disclaimer />
         </div>
       </TooltipProvider>
@@ -290,6 +258,8 @@ export function DebtScreen() {
           liquidationLtvPercent={liquidationLtvPercent(chains)}
           borrowRatePercent={borrowRatePercent}
           spreadPp={spreadPp}
+          targetLtvPct={targetLtvPct}
+          onTargetLtvSaved={setTargetLtvOverride}
         />
 
         <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
@@ -316,8 +286,6 @@ export function DebtScreen() {
             minHealthFactor={summary.minHealthFactor}
           />
         )}
-
-        {leverageCard}
 
         <Disclaimer />
       </div>
