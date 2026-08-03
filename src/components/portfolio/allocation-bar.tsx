@@ -189,7 +189,7 @@ export function CategoryAllocation({
 
   return (
     <AllocationFrame
-      title="Распределение по категориям"
+      title="Распределение по активам"
       meta={
         positionsUsd === null || positionsUsd === 0
           ? undefined
@@ -199,7 +199,7 @@ export function CategoryAllocation({
       <AllocationSegments
         segments={segments}
         markers={markers}
-        ariaLabel={`Распределение по категориям: ${rows
+        ariaLabel={`Распределение по активам: ${rows
           .map(
             (r) =>
               `${r.label} ${tablePct(r.percent)}` +

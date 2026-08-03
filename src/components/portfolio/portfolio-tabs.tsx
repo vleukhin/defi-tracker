@@ -5,7 +5,7 @@ import { useCallback, useEffect } from "react";
 import { Segmented } from "@/components/dc/segmented";
 
 /**
- * Разрез портфеля: «Категории» или «Зоны» — один и тот же капитал в двух
+ * Разрез портфеля: «Активы» или «Зоны» — один и тот же капитал в двух
  * проекциях (docs/07 §10.1). Категория отвечает «в чём лежит» (BTC / ETH /
  * стейблы), зона — «какую задачу решает» (Growth / Yield / Stability).
  * Стейблкоины есть и в Stability, и в Yield, поэтому один разрез через
@@ -24,8 +24,10 @@ export type PortfolioView = "categories" | "zones";
 const DEFAULT_VIEW: PortfolioView = "zones";
 const STORAGE_KEY = "portfolioView";
 
+// Значение в URL и localStorage остаётся «categories»: это ключ хранения,
+// а не подпись — переименование обнулило бы сохранённый выбор и ссылки
 const VIEW_OPTIONS: { value: PortfolioView; label: string }[] = [
-  { value: "categories", label: "Категории" },
+  { value: "categories", label: "Активы" },
   { value: "zones", label: "Зоны" },
 ];
 
