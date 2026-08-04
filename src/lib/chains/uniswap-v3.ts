@@ -2,9 +2,15 @@ import "server-only";
 import { erc20Abi, formatUnits, type Address } from "viem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CHAIN_IDS, getChainClients, type ChainId } from "./config";
-import { positionAmounts } from "./uniswap-math";
+import { blockAtTimestamp } from "./blocks";
+import {
+  feeGrowthInside,
+  feesFromGrowth,
+  positionAmounts,
+} from "./uniswap-math";
 import { coingeckoIdForSymbol } from "@/lib/prices/symbol-coingecko";
 import { logApiCall } from "@/lib/metrics";
+import type { Fees24hReason } from "@/lib/api/types";
 
 /**
  * LP-позиции Uniswap v3 (S5.2).
@@ -138,6 +144,38 @@ export const poolAbi = [
       { name: "unlocked", type: "bool" },
     ],
   },
+  {
+    name: "feeGrowthGlobal0X128",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "feeGrowthGlobal1X128",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    // Последнее поле, initialized — единственный прямой признак живого тика:
+    // у несуществующего геттер возвращает нули, а не реверт
+    name: "ticks",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tick", type: "int24" }],
+    outputs: [
+      { name: "liquidityGross", type: "uint128" },
+      { name: "liquidityNet", type: "int128" },
+      { name: "feeGrowthOutside0X128", type: "uint256" },
+      { name: "feeGrowthOutside1X128", type: "uint256" },
+      { name: "tickCumulativeOutside", type: "int56" },
+      { name: "secondsPerLiquidityOutsideX128", type: "uint160" },
+      { name: "secondsOutside", type: "uint32" },
+      { name: "initialized", type: "bool" },
+    ],
+  },
 ] as const;
 
 /** Максимум uint128 — «забрать все» при симуляции collect. */
@@ -154,6 +192,31 @@ export interface UniV3Token {
   feesQuantity: number | null;
 }
 
+/**
+ * Комиссии позиции за последние сутки.
+ *
+ * Считаются по аккумуляторам пула на двух блоках, а не по разнице
+ * несобранного остатка: сбор комиссий внутри окна на аккумуляторы не влияет,
+ * поэтому цифра верна независимо от того, забирал пользователь комиссии или
+ * нет.
+ *
+ * Ноль здесь — содержательный ответ (позиция простояла сутки вне диапазона),
+ * поэтому он приходит с ok: true, а не отказом.
+ */
+export type Fees24h =
+  | {
+      ok: true;
+      /** Начислено за окно, в единицах токена. */
+      token0: number;
+      token1: number;
+      fromBlock: number;
+      toBlock: number;
+      /** Фактические границы окна: до ровных суток оно не растягивается. */
+      fromAt: string;
+      toAt: string;
+    }
+  | { ok: false; reason: Fees24hReason };
+
 export interface UniV3PositionReading {
   chain: ChainId;
   tokenId: string;
@@ -168,6 +231,8 @@ export interface UniV3PositionReading {
   liquidity: string;
   token0: UniV3Token;
   token1: UniV3Token;
+  /** Комиссии за последние сутки; считаются отдельным проходом. */
+  fees24h: Fees24h;
 }
 
 export interface UniV3ChainStatus {
@@ -192,7 +257,13 @@ export interface UniV3RpcClient {
       args: readonly unknown[];
     }[];
     allowFailure: true;
+    /** Пин по блоку: нужен и для «сутки назад», и для согласованного «сейчас». */
+    blockNumber?: bigint;
   }): Promise<readonly MulticallResult[]>;
+  /** Перевод «сутки назад» в номер блока — иначе состояние не запросить. */
+  getBlock(args?: {
+    blockNumber?: bigint;
+  }): Promise<{ number: bigint | null; timestamp: bigint }>;
   /** Симуляция collect: комиссии иначе не узнать (в positions() они устаревшие). */
   simulateContract(args: {
     address: Address;
@@ -232,6 +303,322 @@ function asPositionTuple(value: unknown): RawPosition | null {
     tickUpper: Number(value[6]),
     liquidity: value[7] as bigint,
   };
+}
+
+/** Окно, за которое считаются комиссии. */
+const DAY_SECONDS = 86_400n;
+
+/** Состояние граничного тика — все, что от него нужно аккумулятору. */
+export interface TickSample {
+  outside0X128: bigint;
+  outside1X128: bigint;
+  /**
+   * У никогда не инициализированного тика геттер возвращает нули и НЕ
+   * ревертит. Без этого флага такой тик выглядел бы как честный ноль, и
+   * позиция получила бы выдуманные комиссии.
+   */
+  initialized: boolean;
+}
+
+/** Срез состояния позиции и ее пула на одном блоке. null = не прочитано. */
+export interface Fees24hSample {
+  tick: number | null;
+  global0X128: bigint | null;
+  global1X128: bigint | null;
+  lower: TickSample | null;
+  upper: TickSample | null;
+  /** Ликвидность ЭТОЙ позиции, не пула. null = positions() отказал. */
+  liquidity: bigint | null;
+}
+
+export interface Fees24hWindow {
+  fromBlock: number;
+  toBlock: number;
+  fromAt: string;
+  toAt: string;
+}
+
+/**
+ * Комиссии позиции за окно из двух срезов — вся содержательная часть расчета.
+ *
+ * Чистая: сеть остается снаружи, поэтому ветки отказов проверяются тестами,
+ * а не подбором условий на живом кошельке.
+ *
+ * Порядок проверок значим. Сначала отсекается общий отказ чтения: если у
+ * старого среза не прочиталось состояние ПУЛА, значит архива нет, и молчание
+ * positions() ничего не говорит о возрасте позиции. И только когда пул на том
+ * блоке прочитан, отказ positions() означает ровно одно — позиции тогда еще
+ * не было.
+ */
+export function fees24hFrom(
+  then: Fees24hSample,
+  now: Fees24hSample,
+  bounds: {
+    tickLower: number;
+    tickUpper: number;
+    decimals0: number;
+    decimals1: number;
+  },
+  window: Fees24hWindow,
+): Fees24h {
+  const poolRead = (s: Fees24hSample) =>
+    s.tick !== null &&
+    s.global0X128 !== null &&
+    s.global1X128 !== null &&
+    s.lower !== null &&
+    s.upper !== null;
+
+  if (!poolRead(now) || now.liquidity === null) {
+    return { ok: false, reason: "no_archive" };
+  }
+  if (!poolRead(then)) return { ok: false, reason: "no_archive" };
+  if (then.liquidity === null) return { ok: false, reason: "too_young" };
+
+  // Формула верна только при неизменной ликвидности. Заодно это доказывает,
+  // что граничные тики не пересоздавались: ticks.clear() срабатывает лишь при
+  // liquidityGross == 0, а он все окно был не меньше нашей ликвидности
+  if (then.liquidity !== now.liquidity) {
+    return { ok: false, reason: "liquidity_changed" };
+  }
+  if (
+    !then.lower!.initialized ||
+    !then.upper!.initialized ||
+    !now.lower!.initialized ||
+    !now.upper!.initialized
+  ) {
+    return { ok: false, reason: "tick_uninitialized" };
+  }
+
+  const insideAt = (s: Fees24hSample, token: 0 | 1) =>
+    feeGrowthInside(
+      s.tick!,
+      bounds.tickLower,
+      bounds.tickUpper,
+      token === 0 ? s.global0X128! : s.global1X128!,
+      token === 0 ? s.lower!.outside0X128 : s.lower!.outside1X128,
+      token === 0 ? s.upper!.outside0X128 : s.upper!.outside1X128,
+    );
+
+  const raw0 = feesFromGrowth(now.liquidity, insideAt(now, 0), insideAt(then, 0));
+  const raw1 = feesFromGrowth(now.liquidity, insideAt(now, 1), insideAt(then, 1));
+  if (raw0 === null || raw1 === null) {
+    return { ok: false, reason: "implausible" };
+  }
+
+  const token0 = Number(formatUnits(raw0, bounds.decimals0));
+  const token1 = Number(formatUnits(raw1, bounds.decimals1));
+  if (!Number.isFinite(token0) || !Number.isFinite(token1)) {
+    return { ok: false, reason: "implausible" };
+  }
+
+  return { ok: true, token0, token1, ...window };
+}
+
+/** Позиция, для которой считаются комиссии за сутки. */
+export interface Fees24hTarget {
+  tokenId: bigint;
+  pool: Address;
+  tickLower: number;
+  tickUpper: number;
+  decimals0: number;
+  decimals1: number;
+}
+
+const tickKey = (pool: string, tick: number) =>
+  `${pool.toLowerCase()}:${tick}`;
+
+function asTickSample(value: unknown): TickSample | null {
+  if (!Array.isArray(value) || value.length < 8) return null;
+  const [, , outside0, outside1, , , , initialized] = value;
+  if (typeof outside0 !== "bigint" || typeof outside1 !== "bigint") return null;
+  return {
+    outside0X128: outside0,
+    outside1X128: outside1,
+    initialized: initialized === true,
+  };
+}
+
+/**
+ * Состояние всех позиций и их пулов на ОДНОМ блоке, одним мультиколлом.
+ *
+ * Пин по блоку обязателен с обеих сторон окна. Иначе на Arbitrum, где четыре
+ * блока в секунду, feeGrowthGlobal успевал бы приехать с одного блока, а
+ * feeGrowthOutside — с другого, и «сейчас» оказывалось бы тихо несогласованным.
+ *
+ * Ключи разные, потому что и сущности разные: slot0 и глобальные аккумуляторы
+ * общие для пула, feeGrowthOutside — у пары (пул, тик), ликвидность — у
+ * конкретного NFT. Ликвидность принадлежит своему диапазону: две позиции
+ * в одном пуле с разными границами зарабатывают по-разному.
+ */
+async function readStateAtBlock(
+  client: UniV3RpcClient,
+  npm: Address,
+  targets: Fees24hTarget[],
+  blockNumber: bigint,
+): Promise<Map<string, Fees24hSample>> {
+  const pools = [...new Set(targets.map((t) => t.pool.toLowerCase()))];
+
+  const tickRefs: { pool: string; tick: number }[] = [];
+  const seenTicks = new Set<string>();
+  for (const t of targets) {
+    for (const tick of [t.tickLower, t.tickUpper]) {
+      const key = tickKey(t.pool, tick);
+      if (seenTicks.has(key)) continue;
+      seenTicks.add(key);
+      tickRefs.push({ pool: t.pool.toLowerCase(), tick });
+    }
+  }
+
+  const poolCall = (functionName: string) =>
+    pools.map((p) => ({
+      address: p as Address,
+      abi: poolAbi,
+      functionName,
+      args: [] as const,
+    }));
+
+  const results = await client.multicall({
+    contracts: [
+      ...poolCall("slot0"),
+      ...poolCall("feeGrowthGlobal0X128"),
+      ...poolCall("feeGrowthGlobal1X128"),
+      ...tickRefs.map((r) => ({
+        address: r.pool as Address,
+        abi: poolAbi,
+        functionName: "ticks",
+        args: [r.tick] as const,
+      })),
+      ...targets.map((t) => ({
+        address: npm,
+        abi: npmAbi,
+        functionName: "positions",
+        args: [t.tokenId] as const,
+      })),
+    ],
+    allowFailure: true,
+    blockNumber,
+  });
+
+  const P = pools.length;
+  const at = (i: number) => results[i];
+  const bigintAt = (i: number): bigint | null => {
+    const r = at(i);
+    return r?.status === "success" && typeof r.result === "bigint"
+      ? r.result
+      : null;
+  };
+
+  const tickByPool = new Map<string, number>();
+  const global0 = new Map<string, bigint>();
+  const global1 = new Map<string, bigint>();
+  pools.forEach((p, i) => {
+    const slot = at(i);
+    if (slot?.status === "success" && Array.isArray(slot.result)) {
+      const tick = slot.result[1];
+      if (typeof tick === "number") tickByPool.set(p, tick);
+    }
+    const g0 = bigintAt(P + i);
+    if (g0 !== null) global0.set(p, g0);
+    const g1 = bigintAt(2 * P + i);
+    if (g1 !== null) global1.set(p, g1);
+  });
+
+  const ticks = new Map<string, TickSample>();
+  tickRefs.forEach((r, i) => {
+    const parsed = asTickSample(at(3 * P + i)?.result);
+    if (parsed !== null) ticks.set(tickKey(r.pool, r.tick), parsed);
+  });
+
+  const liquidity = new Map<string, bigint>();
+  targets.forEach((t, i) => {
+    const r = at(3 * P + tickRefs.length + i);
+    if (r?.status !== "success") return;
+    const parsed = asPositionTuple(r.result);
+    if (parsed !== null) liquidity.set(t.tokenId.toString(), parsed.liquidity);
+  });
+
+  const byToken = new Map<string, Fees24hSample>();
+  for (const t of targets) {
+    const pool = t.pool.toLowerCase();
+    byToken.set(t.tokenId.toString(), {
+      tick: tickByPool.get(pool) ?? null,
+      global0X128: global0.get(pool) ?? null,
+      global1X128: global1.get(pool) ?? null,
+      lower: ticks.get(tickKey(pool, t.tickLower)) ?? null,
+      upper: ticks.get(tickKey(pool, t.tickUpper)) ?? null,
+      liquidity: liquidity.get(t.tokenId.toString()) ?? null,
+    });
+  }
+  return byToken;
+}
+
+/**
+ * Комиссии за сутки по всем позициям сети. НИКОГДА не бросает.
+ *
+ * Это не осторожность, а требование: голый throw отсюда попал бы во внешний
+ * catch читателя, тот вернул бы ok: false с пустым списком, и отсутствие
+ * архивного узла стирало бы карточку LP целиком — вместе со стоимостью,
+ * составом и диапазоном. Та же дисциплина изолированных контуров, что
+ * в POST /api/refresh, только уровнем ниже.
+ *
+ * Ключ результата — tokenId, а не адрес пула: в одном пуле у кошелька бывает
+ * несколько позиций с разными диапазонами.
+ */
+export async function readFees24h(
+  client: UniV3RpcClient,
+  chain: ChainId,
+  targets: Fees24hTarget[],
+  logCall: typeof logApiCall = logApiCall,
+): Promise<Map<string, Fees24h>> {
+  const fallback = (reason: Fees24hReason) =>
+    new Map(targets.map((t) => [t.tokenId.toString(), { ok: false as const, reason }]));
+
+  if (targets.length === 0) return new Map();
+
+  try {
+    const nowSec = BigInt(Math.floor(Date.now() / 1000));
+    const window = await blockAtTimestamp(client, nowSec - DAY_SECONDS);
+    // Окно вырождено: цепочка моложе суток либо голова не прочиталась
+    if (window === null || window.from.block >= window.latest.block) {
+      return fallback("no_archive");
+    }
+
+    const { npm } = UNIV3_ADDRESSES[chain];
+    const [then, now] = await Promise.all([
+      readStateAtBlock(client, npm, targets, window.from.block),
+      readStateAtBlock(client, npm, targets, window.latest.block),
+    ]);
+    void logCall("alchemy", `univ3:${chain}:fees24h`, { units: 2 });
+
+    const asIso = (sec: bigint) => new Date(Number(sec) * 1000).toISOString();
+    const bounds: Fees24hWindow = {
+      fromBlock: Number(window.from.block),
+      toBlock: Number(window.latest.block),
+      fromAt: asIso(window.from.timestamp),
+      toAt: asIso(window.latest.timestamp),
+    };
+
+    const out = new Map<string, Fees24h>();
+    for (const t of targets) {
+      const key = t.tokenId.toString();
+      const a = then.get(key);
+      const b = now.get(key);
+      out.set(
+        key,
+        a === undefined || b === undefined
+          ? { ok: false, reason: "no_archive" }
+          : fees24hFrom(a, b, t, bounds),
+      );
+    }
+    return out;
+  } catch (err) {
+    // Текст ошибки НЕ разбираем: fallback-транспорт отдает сообщение
+    // последнего провайдера в цепочке, а не того, который реально не смог
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[univ3] ${chain}: комиссии за сутки не прочитаны: ${message}`);
+    void logCall("alchemy", `univ3:${chain}:fees24h`, { units: 2, ok: false });
+    return fallback("no_archive");
+  }
 }
 
 /**
@@ -428,6 +815,27 @@ export async function readChainUniswapV3(
     );
     void logCall("alchemy", `univ3:${chain}:collect`, { units: raw.length });
 
+    // Комиссии за сутки — отдельным проходом по двум блокам. Цели собираются
+    // только из позиций с известными пулом и decimals: без них считать нечего
+    const targets: Fees24hTarget[] = raw.flatMap((p, i) => {
+      const pool = poolAddresses[i];
+      if (!pool || pool === ZERO_ADDRESS) return [];
+      const d0 = decimalsByToken.get(p.token0.toLowerCase());
+      const d1 = decimalsByToken.get(p.token1.toLowerCase());
+      if (d0 === undefined || d1 === undefined) return [];
+      return [
+        {
+          tokenId: p.tokenId,
+          pool,
+          tickLower: p.tickLower,
+          tickUpper: p.tickUpper,
+          decimals0: d0,
+          decimals1: d1,
+        },
+      ];
+    });
+    const fees24hByToken = await readFees24h(client, chain, targets, logCall);
+
     const positions: UniV3PositionReading[] = [];
     raw.forEach((p, i) => {
       const pool = poolAddresses[i];
@@ -478,6 +886,10 @@ export async function readChainUniswapV3(
           quantity: Number(formatUnits(amounts.amount1, d1)),
           feesQuantity:
             fee === null ? null : Number(formatUnits(fee.amount1, d1)),
+        },
+        fees24h: fees24hByToken.get(p.tokenId.toString()) ?? {
+          ok: false,
+          reason: "no_archive",
         },
       });
     });
@@ -537,6 +949,15 @@ export interface UniV3PositionPayload {
    * Занижать срок ожидания безопаснее, чем завышать.
    */
   outOfRangeSince: string | null;
+  /**
+   * Комиссии за последние сутки на момент чтения.
+   *
+   * Правило хранения здесь ОБРАТНОЕ соседнему outOfRangeSince: то поле
+   * переносится из прежней записи, потому что невосстановимо, а это —
+   * пересчитывается целиком каждым обновлением. Перенести его значило бы
+   * показать вчерашнюю цифру как сегодняшнюю, а это хуже, чем «неизвестно».
+   */
+  fees24h: Fees24h;
 }
 
 /** Прежнее состояние позиции — только то, что нужно для отсчета 48 часов. */
@@ -621,6 +1042,10 @@ export async function persistUniswapV3Positions(
               previousByKey.get(`${p.chain}:${p.tokenId}`),
               nowIso,
             ),
+            // Пишется как прочиталось. В previousByKey его добавлять НЕЛЬЗЯ:
+            // перенесенное значение — это вчерашние комиссии под видом
+            // сегодняшних, что хуже честного «не прочитано»
+            fees24h: p.fees24h,
           },
           updated_at: nowIso,
         }))

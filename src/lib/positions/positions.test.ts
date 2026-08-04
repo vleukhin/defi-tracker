@@ -62,7 +62,13 @@ function gmRow(id: string, valueUsd: number | null): PositionRowInput {
 
 function lpRow(
   id: string,
-  opts: { inRange?: boolean; fees?: number | null; price1?: number | null } = {},
+  opts: {
+    inRange?: boolean;
+    fees?: number | null;
+    price1?: number | null;
+    /** undefined = строка старого формата, без ключа fees24h вовсе. */
+    fees24h?: unknown;
+  } = {},
 ): PositionRowInput {
   return {
     ...BASE,
@@ -77,6 +83,7 @@ function lpRow(
       tickLower: -201000,
       tickUpper: -200000,
       inRange: opts.inRange ?? true,
+      ...("fees24h" in opts ? { fees24h: opts.fees24h } : {}),
       token0: {
         symbol: "WETH",
         coingeckoId: "weth",
@@ -312,6 +319,67 @@ describe("оценка позиций", () => {
     expect(r.positions[0].feesUsd).toBeNull();
     // На стоимость самой позиции это не влияет
     expect(r.positions[0].valueUsd).toBe(4800);
+  });
+});
+
+describe("комиссии за сутки", () => {
+  const earned = { ok: true, token0: 0.002, token1: 3 };
+
+  it("оценивается по обоим токенам текущей ценой", () => {
+    const r = buildPositions({
+      rows: [lpRow("42", { fees24h: earned })],
+      pricesUsd: PRICES,
+    });
+    // 0,002 * 1900 + 3 * 1
+    expect(r.positions[0].fees24hUsd).toBeCloseTo(6.8, 6);
+    expect(r.positions[0].fees24hReason).toBeNull();
+  });
+
+  it("ноль — настоящий ответ: позиция сутки простояла вне диапазона", () => {
+    const r = buildPositions({
+      rows: [
+        lpRow("42", {
+          inRange: false,
+          fees24h: { ok: true, token0: 0, token1: 0 },
+        }),
+      ],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions[0].fees24hUsd).toBe(0);
+    expect(r.positions[0].fees24hReason).toBeNull();
+  });
+
+  it("отказ доносит причину, а сумму оставляет неизвестной", () => {
+    const r = buildPositions({
+      rows: [lpRow("42", { fees24h: { ok: false, reason: "too_young" } })],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions[0].fees24hUsd).toBeNull();
+    expect(r.positions[0].fees24hReason).toBe("too_young");
+  });
+
+  it("без цены компонента сумма неизвестна целиком, а не наполовину", () => {
+    const r = buildPositions({
+      rows: [lpRow("42", { price1: null, fees24h: earned })],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions[0].fees24hUsd).toBeNull();
+    // Но это не отказ расчета: причины нет, цены нет
+    expect(r.positions[0].fees24hReason).toBeNull();
+  });
+
+  it("строка старого формата: «еще не считалось», а не ноль и не отказ", () => {
+    const r = buildPositions({ rows: [lpRow("42")], pricesUsd: PRICES });
+    expect(r.positions[0].fees24hUsd).toBeNull();
+    expect(r.positions[0].fees24hReason).toBeNull();
+    // Остальная сборка при этом цела
+    expect(r.positions[0].valueUsd).toBe(4800);
+  });
+
+  it("у не-LP позиций поля пустые, а не нулевые", () => {
+    const r = buildPositions({ rows: [gmRow("g", 1550)], pricesUsd: PRICES });
+    expect(r.positions[0].fees24hUsd).toBeNull();
+    expect(r.positions[0].fees24hReason).toBeNull();
   });
 });
 

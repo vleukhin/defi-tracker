@@ -5,6 +5,7 @@ import { Chip, StatusChip, type StatusTone } from "@/components/dc/chip";
 import { Verdict } from "@/components/dc/card";
 import { Metric } from "@/components/dc/metrics";
 import type {
+  Fees24hReason,
   PositionComponentDto,
   PositionDto,
   PositionRangeDto,
@@ -12,6 +13,7 @@ import type {
 import {
   chainLabel,
   dcUsd,
+  dcUsdSigned,
   formatRelativeTime,
   tablePct,
   tablePctSigned,
@@ -110,15 +112,15 @@ export function UniswapCard({
         />
         <Metric
           label="Комиссии"
-          hint="Не собранные комиссии: позиция их накопила, но в стоимость они не входят и приходят отдельно при выводе."
-          value={fees === null ? null : dcUsd(fees)}
-          delta={
-            fees === null
-              ? "не прочитаны — симуляция сбора не удалась"
-              : principal !== null && principal > 0
-                ? `не собраны · ${tablePct((fees / principal) * 100, 2)} к вложенному`
-                : "не собраны"
+          hint={
+            "Значение — не собранные комиссии: позиция их накопила, но в стоимость они не входят и приходят отдельно при выводе. " +
+            (principal !== null && principal > 0 && fees !== null
+              ? `Это ${tablePct((fees / principal) * 100, 2)} к вложенному. `
+              : "") +
+            "Ниже — сколько пул начислил за последние сутки: считается по аккумуляторам комиссий пула на двух блоках, поэтому сбор комиссий внутри суток на эту величину не влияет."
           }
+          value={fees === null ? null : dcUsd(fees)}
+          delta={fees24hDelta(position)}
         />
         <Metric
           label="Вложено"
@@ -322,6 +324,36 @@ function RangeVerdict({
           : "Срок ожидания вышел — по стратегии позицию пора закрывать."}
     </Verdict>
   );
+}
+
+/** Русские подписи к кодам отказа: в базе лежит код, формулировка — здесь. */
+const FEES_24H_REASON: Record<Fees24hReason, string> = {
+  no_archive: "за сутки не прочитано",
+  too_young: "позиция моложе суток",
+  liquidity_changed: "ликвидность менялась за сутки",
+  tick_uninitialized: "границы диапазона сменились за сутки",
+  implausible: "за сутки не прочитано",
+};
+
+/**
+ * Третья строка метрики комиссий — поток за сутки.
+ *
+ * Ноль здесь показывается словами, а не «+$0»: позиция, простоявшая сутки
+ * вне диапазона, действительно ничего не начислила, и это ответ, а не
+ * отсутствие данных. Прочерк остаётся за настоящим «неизвестно».
+ */
+function fees24hDelta(position: PositionDto): string {
+  const earned = position.fees24hUsd;
+  if (earned === null) {
+    const reason = position.fees24hReason;
+    if (reason !== null) return FEES_24H_REASON[reason];
+    // Причины нет, суммы нет: либо строка записана до появления расчёта,
+    // либо у компонента неизвестна цена
+    return "за сутки ещё не считалось";
+  }
+  return earned === 0
+    ? "за сутки комиссий нет"
+    : `${dcUsdSigned(earned)} за сутки`;
 }
 
 /** Статус диапазона: у границы позиция ещё работает, но уже почти вышла. */

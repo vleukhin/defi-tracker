@@ -1,4 +1,5 @@
 import type {
+  Fees24hReason,
   PositionComponentDto,
   PositionDto,
   PositionProtocol,
@@ -81,7 +82,19 @@ interface UniV3Payload {
   tick?: number | null;
   /** Ликвидность позиции — из нее считаются количества на границах. */
   liquidity?: string | null;
+  /**
+   * Комиссии за последние сутки на момент чтения. Необязателен: строки,
+   * записанные до появления расчета, его не хранят — и это не «ноль
+   * комиссий», а «еще не считалось».
+   */
+  fees24h?: Fees24hPayload | null;
 }
+
+/** Зеркало Fees24h читателя цепочки; сюда доходит уже разобранным из jsonb. */
+type Fees24hPayload =
+  | { ok: true; token0: number; token1: number }
+  | { ok: false; reason: Fees24hReason };
+
 interface LpToken {
   symbol: string;
   coingeckoId: string | null;
@@ -272,6 +285,8 @@ function buildFluid(
       { symbol: payload.symbol, quantity: quantity ?? 0, valueUsd, side: null },
     ],
     feesUsd: null,
+    fees24hUsd: null,
+    fees24hReason: null,
     inRange: null,
     outOfRangeSince: null,
     range: null,
@@ -313,6 +328,8 @@ function buildGm(
     valueUsd,
     components,
     feesUsd: null,
+    fees24hUsd: null,
+    fees24hReason: null,
     inRange: null,
     outOfRangeSince: null,
     range: null,
@@ -357,6 +374,21 @@ function buildLp(
     }),
   );
 
+  // Комиссии за сутки оцениваются СЕГОДНЯШНЕЙ ценой, и это осознанно: токены
+  // никуда не делись, они лежат в позиции. Цена вчерашнего момента отвечала бы
+  // на другой вопрос — «сколько это стоило тогда»
+  const fees24h = payload.fees24h ?? null;
+  const fees24hUsd =
+    fees24h === null || !fees24h.ok
+      ? null
+      : sumOrNull([
+          { q: fees24h.token0, t: payload.token0 },
+          { q: fees24h.token1, t: payload.token1 },
+        ].map(({ q, t }) => {
+          const price = priceOf(t);
+          return price === null ? null : q * price;
+        }));
+
   return {
     id: row.id,
     protocol: "uni_v3",
@@ -373,6 +405,10 @@ function buildLp(
     valueUsd,
     components,
     feesUsd,
+    fees24hUsd,
+    // Причина нужна и когда поля нет вовсе: «еще не считалось» — это тоже
+    // ответ, и на карточке он должен отличаться от «не прочитано»
+    fees24hReason: fees24h === null ? null : fees24h.ok ? null : fees24h.reason,
     inRange: payload.inRange,
     // В диапазоне таймер не идет: момент выхода сбрасывается читателем
     outOfRangeSince: payload.inRange ? null : (payload.outOfRangeSince ?? null),

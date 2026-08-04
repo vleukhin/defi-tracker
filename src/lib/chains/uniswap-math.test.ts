@@ -4,6 +4,8 @@ import {
   MIN_TICK,
   amount0ForLiquidity,
   amount1ForLiquidity,
+  feeGrowthInside,
+  feesFromGrowth,
   getSqrtRatioAtTick,
   positionAmounts,
   tickToPrice,
@@ -156,5 +158,90 @@ describe("tickToPrice", () => {
   it("мусор вместо тика -> null, а не NaN на экране", () => {
     expect(tickToPrice(Number.NaN, 18, 18)).toBeNull();
     expect(tickToPrice(Number.POSITIVE_INFINITY, 18, 18)).toBeNull();
+  });
+});
+
+/**
+ * Аккумулятор диапазона. Проверяются две вещи, которые глазами не ловятся:
+ * асимметрия веток на границах и заворачивание по модулю 2^256.
+ */
+describe("feeGrowthInside", () => {
+  const tickLower = -1000;
+  const tickUpper = 1000;
+  // Разные константы нарочно: перепутанные below/above иначе не отличить
+  const global = 1_000_000n;
+  const outsideLower = 30_000n;
+  const outsideUpper = 7_000n;
+
+  const inside = (tickCurrent: number) =>
+    feeGrowthInside(
+      tickCurrent,
+      tickLower,
+      tickUpper,
+      global,
+      outsideLower,
+      outsideUpper,
+    );
+
+  it("цена внутри диапазона — вычитаются обе стороны как есть", () => {
+    expect(inside(0)).toBe(global - outsideLower - outsideUpper);
+  });
+
+  it("цена ниже диапазона — нижняя сторона берется дополнением", () => {
+    // below = global − outsideLower, above = outsideUpper
+    expect(inside(-2000)).toBe(BigInt.asUintN(256, outsideLower - outsideUpper));
+  });
+
+  it("цена выше диапазона — дополнением берется верхняя сторона", () => {
+    // Здесь outsideUpper < outsideLower, поэтому результат заворачивается
+    expect(inside(2000)).toBe(BigInt.asUintN(256, outsideUpper - outsideLower));
+    expect(inside(2000)).toBeGreaterThan(1n << 255n);
+  });
+
+  it("на нижней границе работает ветка >= : тик считается внутри", () => {
+    expect(inside(tickLower)).toBe(inside(0));
+    expect(inside(tickLower)).not.toBe(inside(tickLower - 1));
+  });
+
+  it("на верхней границе работает ветка < : тик считается снаружи", () => {
+    expect(inside(tickUpper)).toBe(inside(tickUpper + 1));
+    expect(inside(tickUpper)).not.toBe(inside(tickUpper - 1));
+  });
+
+  it("inside законно заворачивается, когда сторон больше глобального", () => {
+    // Так и бывает в живых пулах: Tick.update кладет outside = global
+    const wrapped = feeGrowthInside(0, tickLower, tickUpper, 10n, 8n, 7n);
+    expect(wrapped).toBe(BigInt.asUintN(256, -5n));
+    expect(wrapped).toBeGreaterThan(1n << 255n);
+  });
+});
+
+describe("feesFromGrowth", () => {
+  it("комиссии = дельта × ликвидность / 2^128", () => {
+    expect(feesFromGrowth(5n, 3n << 128n, 0n)).toBe(15n);
+  });
+
+  it("дельта заворачивается через ноль — окно не теряется", () => {
+    // insideThen у самого верха uint256, insideNow уже за переполнением
+    const then = (1n << 256n) - 5n;
+    const now = 3n;
+    expect(feesFromGrowth(1n << 128n, now, then)).toBe(8n);
+  });
+
+  it("округление вниз, как FullMath.mulDiv", () => {
+    // 1,5 * 2^128 при ликвидности 1 -> ровно 1
+    expect(feesFromGrowth(1n, (1n << 128n) + (1n << 127n), 0n)).toBe(1n);
+  });
+
+  it("нулевая ликвидность дает ноль, а не «неизвестно»", () => {
+    expect(feesFromGrowth(0n, 3n << 128n, 0n)).toBe(0n);
+  });
+
+  it("позиция вне диапазона все окно: дельты нет — настоящий ноль", () => {
+    expect(feesFromGrowth(10n ** 18n, 42n, 42n)).toBe(0n);
+  });
+
+  it("неправдоподобная величина -> null, а не мусор в заголовке", () => {
+    expect(feesFromGrowth(1n << 60n, 1n << 200n, 0n)).toBeNull();
   });
 });
