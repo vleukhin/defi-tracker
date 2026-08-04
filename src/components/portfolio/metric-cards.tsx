@@ -1,5 +1,6 @@
 "use client";
 
+import { HelpTip } from "@/components/dc/help-tip";
 import type { PortfolioRowDto } from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
@@ -22,6 +23,15 @@ import { CATEGORY_VAR, CategoryDot } from "./category";
  * цветом данных нельзя). Единственное крупное число в карточке — сумма;
  * доля, цель и P/L набраны мелко и спорить с ней не могут.
  */
+
+/**
+ * «?» только у стейблов: у BTC и ETH сумма — это залог по текущей цене,
+ * и вопросов не вызывает. Стейблы же складываются из собственных долей
+ * позиций, и их сумма не совпадает с тем, сколько денег в позиции внесли —
+ * это и сбивает с толку.
+ */
+const STABLE_HINT =
+  "Залог в стейблах, ручные записи и собственные доли позиций — всё по текущей стоимости, а не по вложенному. Просадка и доход позиции делятся между своими и заёмными пропорционально вложенному, поэтому своя доля движется вместе с позицией.";
 export function MetricCards({ rows }: { rows: PortfolioRowDto[] }) {
   return (
     <section className="grid gap-3 md:grid-cols-3">
@@ -45,6 +55,7 @@ function CategoryCard({ row }: { row: PortfolioRowDto }) {
         <h3 className="text-[14px] font-semibold tracking-[-0.01em]">
           {row.label}
         </h3>
+        {row.category === "stable" && <HelpTip>{STABLE_HINT}</HelpTip>}
         <span className="ml-auto text-[13px] font-medium text-text-2">
           {tablePct(row.percent)}
         </span>
