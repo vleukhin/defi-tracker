@@ -131,6 +131,89 @@ export function positionAmounts(
 }
 
 /**
+ * Аккумулятор комиссий диапазона — Tick.getFeeGrowthInside из v3-core.
+ *
+ * feeGrowthGlobal — комиссии на единицу ликвидности за всю историю пула;
+ * feeGrowthOutside граничного тика — та их часть, что накопилась ПО ТУ СТОРОНУ
+ * тика. Вычитанием обеих сторон остается доля диапазона.
+ *
+ * Ликвидность принадлежит конкретному диапазону, поэтому границы здесь —
+ * границы позиции, а не пула: две позиции в одном пуле с разными тиками дают
+ * разные значения. Значение растет только пока текущий тик внутри границ, так
+ * что «сколько времени цена простояла в диапазоне» отдельно считать не нужно —
+ * это уже учтено.
+ *
+ * ВСЯ арифметика по модулю 2^256, и это не небрежность. v3-core написан на
+ * Solidity 0.7.6, где переполнение не проверяется, а Tick.update при
+ * инициализации кладет feeGrowthOutside = feeGrowthGlobal — из-за этого в
+ * живых пулах и промежуточные разности, и сам inside регулярно «завернутые»
+ * числа. Смысл имеет только РАЗНИЦА двух inside, и она верна ровно потому,
+ * что оба завернулись одинаково. Убрать asUintN — значит получить
+ * отрицательные bigint там, где контракт видит большое положительное.
+ *
+ * Ветки несимметричны — `>=` снизу и `<` сверху, как в контракте. Разница
+ * видна, только когда цена стоит ровно на границе диапазона.
+ */
+export function feeGrowthInside(
+  tickCurrent: number,
+  tickLower: number,
+  tickUpper: number,
+  feeGrowthGlobalX128: bigint,
+  feeGrowthOutsideLowerX128: bigint,
+  feeGrowthOutsideUpperX128: bigint,
+): bigint {
+  const below =
+    tickCurrent >= tickLower
+      ? feeGrowthOutsideLowerX128
+      : BigInt.asUintN(256, feeGrowthGlobalX128 - feeGrowthOutsideLowerX128);
+  const above =
+    tickCurrent < tickUpper
+      ? feeGrowthOutsideUpperX128
+      : BigInt.asUintN(256, feeGrowthGlobalX128 - feeGrowthOutsideUpperX128);
+
+  return BigInt.asUintN(256, feeGrowthGlobalX128 - below - above);
+}
+
+/**
+ * Потолок правдоподобия: столько комиссий позиция накопить не может.
+ *
+ * Контракт хранит начисленное в uint128 и на этом рубеже сам бы обрезал.
+ * Реальные сутки дают величину порядка 1e20 «сырых» единиц, 2^128 ~ 3.4e38 —
+ * запас огромный. Смысл потолка в другом: если какая-то защита не сработала и
+ * окно оказалось несопоставимым, завернутая разность дает мусор около 2^256.
+ * Лучше отдать «неизвестно», чем поставить этот мусор в заголовок карточки.
+ */
+const MAX_PLAUSIBLE_FEES = 1n << 128n;
+
+/**
+ * Комиссии позиции за окно: Position.update, только между двумя блоками.
+ *
+ * Множитель — ликвидность ЭТОЙ позиции, не pool.liquidity(). Формула
+ * предполагает, что ликвидность внутри окна не менялась; проверяет это
+ * вызывающий, здесь — только арифметика.
+ *
+ * Деление на 2^128 сдвигом: FullMath.mulDiv округляет вниз, сдвиг bigint тоже.
+ *
+ * null = «неизвестно». Ноль — законный ответ: позиция, простоявшая окно вне
+ * диапазона, заработала ровно ноль, и это содержательная величина.
+ */
+export function feesFromGrowth(
+  liquidity: bigint,
+  feeGrowthInsideNowX128: bigint,
+  feeGrowthInsideThenX128: bigint,
+): bigint | null {
+  if (liquidity < 0n) return null;
+
+  const delta = BigInt.asUintN(
+    256,
+    feeGrowthInsideNowX128 - feeGrowthInsideThenX128,
+  );
+  const fees = (delta * liquidity) >> 128n;
+
+  return fees >= MAX_PLAUSIBLE_FEES ? null : fees;
+}
+
+/**
  * Цена по тику в человеческих единицах: сколько token1 за один token0.
  *
  * Здесь, в отличие от количеств, считать во float МОЖНО и нужно: это число

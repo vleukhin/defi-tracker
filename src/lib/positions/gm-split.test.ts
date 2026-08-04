@@ -33,6 +33,8 @@ function gm(
       { symbol: "USDC", quantity: 1, valueUsd: 1, side: "short" },
     ],
     feesUsd: null,
+    fees24hUsd: null,
+    fees24hReason: null,
     inRange: null,
     outOfRangeSince: null,
     range: null,

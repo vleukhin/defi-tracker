@@ -6,6 +6,21 @@
 
 export type PortfolioCategory = "btc" | "eth" | "stable";
 
+/**
+ * Почему не посчитались комиссии LP за сутки.
+ *
+ * Живет здесь, а не рядом с читателем цепочки: значение проходит весь путь
+ * от payload до карточки, а этот файл — единственный, который видят и сервер,
+ * и клиент (у читателей цепочек стоит server-only). Код, а не готовая фраза:
+ * текст в базе заморозил бы формулировку, подписи собираются на экране.
+ */
+export type Fees24hReason =
+  | "no_archive"
+  | "too_young"
+  | "liquidity_changed"
+  | "tick_uninitialized"
+  | "implausible";
+
 export interface WalletDto {
   id: string;
   address: string;
@@ -495,6 +510,17 @@ export interface PositionDto {
   components: PositionComponentDto[];
   /** Несобранные комиссии LP в долларах; null — неизвестны или неприменимо. */
   feesUsd: number | null;
+  /**
+   * Комиссии, начисленные пулу за последние сутки, в долларах.
+   *
+   * В отличие от feesUsd это поток, а не остаток: сбор комиссий внутри окна
+   * на него не влияет. Ноль — содержательный ответ (позиция простояла сутки
+   * вне диапазона), а null означает «не посчитано», и почему именно —
+   * в fees24hReason. Неприменимо ко всему, кроме LP.
+   */
+  fees24hUsd: number | null;
+  /** Почему комиссии за сутки неизвестны; null = известны или неприменимо. */
+  fees24hReason: Fees24hReason | null;
   /** false = LP вне диапазона (позиция целиком в одном активе); null — неприменимо. */
   inRange: boolean | null;
   /**
