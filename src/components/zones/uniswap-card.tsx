@@ -4,10 +4,12 @@ import { BarBlock, RangeBar } from "@/components/dc/bar";
 import { Chip, StatusChip, type StatusTone } from "@/components/dc/chip";
 import { Verdict } from "@/components/dc/card";
 import { Metric } from "@/components/dc/metrics";
+import { Fragment, type ReactNode } from "react";
 import type {
   Fees24hReason,
   PositionComponentDto,
   PositionDto,
+  PositionExitDto,
   PositionRangeDto,
 } from "@/lib/api/types";
 import {
@@ -95,11 +97,7 @@ export function UniswapCard({
         name="Uniswap v3"
         zone={position.zone}
         kind={<UnmarkedChip position={position} />}
-        meta={[
-          position.title,
-          chainLabel(position.chain),
-          <ComponentsMeta key="components" components={position.components} />,
-        ]}
+        meta={[position.title, chainLabel(position.chain), exitMeta(range)]}
         status={<StatusChip tone={status.tone}>{status.label}</StatusChip>}
         menu={<MarkPopover position={position} busy={busy} onMark={onMark} />}
       />
@@ -182,22 +180,44 @@ export function UniswapCard({
   );
 }
 
-/** Состав в мета-строке: «25,1223 WETH + 43 512 USDC». */
-function ComponentsMeta({
-  components,
-}: {
-  components: PositionComponentDto[];
-}) {
-  const held = components.filter((c) => c.quantity > 0);
-  if (held.length === 0) return null;
+/**
+ * Что останется на каждой границе: «↓ 8,2081 WETH · ↑ 45 200 USDC».
+ *
+ * Не состав — состав виден ниже полосой «Состав», и в шапке он был бы вторым
+ * написанием одного и того же. Здесь величина, которой на карточке больше
+ * нигде нет: во что позиция превратится, если цена дойдёт до края.
+ *
+ * Это и есть развилка стратегии (docs/07 §5, §6). Вниз — на руках остаётся
+ * базовый актив и уходит в Growth; вверх — остаются стейблы и диапазон
+ * перезаливают. Стрелки читаются вместе с полосой диапазона под метриками:
+ * левый край полосы — нижняя граница, правый — верхняя.
+ *
+ * Функция, а не компонент: MetaRow отсеивает пустые части строки по самому
+ * значению, и компонент, отрисовавший null, всё равно получил бы точку-
+ * разделитель.
+ */
+function exitMeta(range: PositionRangeDto | null): ReactNode | null {
+  const lower = range?.exitLower ?? null;
+  const upper = range?.exitUpper ?? null;
+  if (lower === null && upper === null) return null;
+
+  const side = (arrow: string, exit: PositionExitDto | null) =>
+    exit === null ? null : (
+      <span className="whitespace-nowrap">
+        <span className="text-text-4">{arrow}</span>{" "}
+        <MetaMono>{tokenQuantity(exit.quantity)}</MetaMono>
+        {` ${exit.symbol}`}
+      </span>
+    );
+
+  const parts = [side("↓", lower), side("↑", upper)].filter((p) => p !== null);
   return (
     <>
-      {held.map((c, index) => (
-        <span key={`${c.symbol}-${c.side ?? "flat"}`}>
-          {index > 0 && <span className="text-text-4"> + </span>}
-          <MetaMono>{tokenQuantity(c.quantity)}</MetaMono>
-          {` ${c.symbol}`}
-        </span>
+      {parts.map((part, index) => (
+        <Fragment key={index === 0 ? "lower" : "upper"}>
+          {index > 0 && <span className="text-text-4"> · </span>}
+          {part}
+        </Fragment>
       ))}
     </>
   );
