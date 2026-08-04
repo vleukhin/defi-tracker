@@ -33,6 +33,10 @@ import { SettingRow } from "./setting-row";
  * Кнопка «Проверить» существует ради нетерпения: привязку разбирает крон
  * раз в пятнадцать минут, и без неё пользователь смотрел бы на «не
  * подключён» после того, как уже написал боту.
+ *
+ * Когда на сервере нет токена бота (botConfigured), карточка не предлагает
+ * подключение вовсе: выданный в таком окружении код разобрать нечем, и
+ * тупик обнаружился бы только после отправки сообщения боту.
  */
 
 const ENDPOINT = "/api/notifications/telegram";
@@ -83,6 +87,10 @@ export function NotificationsCard() {
 
   const channel = data?.channel ?? null;
   const verified = channel?.verified ?? false;
+  // До ответа сервера считаем бота настроенным: мигать предупреждением
+  // о поломке на каждом заходе в настройки — хуже, чем показать его
+  // на полсекунды позже
+  const botConfigured = data?.botConfigured ?? true;
 
   async function act(
     action: "link" | "poll" | "test",
@@ -147,6 +155,9 @@ export function NotificationsCard() {
 
   const busy = pending !== null || (loading && !data);
   const sentAgo = formatRelativeTime(channel?.lastSentAt ?? null);
+  // Без бота и без привязки в ряду не остаётся ни одной кнопки —
+  // пустая полоса с рамкой выглядела бы как недогрузившийся интерфейс
+  const showActions = botConfigured || verified || error !== null;
 
   return (
     <DcCard as="section">
@@ -162,7 +173,11 @@ export function NotificationsCard() {
           hint="Один бот на приложение; сообщения приходят в личный чат с ним."
         >
           {channel === null ? (
-            <Chip>не подключён</Chip>
+            botConfigured ? (
+              <Chip>не подключён</Chip>
+            ) : (
+              <StatusChip tone="warn">не настроен</StatusChip>
+            )
           ) : verified ? (
             <StatusChip tone={channel.enabled ? "profit" : "warn"}>
               {channel.enabled ? "подключён" : "выключен"}
@@ -181,7 +196,7 @@ export function NotificationsCard() {
           )}
         </SettingRow>
 
-        {data?.linkCode != null && (
+        {botConfigured && data?.linkCode != null && (
           <SettingRow label="Код привязки">
             <LinkInstructions
               code={data.linkCode}
@@ -206,92 +221,105 @@ export function NotificationsCard() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2.5 border-line border-t px-card py-3.5">
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() =>
-            act("link", {
-              success: "Код получен",
-              failure: "Не удалось получить код",
-            })
-          }
-          disabled={busy}
-        >
-          {channel === null ? "Подключить" : "Новый код"}
-        </Button>
-
-        {data?.linkCode != null && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              act("poll", {
-                success: "Канал подключён",
-                failure: "Не удалось проверить",
-              })
-            }
-            disabled={busy}
-          >
-            {pending === "poll" ? "Проверка…" : "Проверить"}
-          </Button>
-        )}
-
-        {verified && (
-          <>
+      {showActions && (
+        <div className="flex flex-wrap items-center gap-2.5 border-line border-t px-card py-3.5">
+          {botConfigured && (
             <Button
               type="button"
-              variant="outline"
+              variant="secondary"
               onClick={() =>
-                act("test", {
-                  success: "Сообщение отправлено",
-                  failure: "Не удалось отправить",
+                act("link", {
+                  success: "Код получен",
+                  failure: "Не удалось получить код",
                 })
               }
               disabled={busy}
             >
-              Отправить тестовое
+              {channel === null ? "Подключить" : "Новый код"}
             </Button>
+          )}
 
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button type="button" variant="ghost" disabled={busy}>
-                  Отключить
+          {botConfigured && data?.linkCode != null && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                act("poll", {
+                  success: "Канал подключён",
+                  failure: "Не удалось проверить",
+                })
+              }
+              disabled={busy}
+            >
+              {pending === "poll" ? "Проверка…" : "Проверить"}
+            </Button>
+          )}
+
+          {verified && (
+            <>
+              {botConfigured && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    act("test", {
+                      success: "Сообщение отправлено",
+                      failure: "Не удалось отправить",
+                    })
+                  }
+                  disabled={busy}
+                >
+                  Отправить тестовое
                 </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Отключить уведомления?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Предупреждения о health factor перестанут приходить.
-                    Привязку бота придётся сделать заново.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Отмена</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={disconnect}
-                    className="bg-loss text-white hover:bg-loss/90"
-                  >
+              )}
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button type="button" variant="ghost" disabled={busy}>
                     Отключить
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </>
-        )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Отключить уведомления?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Предупреждения о health factor перестанут приходить.
+                      Привязку бота придётся сделать заново.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Отмена</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={disconnect}
+                      className="bg-loss text-white hover:bg-loss/90"
+                    >
+                      Отключить
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
 
-        {error !== null && (
-          <p role="alert" className="t-meta text-loss">
-            {error}
-          </p>
-        )}
-      </div>
+          {error !== null && (
+            <p role="alert" className="t-meta text-loss">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
 
-      {channel?.lastError != null && error === null && (
+      {!botConfigured ? (
         <Verdict>
-          Последняя отправка не прошла: {channel.lastError}
+          Бот не настроен на сервере: переменные TELEGRAM_BOT_TOKEN и
+          TELEGRAM_BOT_USERNAME не заданы в этом окружении. Подключение
+          появится, когда их добавят и передеплоят приложение.
         </Verdict>
+      ) : (
+        channel?.lastError != null &&
+        error === null && (
+          <Verdict>Последняя отправка не прошла: {channel.lastError}</Verdict>
+        )
       )}
     </DcCard>
   );

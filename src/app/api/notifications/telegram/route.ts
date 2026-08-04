@@ -16,7 +16,10 @@ import {
   generateLinkCode,
   LINK_CODE_TTL_MS,
 } from "@/lib/notifications/telegram-link";
-import { getTelegramBotUsername } from "@/lib/notifications/telegram";
+import {
+  getTelegramBotUsername,
+  isTelegramConfigured,
+} from "@/lib/notifications/telegram";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -94,6 +97,7 @@ function statusResponse(row: ChannelDbRow | null): NotificationStatusDto {
   return {
     channel: row === null ? null : toDto(row),
     botUsername: getTelegramBotUsername(),
+    botConfigured: isTelegramConfigured(),
     ...(row === null
       ? { linkCode: null, linkCodeExpiresAt: null }
       : activeCode(row)),
@@ -132,6 +136,15 @@ export async function POST(request: NextRequest) {
     const existing = await loadChannel(supabase);
 
     if (parsed.data.action === "link") {
+      // Без бота код мёртв: разобрать «/start» будет нечем, а строка
+      // в notification_channels останется и будет выглядеть как начатая
+      // привязка. Проверка стоит здесь, а не только в интерфейсе
+      if (!isTelegramConfigured()) {
+        return apiError(
+          409,
+          "Бот не настроен на сервере: не задан TELEGRAM_BOT_TOKEN",
+        );
+      }
       // Новый код выдаётся и уже привязанному каналу: так переносят
       // уведомления в другой чат, не теряя настроек
       const code = generateLinkCode();
