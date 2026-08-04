@@ -114,7 +114,17 @@ const marks = (
   zone: "growth" | "yield" | "stability" | null = null,
 ) =>
   new Map([
-    [key, { zone, ownPrincipalUsd, borrowedPrincipalUsd, withdrawnUsd }],
+    [
+      key,
+      {
+        zone,
+        ownPrincipalUsd,
+        borrowedPrincipalUsd,
+        withdrawnUsd,
+        // Точка отсчёта уровней к разбору вложенного отношения не имеет
+        entryPriceUsd: null,
+      },
+    ],
   ]);
 
 describe("вложенное указывается двумя числами", () => {

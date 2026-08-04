@@ -32,6 +32,12 @@ const bodySchema = z
     ownPrincipalUsd: z.number().min(0).nullish(),
     borrowedPrincipalUsd: z.number().min(0).nullish(),
     withdrawnUsd: z.number().min(0).nullish(),
+    // Точка отсчёта падения (docs/07 §5). Строго больше нуля, в отличие
+    // от сумм: от нулевой цены падение не считается, это не «ноль долларов»
+    entryPriceUsd: z
+      .number()
+      .positive("Цена входа должна быть больше нуля")
+      .nullish(),
   })
   // Пустая правка бессмысленна: хотя бы одно поле должно быть задано
   .refine(
@@ -39,8 +45,9 @@ const bodySchema = z
       v.zone !== undefined ||
       v.ownPrincipalUsd !== undefined ||
       v.borrowedPrincipalUsd !== undefined ||
-      v.withdrawnUsd !== undefined,
-    { message: "Нужно задать зону или вложенные суммы" },
+      v.withdrawnUsd !== undefined ||
+      v.entryPriceUsd !== undefined,
+    { message: "Нужно задать зону, вложенные суммы или цену входа" },
   );
 
 export async function PUT(request: NextRequest) {
@@ -69,13 +76,16 @@ export async function PUT(request: NextRequest) {
     ownPrincipalUsd,
     borrowedPrincipalUsd,
     withdrawnUsd,
+    entryPriceUsd,
   } = parsed.data;
 
   // Читаем текущую строку: PUT правит только переданные поля и не затирает
   // соседнее — зону и долю пользователь задает по отдельности
   const { data: existing, error: readError } = await supabase
     .from("position_marks")
-    .select("zone, own_principal_usd, borrowed_principal_usd, withdrawn_usd")
+    .select(
+      "zone, own_principal_usd, borrowed_principal_usd, withdrawn_usd, entry_price_usd",
+    )
     .eq("protocol", protocol)
     .eq("chain", chain)
     .eq("external_id", externalId)
@@ -101,6 +111,10 @@ export async function PUT(request: NextRequest) {
         withdrawnUsd === undefined
           ? ((existing?.withdrawn_usd as number | null) ?? null)
           : withdrawnUsd,
+      entry_price_usd:
+        entryPriceUsd === undefined
+          ? ((existing?.entry_price_usd as number | null) ?? null)
+          : entryPriceUsd,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id,protocol,chain,external_id" },

@@ -88,6 +88,13 @@ function MarkForm({
     draftOf(position.borrowedPrincipalUsd),
   );
   const [withdrawn, setWithdrawn] = useState(draftOf(position.withdrawnUsd));
+  const [entryPrice, setEntryPrice] = useState(draftOf(position.entryPriceUsd));
+
+  // Точка отсчёта осмысленна там, где стратегия привязывает действия
+  // к уровням падения, — это GM-пулы (docs/07 §5). У депозита и у CLMM
+  // свои события: ставка и выход из диапазона
+  const withEntryPrice = position.protocol === "gmx_v2";
+  const market = position.components.find((c) => c.side === "long")?.symbol;
 
   /** Одним запросом: разметка правится целиком, а не по полю за раз. */
   async function submit(event: React.FormEvent) {
@@ -114,6 +121,17 @@ function MarkForm({
         return;
       }
       if (parsed !== saved) patch[key] = parsed;
+    }
+
+    if (withEntryPrice) {
+      // Цена, в отличие от сумм, не бывает нулевой: от нуля падение
+      // не считается — это не «ноль долларов», а деление на ноль
+      const parsed = parsePrice(entryPrice);
+      if (parsed === undefined) {
+        toast.error("Цена входа: должна быть числом больше нуля");
+        return;
+      }
+      if (parsed !== position.entryPriceUsd) patch.entryPriceUsd = parsed;
     }
 
     // Ничего не тронули — незачем и запрос: API такую правку отклоняет
@@ -191,6 +209,16 @@ function MarkForm({
         hint="Стоимость того, что забрали из позиции: BTC/ETH с продажи GM, ушедшие в залог"
       />
 
+      {withEntryPrice && (
+        <AmountField
+          id={`entry-${position.id}`}
+          label={`Цена входа${market ? `, $ за ${market}` : ", $"}`}
+          value={entryPrice}
+          onChange={setEntryPrice}
+          hint="Точка отсчёта: цена базового актива на момент входа в пул. От неё считаются уровни −7 / −15 / −30 / −50 / −70. После продажи GM на уровне и повторной покупки точка переносится сюда же"
+        />
+      )}
+
       <p className="text-[12px] text-text-3">
         Пустое поле — «не размечено», и это не ноль: ноль означал бы «вложено
         ничего» и объявил бы доходом всю стоимость.
@@ -251,5 +279,16 @@ function parseAmount(draft: string): number | null | undefined {
   if (raw === "") return null;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+  return parsed;
+}
+
+/**
+ * То же для цены, но ноль тут не значение, а ошибка: точка отсчёта в ноль
+ * не задаёт шкалу уровней, а обнуляет её. Пустое поле по-прежнему null —
+ * «точка отсчёта не задана».
+ */
+function parsePrice(draft: string): number | null | undefined {
+  const parsed = parseAmount(draft);
+  if (parsed === 0) return undefined;
   return parsed;
 }

@@ -138,6 +138,12 @@ export interface PositionMark {
   borrowedPrincipalUsd: number | null;
   /** Выведено из позиции по стоимости на момент вывода; null = ноль. */
   withdrawnUsd: number | null;
+  /**
+   * Точка отсчёта падения — цена базового актива рынка на момент входа
+   * (docs/07 §5, §7). null = не задана, и уровни не считаются: подставлять
+   * сюда цену входа «по стоимости позиции» нельзя, это разные величины.
+   */
+  entryPriceUsd: number | null;
 }
 
 /**
@@ -277,6 +283,8 @@ function buildFluid(
     zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
     zoneKey: zoneKeyOf(row),
     ...splitPosition(valueUsd, mark),
+    // Точка отсчёта падения: разметка, а не показание читателя
+    entryPriceUsd: mark?.entryPriceUsd ?? null,
     title: payload.fTokenSymbol,
     subtitle: `Депозит ${payload.symbol}`,
     quantity: row.quantity,
@@ -322,6 +330,8 @@ function buildGm(
     zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
     zoneKey: zoneKeyOf(row),
     ...splitPosition(valueUsd, mark),
+    // Точка отсчёта падения: разметка, а не показание читателя
+    entryPriceUsd: mark?.entryPriceUsd ?? null,
     title: `GM ${payload.marketName.split(" ")[0]}`,
     subtitle: payload.marketName,
     quantity: row.quantity,
@@ -397,6 +407,8 @@ function buildLp(
     zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
     zoneKey: zoneKeyOf(row),
     ...splitPosition(valueUsd, mark),
+    // Точка отсчёта падения: разметка, а не показание читателя
+    entryPriceUsd: mark?.entryPriceUsd ?? null,
     title: `${payload.token0.symbol}/${payload.token1.symbol} ${feeLabel(payload.fee)}`,
     subtitle: payload.inRange
       ? `Тики ${payload.tickLower}…${payload.tickUpper}`

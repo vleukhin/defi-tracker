@@ -5,7 +5,8 @@ import { Verdict } from "@/components/dc/card";
 import { Chip, StatusChip } from "@/components/dc/chip";
 import { Metric } from "@/components/dc/metrics";
 import type { PositionDto } from "@/lib/api/types";
-import { chainLabel, dcUsd, tablePct, tableSigned } from "@/lib/format";
+import { chainLabel, dcPp, dcUsd, tablePct, tableSigned } from "@/lib/format";
+import { gmLevels } from "@/lib/positions/gm-levels";
 import { GM_SHARE_TOLERANCE_PP, gmShare } from "@/lib/positions/gm-split";
 import {
   CardHead,
@@ -22,6 +23,7 @@ import {
   UnmarkedChip,
   VisualRow,
 } from "./card-parts";
+import { GmLevelsPopover } from "./gm-levels-popover";
 import { MarkPopover } from "./mark-popover";
 import { type MarkFn } from "./shared";
 
@@ -32,9 +34,9 @@ import { type MarkFn } from "./shared";
  *
  * У GM нет ни ставки, как у депозита, ни диапазона, как у CLMM: доход
  * появляется переоценкой, а действия стратегия привязывает к уровням
- * падения и роста. Уровни считаются от подвижной точки отсчёта, которой
- * в приложении пока нет (docs/07 §10.3), поэтому в метриках стоят два
- * числа, которые ответить можно.
+ * падения и роста. Уровни считаются от подвижной точки отсчёта — цены
+ * базового актива на входе; она задаётся разметкой позиции, а шкала
+ * уровней живёт в поповере за кнопкой в шапке (gm-levels-popover.tsx).
  *
  * «Выведено»: по стратегии (§5) на уровнях −7 / −15% часть GM продают,
  * а полученные BTC/ETH уходят в залог Growth. Без этого числа позиция
@@ -60,6 +62,7 @@ export function GmxCard({
   // null трактуется как ноль: отсутствие выводов — обычное состояние
   const withdrawn = position.withdrawnUsd ?? 0;
   const share = gmShare(position, positions);
+  const levels = gmLevels(position);
   const offTarget =
     share.deviationPp !== null &&
     Math.abs(share.deviationPp) > GM_SHARE_TOLERANCE_PP;
@@ -75,7 +78,14 @@ export function GmxCard({
         protocol="gmx"
         name="GMX v2"
         zone={position.zone}
-        kind={<UnmarkedChip position={position} />}
+        kind={
+          <>
+            <UnmarkedChip position={position} />
+            {/* Без точки отсчёта уровни не считаются вовсе, и молчать
+                об этом нельзя: кнопка шкалы в таком виде просто пуста */}
+            {levels.entryPriceUsd === null && <Chip>без точки отсчёта</Chip>}
+          </>
+        }
         meta={[position.title, chainLabel(position.chain)]}
         status={
           share.deviationPp === null ? undefined : offTarget ? (
@@ -86,7 +96,12 @@ export function GmxCard({
             <Chip>{`${tableSigned(share.deviationPp, 1)}%`}</Chip>
           )
         }
-        menu={<MarkPopover position={position} busy={busy} onMark={onMark} />}
+        menu={
+          <>
+            <GmLevelsPopover position={position} />
+            <MarkPopover position={position} busy={busy} onMark={onMark} />
+          </>
+        }
       />
 
       <MetricRow>
@@ -159,14 +174,19 @@ export function GmxCard({
         )}
       </VisualRow>
 
+      {/* Строка-вывод одна, и уровень забирает её себе: пройденный уровень —
+          повод действовать сегодня, а перекос сплита выравнивают при
+          следующей покупке GM, то есть когда-нибудь потом */}
       <Verdict>
-        {share.sharePercent === null
-          ? "Стоимость части GM-пулов неизвестна — доля не считается."
-          : share.targetPercent === null
-            ? "Рынок вне двух базовых активов: рабочий сплит стратегии его не задаёт."
-            : offTarget
-              ? "Перекос сплита выравнивают при следующей покупке GM, а не продажей."
-              : "Сплит внутри GM держится цели стратегии — 70% BTC/USDC и 30% ETH/USDC."}
+        {levels.lastReached !== null
+          ? `Пройден уровень ${dcPp(-levels.lastReached.dropPercent, 0)}: по стратегии на нём ${levels.lastReached.action}.`
+          : share.sharePercent === null
+            ? "Стоимость части GM-пулов неизвестна — доля не считается."
+            : share.targetPercent === null
+              ? "Рынок вне двух базовых активов: рабочий сплит стратегии его не задаёт."
+              : offTarget
+                ? "Перекос сплита выравнивают при следующей покупке GM, а не продажей."
+                : "Сплит внутри GM держится цели стратегии — 70% BTC/USDC и 30% ETH/USDC."}
       </Verdict>
     </PositionShell>
   );

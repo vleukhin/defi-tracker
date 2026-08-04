@@ -41,6 +41,8 @@ export interface MarkPatch {
   ownPrincipalUsd?: number | null;
   borrowedPrincipalUsd?: number | null;
   withdrawnUsd?: number | null;
+  /** Точка отсчёта уровней падения — цена базового актива на входе. */
+  entryPriceUsd?: number | null;
 }
 
 /** Сохранение разметки; true = сохранилось (форма по этому признаку закрывается). */

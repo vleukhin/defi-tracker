@@ -21,6 +21,7 @@ function gm(
     ownPrincipalUsd: null,
     borrowedPrincipalUsd: null,
     withdrawnUsd: null,
+    entryPriceUsd: null,
     ownCurrentUsd: 0,
     profitUsd: null,
     profitPct: null,

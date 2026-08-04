@@ -4,6 +4,7 @@ import type { PortfolioRowDto } from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
   dcPp,
+  dcTokens,
   dcUsd,
   dcUsdSigned,
   tablePct,
@@ -51,6 +52,24 @@ function CategoryCard({ row }: { row: PortfolioRowDto }) {
 
       <p className="mt-3.5 t-metric-lg">
         {dcUsd(row.amountUsd)}
+      </p>
+
+      {/* Главная метрика стратегии — количество базового актива (§1),
+          поэтому оно стоит вплотную к сумме, а не в ряду мелких подписей
+          ниже. У стейблов количество совпадает с долларами, поэтому вместо
+          него пустая строка той же высоты: три карточки стоят в одном ряду,
+          и «цель» с «P/L» обязаны читаться по общей линии. */}
+      <p
+        className="mt-1.5 font-mono text-[13px] text-text-2"
+        aria-hidden={row.unit === "USD"}
+      >
+        {row.unit === "USD"
+          ? // Неразрывный пробел, а не обычный: обычный схлопнулся бы,
+            // и строка получила бы нулевую высоту — отступа бы не было.
+            "\u00A0"
+          : row.amount === null
+            ? `— ${row.unit}`
+            : dcTokens(row.amount, row.unit)}
       </p>
 
       <p className="mt-2 flex flex-wrap items-center gap-x-[7px] text-[12.5px] text-text-3">
