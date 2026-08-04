@@ -380,6 +380,11 @@ export interface NotificationStatusDto {
   channel: NotificationChannelDto | null;
   /** Имя бота для ссылки t.me; null = переменная окружения не задана. */
   botUsername: string | null;
+  /**
+   * Задан ли на сервере токен бота. Факт, а не сам токен: без него
+   * привязывать нечего, и предлагать её интерфейс не должен.
+   */
+  botConfigured: boolean;
   /** Действующий код привязки — показывается, пока не истёк. */
   linkCode: string | null;
   linkCodeExpiresAt: string | null;

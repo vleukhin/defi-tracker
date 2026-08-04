@@ -35,6 +35,18 @@ export function getTelegramBotUsername(): string | null {
   return process.env.TELEGRAM_BOT_USERNAME || null;
 }
 
+/**
+ * Есть ли на сервере бот вообще. Признак — токен: без него привязка
+ * невозможна в принципе, тогда как без TELEGRAM_BOT_USERNAME теряется
+ * только ссылка t.me, а ручное «/start <код>» продолжает работать.
+ *
+ * Наружу отдаётся именно факт, а не токен: интерфейсу нужно знать, что
+ * предлагать нечего, и ничего больше.
+ */
+export function isTelegramConfigured(): boolean {
+  return getTelegramToken() !== null;
+}
+
 /** chat_id из config канала; null = канал не привязан. */
 export function telegramChatId(config: unknown): number | null {
   if (typeof config !== "object" || config === null) return null;
