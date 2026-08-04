@@ -7,6 +7,7 @@ import {
   borrowRatePercent,
   mapAccountData,
   readChainAaveDebt,
+  readChainAaveHealth,
   type AaveDebtRpcClient,
 } from "./aave-debt";
 import { CHAIN_IDS } from "./config";
@@ -257,5 +258,76 @@ describe("ставка variable-займа", () => {
     expect(res.debts).toHaveLength(AAVE_DEBT_RESERVES.base.length);
     expect(res.debts.every((d) => d.borrowRatePercent === null)).toBe(true);
     expect(res.debts[0].raw).toBe(7n);
+  });
+});
+
+describe("readChainAaveHealth", () => {
+  it("шлёт ровно один контракт — Pool.getUserAccountData", async () => {
+    const seen: { address: Address; functionName: string }[] = [];
+    const client: AaveDebtRpcClient = {
+      async multicall({ contracts }) {
+        contracts.forEach((c) =>
+          seen.push({ address: c.address, functionName: c.functionName }),
+        );
+        return contracts.map(() => ({
+          status: "success" as const,
+          result: accountTuple({
+            collateralBase: 4_000_000_000_000n, // $40k
+            debtBase: 1_000_000_000_000n, // $10k
+            hf: 1_680_000_000_000_000_000n, // 1.68
+          }),
+        }));
+      },
+    };
+
+    const res = await readChainAaveHealth(client, "arbitrum", WALLET, noopLog);
+
+    // Ради одного числа не тянем ни разбивку по v-токенам, ни ставки
+    expect(seen).toEqual([
+      { address: AAVE_POOLS.arbitrum, functionName: "getUserAccountData" },
+    ]);
+    expect(res.account?.healthFactor).toBeCloseTo(1.68, 10);
+    expect(res.account?.totalDebtUsd).toBe(10_000);
+    expect(res.ok).toBe(true);
+  });
+
+  it("упавший вызов оставляет account = null, а не ноль", async () => {
+    const client: AaveDebtRpcClient = {
+      async multicall({ contracts }) {
+        return contracts.map(() => ({
+          status: "failure" as const,
+          error: new Error("pool reverted"),
+        }));
+      },
+    };
+    const res = await readChainAaveHealth(client, "base", WALLET, noopLog);
+
+    expect(res.ok).toBe(true); // сеть ответила
+    expect(res.account).toBeNull(); // но здоровье неизвестно
+    expect(res.accountError).toContain("pool reverted");
+  });
+
+  it("недоступная сеть изолирована", async () => {
+    const client: AaveDebtRpcClient = {
+      async multicall() {
+        throw new Error("RPC down");
+      },
+    };
+    const res = await readChainAaveHealth(client, "ethereum", WALLET, noopLog);
+
+    expect(res).toMatchObject({ ok: false, account: null, error: "RPC down" });
+  });
+
+  it("нет долга — health factor null, а не огромное число", async () => {
+    const client: AaveDebtRpcClient = {
+      async multicall({ contracts }) {
+        return contracts.map(() => ({
+          status: "success" as const,
+          result: accountTuple({ collateralBase: 100_000_000n }),
+        }));
+      },
+    };
+    const res = await readChainAaveHealth(client, "optimism", WALLET, noopLog);
+    expect(res.account?.healthFactor).toBeNull();
   });
 });

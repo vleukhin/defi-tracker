@@ -1,4 +1,5 @@
 import { tableNumber } from "@/lib/format";
+import { HF_OK_MARGIN } from "@/lib/hf-zones";
 
 /**
  * Статус health factor относительно порога (Фаза 4, S4.3).
@@ -14,8 +15,10 @@ import { tableNumber } from "@/lib/format";
 
 export type HfStatus = "ok" | "warning" | "below" | "none";
 
-/** Буфер над порогом, ниже которого HF считается «близким к порогу». */
-export const HF_OK_MARGIN = 0.3;
+// Буфер над порогом живёт в общей шкале зон: одно и то же число красит
+// индикатор на экране и решает, слать ли уведомление. Реэкспорт — чтобы
+// потребители этого модуля не ходили в два места.
+export { HF_OK_MARGIN };
 
 /** Допуск сравнения: порог + 0.3 в float может дать 1.8000…02. */
 const EPSILON = 1e-9;

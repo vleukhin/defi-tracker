@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Disclaimer } from "@/components/dc/card";
 import { PageHeader } from "@/components/dc/page-header";
 import { AccountCard } from "@/components/settings/account-card";
+import { NotificationsCard } from "@/components/settings/notifications-card";
 import { UsersManager } from "@/components/settings/users-manager";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createClient } from "@/lib/supabase/server";
@@ -9,8 +10,9 @@ import { createClient } from "@/lib/supabase/server";
 export const metadata: Metadata = { title: "Настройки" };
 
 /**
- * «Настройки» (README §9): аккаунт и вид, пороги предупреждений,
- * пользователи (только администратору). Выход — кнопка «Выйти» в навигации.
+ * «Настройки» (README §9): аккаунт и вид, пороги предупреждений, каналы
+ * уведомлений, пользователи (только администратору). Выход — кнопка
+ * «Выйти» в навигации.
  *
  * Контент сужается до 840px: строки label/control длиной в 1120px читались
  * бы как таблица, а это форма. Общий .page-shell из layout не трогаем —
@@ -28,10 +30,12 @@ export default async function SettingsPage() {
       <div className="mx-auto flex w-full max-w-[840px] flex-col gap-4">
         <PageHeader
           title="Настройки"
-          meta={<span>аккаунт, вид и пороги предупреждений</span>}
+          meta={<span>аккаунт, вид, пороги и уведомления</span>}
         />
 
         <AccountCard email={user?.email ?? null} />
+
+        <NotificationsCard />
 
         {isAdmin && user && <UsersManager selfId={user.id} />}
 

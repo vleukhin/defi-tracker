@@ -333,6 +333,34 @@ function isAccountTuple(value: unknown): value is readonly bigint[] {
   );
 }
 
+/** Результат одного вызова multicall с allowFailure. */
+type CallResult =
+  | { status: "success"; result: unknown }
+  | { status: "failure"; error: Error; result?: undefined };
+
+/**
+ * Разбор getUserAccountData: общий для полного чтения долга и для лёгкого
+ * чтения одного лишь здоровья. Упавший вызов оставляет account = null —
+ * строки aave_account_health при этом НЕ перезаписываются, потому что
+ * «не прочитано» и «долга нет» обязаны отличаться.
+ */
+function decodeAccountResult(
+  chain: ChainId,
+  res: CallResult,
+): { account: AaveAccountData | null; accountError?: string } {
+  if (res.status === "success" && isAccountTuple(res.result)) {
+    return { account: mapAccountData(res.result) };
+  }
+  const accountError =
+    res.status === "failure"
+      ? (res.error?.message ?? "call reverted")
+      : "unexpected result type";
+  console.warn(
+    `[aave-debt] ${chain}: getUserAccountData не прочитан: ${accountError}`,
+  );
+  return { account: null, accountError };
+}
+
 /**
  * Один multicall на сеть: getUserAccountData + vToken.balanceOf по всем
  * резервам + getReserveData по стейблам (ставка займа). Упавший
@@ -394,19 +422,7 @@ export async function readChainAaveDebt(
       if (percent !== null) ratesBySymbol.set(rateReserves[i].symbol, percent);
     });
 
-    let account: AaveAccountData | null = null;
-    let accountError: string | undefined;
-    if (accountRes.status === "success" && isAccountTuple(accountRes.result)) {
-      account = mapAccountData(accountRes.result);
-    } else {
-      accountError =
-        accountRes.status === "failure"
-          ? (accountRes.error?.message ?? "call reverted")
-          : "unexpected result type";
-      console.warn(
-        `[aave-debt] ${chain}: getUserAccountData не прочитан: ${accountError}`,
-      );
-    }
+    const { account, accountError } = decodeAccountResult(chain, accountRes);
 
     const debts: DebtReading[] = [];
     const failedReserves: AaveDebtChainStatus["failedReserves"] = [];
@@ -471,6 +487,82 @@ export async function readWalletAaveDebt(
   );
 }
 
+/**
+ * Здоровье счёта без разбивки долга — подмножество AaveDebtChainStatus.
+ * Отдельный тип, а не тот же с пустыми массивами: пустой `debts` у полного
+ * чтения означает «долга нет», и путать эти два смысла нельзя.
+ */
+export type AaveHealthChainStatus = Pick<
+  AaveDebtChainStatus,
+  "chain" | "ok" | "error" | "account" | "accountError"
+>;
+
+/**
+ * Лёгкое чтение: только Pool.getUserAccountData, один контракт в multicall.
+ *
+ * Зачем отдельный путь рядом с readChainAaveDebt. Мониторинг HF ходит в сеть
+ * каждые пятнадцать минут — в сто раз чаще, чем обновление портфеля, — а из
+ * всего ответа ему нужно одно число. Полное чтение тянет balanceOf по всем
+ * v-токенам address book (несколько десятков на сеть) и getReserveData по
+ * стейблам; на квоту это не влияет (счётчик считает запросы, а не вызовы
+ * внутри них), но calldata и время ответа растут на пустом месте, а батч
+ * в 1024 байта viem режет на несколько HTTP-запросов.
+ *
+ * Ярлык вызова свой (`aave-hf:`), чтобы в api_call_log мониторинг не сливался
+ * с обновлением долга: это разные контуры с разной частотой.
+ */
+export async function readChainAaveHealth(
+  client: AaveDebtRpcClient,
+  chain: ChainId,
+  wallet: Address,
+  logCall: typeof logApiCall = logApiCall,
+): Promise<AaveHealthChainStatus> {
+  try {
+    const results = await client.multicall({
+      contracts: [
+        {
+          address: AAVE_POOLS[chain],
+          abi: getUserAccountDataAbi,
+          functionName: "getUserAccountData" as const,
+          args: [wallet] as const,
+        },
+      ],
+      allowFailure: true,
+    });
+
+    void logCall("alchemy", `aave-hf:${chain}`, { units: 1 });
+
+    const { account, accountError } = decodeAccountResult(chain, results[0]);
+    return {
+      chain,
+      ok: true,
+      account,
+      ...(accountError ? { accountError } : {}),
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    void logCall("alchemy", `aave-hf:${chain}`, { units: 1, ok: false });
+    console.warn(`[aave-hf] ${chain}: сеть недоступна: ${message}`);
+    return { chain, ok: false, error: message, account: null };
+  }
+}
+
+/** Здоровье счёта на всех 4 сетях параллельно; отказ сети изолирован. */
+export async function readWalletAaveHealth(
+  wallet: Address,
+  opts: AaveDebtReadOptions = {},
+): Promise<AaveHealthChainStatus[]> {
+  const clients =
+    opts.clients ??
+    (getChainClients() as unknown as Record<ChainId, AaveDebtRpcClient>);
+  const logCall = opts.logCall ?? logApiCall;
+  return Promise.all(
+    CHAIN_IDS.map((chain) =>
+      readChainAaveHealth(clients[chain], chain, wallet, logCall),
+    ),
+  );
+}
+
 export const AAVE_DEBT_SOURCE = "aave_v3_debt" as const;
 
 /** JSON-полезная нагрузка долговой строки protocol_positions. */
@@ -500,7 +592,9 @@ export interface AaveDebtPositionPayload {
 export async function persistAaveHealth(
   admin: SupabaseClient,
   walletId: string,
-  statuses: AaveDebtChainStatus[],
+  // Узкий тип: функции нужны только ok и account, и это позволяет писать
+  // здоровье как из полного чтения долга, так и из лёгкого HF-чтения
+  statuses: AaveHealthChainStatus[],
 ): Promise<void> {
   const checkedAt = new Date().toISOString();
   const rows = statuses
@@ -604,7 +698,9 @@ export async function persistAaveDebt(
 export async function persistDebtStatus(
   admin: SupabaseClient,
   walletId: string,
-  statuses: AaveDebtChainStatus[],
+  // Как и persistAaveHealth: смотрит только на ok/account, поэтому годится
+  // и для лёгкого HF-чтения
+  statuses: AaveHealthChainStatus[],
 ): Promise<void> {
   const checkedAt = new Date().toISOString();
   const { error } = await admin.from("chain_read_status").upsert(

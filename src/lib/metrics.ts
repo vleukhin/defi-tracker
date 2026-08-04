@@ -13,7 +13,9 @@ export type ApiProvider =
   | "rpc"
   | "zerion"
   // Фаза 5: цены GM-токенов и состав пулов (arbitrum-api.gmxinfra.io)
-  | "gmx";
+  | "gmx"
+  // Фаза 6: доставка уведомлений (api.telegram.org)
+  | "telegram";
 
 export async function logApiCall(
   provider: ApiProvider,
