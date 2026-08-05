@@ -7,7 +7,6 @@ import { Metric } from "@/components/dc/metrics";
 import { Fragment, type ReactNode } from "react";
 import type {
   Fees24hReason,
-  PositionComponentDto,
   PositionDto,
   PositionExitDto,
   PositionRangeDto,
@@ -20,8 +19,8 @@ import {
   tablePct,
   tablePctSigned,
 } from "@/lib/format";
+import { exitSide } from "@/lib/positions/lp-range";
 import { rangeDecision, RANGE_WAIT_HOURS } from "@/lib/positions/range-timer";
-import { symbolCategory } from "@/lib/symbol-category";
 import {
   CardHead,
   MetaMono,
@@ -405,16 +404,3 @@ function markerPercent(position: number | null): number {
   return BAND_END + (100 - BAND_END) * Math.min(1, position - 1);
 }
 
-/**
- * Сторона выхода по составу: остались стейблы — базовый актив подорожал
- * (цена ушла вверх), остались BTC/ETH — подешевел. Пара из двух стейблов
- * стороны не имеет: там расти нечему.
- */
-function exitSide(components: PositionComponentDto[]): "up" | "down" | null {
-  const held = components.filter((c) => c.quantity > 0);
-  if (held.length !== 1) return null;
-  const category = symbolCategory(held[0].symbol);
-  if (category === "stable") return "up";
-  if (category === "btc" || category === "eth") return "down";
-  return null;
-}

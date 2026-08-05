@@ -11,6 +11,7 @@ function input(overrides: Partial<BuildDebtInput> = {}): BuildDebtInput {
     positions: [],
     pricesUsd: new Map(),
     hfWarningThreshold: 1.5,
+    targetLtvPct: 50,
     ...overrides,
   };
 }

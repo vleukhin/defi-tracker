@@ -4,17 +4,15 @@ import { protocolBrand } from "@/components/dc/protocols";
 import { Dash } from "@/components/dc/table";
 import type { PositionDto } from "@/lib/api/types";
 import { dcPp, dcRate, dcUsd } from "@/lib/format";
-import { isStableSymbol } from "@/lib/stables";
+import { positionRate, positionSpread } from "@/lib/positions/rates";
 import { cn } from "@/lib/utils";
 
 /**
  * «Где работают заёмные» (README §6): во что вложены занятые деньги
  * и дороже ли размещение, чем сам заём.
  *
- * Спред считается только для стейбл-размещений (docs/07 §3): ставка
- * в ETH — про другой риск и другую валюту, и правило «депозит держат,
- * пока он дороже займа» на неё не распространяется. У пулов ставки нет
- * вовсе — доход там считается по стоимости, поэтому в колонке «—».
+ * Ставка и спред считаются в `lib/positions/rates` — те же два числа
+ * читает лента сигналов, и расходиться им нельзя.
  */
 
 /** protocol_positions.protocol → бренд плитки. */
@@ -23,23 +21,6 @@ const TILE_KEY: Record<string, string> = {
   gmx_v2: "gmx",
   uni_v3: "uniswap",
 };
-
-/** Ставка позиции целиком: награды без базовой ставкой не являются. */
-export function positionRate(position: PositionDto): number | null {
-  const base = position.supplyRatePercent;
-  return base === null ? null : base + (position.rewardsRatePercent ?? 0);
-}
-
-/** Спред к займу в п.п.; null = сравнивать не с чем или не с чем сравнивать. */
-export function positionSpread(
-  position: PositionDto,
-  borrowRatePercent: number | null,
-): number | null {
-  const rate = positionRate(position);
-  if (rate === null || borrowRatePercent === null) return null;
-  if (!position.components.some((c) => isStableSymbol(c.symbol))) return null;
-  return rate - borrowRatePercent;
-}
 
 export function BorrowedWork({
   positions,

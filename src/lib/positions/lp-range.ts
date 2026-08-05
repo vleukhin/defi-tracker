@@ -1,4 +1,8 @@
-import type { PositionExitDto, PositionRangeDto } from "@/lib/api/types";
+import type {
+  PositionComponentDto,
+  PositionExitDto,
+  PositionRangeDto,
+} from "@/lib/api/types";
 import {
   amount0ForLiquidity,
   amount1ForLiquidity,
@@ -6,6 +10,7 @@ import {
   tickToPrice,
 } from "@/lib/chains/uniswap-math";
 import { isStableSymbol } from "@/lib/stables";
+import { symbolCategory } from "@/lib/symbol-category";
 
 /**
  * Ценовой диапазон CLMM-позиции в человеческих единицах.
@@ -163,4 +168,25 @@ function exitAmounts(
       quantity: invert ? amount0 : amount1,
     },
   };
+}
+
+/**
+ * Сторона выхода по составу: остались стейблы — базовый актив подорожал
+ * (цена ушла вверх), остались BTC/ETH — подешевел. Пара из двух стейблов
+ * стороны не имеет: там расти нечему.
+ *
+ * От стороны зависит действие стратегии: осталась в BTC/ETH — актив уводится
+ * в Growth (§5); осталась в стейблах — диапазон перезаливают (§6). Считается
+ * по составу, а не по тикам: «верхняя граница» в терминах тиков означает
+ * разное в зависимости от того, каким из токенов пула оказался стейбл.
+ */
+export function exitSide(
+  components: PositionComponentDto[],
+): "up" | "down" | null {
+  const held = components.filter((c) => c.quantity > 0);
+  if (held.length !== 1) return null;
+  const category = symbolCategory(held[0].symbol);
+  if (category === "stable") return "up";
+  if (category === "btc" || category === "eth") return "down";
+  return null;
 }

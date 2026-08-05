@@ -43,6 +43,8 @@ export interface BuildDebtInput {
   /** Цены по coingecko id (только кэш). */
   pricesUsd: Map<string, number>;
   hfWarningThreshold: number;
+  /** Целевой LTV, % — из тех же настроек, что и порог HF (docs/07 §8). */
+  targetLtvPct: number;
 }
 
 /** Сумма с null-пропагацией: неизвестное слагаемое — неизвестная сумма. */
@@ -155,6 +157,7 @@ export function buildDebtResponse(input: BuildDebtInput): DebtResponseDto {
       hfWarningThreshold: input.hfWarningThreshold,
       belowThreshold:
         minHealthFactor !== null && minHealthFactor < input.hfWarningThreshold,
+      targetLtvPct: input.targetLtvPct,
     },
   };
 }

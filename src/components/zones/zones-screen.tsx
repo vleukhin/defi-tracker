@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DcCard, EmptyState } from "@/components/dc/card";
 import { Chip, StatusChip, ZONE_LABEL, zoneColor } from "@/components/dc/chip";
 import { HelpTip } from "@/components/dc/help-tip";
+import { useNowMs } from "@/components/dc/use-now";
 import { FilterChips } from "@/components/dc/segmented";
 import { countLabel } from "@/components/portfolio/plural";
 import type {
@@ -337,19 +338,6 @@ function SanityChip({
       </span>
     </Chip>
   );
-}
-
-/**
- * «Сейчас» с обновлением раз в минуту: обратный отсчёт 48 часов на карточке
- * LP должен идти, а не застывать на времени открытия экрана.
- */
-function useNowMs(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
 }
 
 function splitKey(key: string): [string, string, string] {

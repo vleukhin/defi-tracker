@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { apiError, requireUser } from "@/lib/api/auth";
 import { buildDebtResponse, type DebtPositionInput, type HealthRowInput } from "@/lib/api/debt";
-import { DEFAULT_HF_WARNING_THRESHOLD } from "@/lib/api/settings";
+import {
+  DEFAULT_HF_WARNING_THRESHOLD,
+  DEFAULT_TARGET_LTV_PCT,
+} from "@/lib/api/settings";
 import { AAVE_PROTOCOL } from "@/lib/chains/aave";
 import type { AaveDebtPositionPayload } from "@/lib/chains/aave-debt";
 import { getCoinPrices } from "@/lib/prices/coins";
@@ -25,16 +28,22 @@ export async function GET() {
     if (walletsError) return apiError(500, walletsError.message);
     const walletIds = (wallets ?? []).map((w) => w.id as string);
 
-    // Порог предупреждения — из настроек, до первого PUT действует дефолт
+    // Порог предупреждения и цель плеча — из настроек, до первого PUT
+    // действуют дефолты. Цель едет здесь, а не отдельным запросом настроек:
+    // лента сигналов на «Портфеле» сравнивает её с LTV этого же ответа.
     const { data: settingsRow, error: settingsError } = await supabase
       .from("user_settings")
-      .select("hf_warning_threshold")
+      .select("hf_warning_threshold, target_ltv_pct")
       .maybeSingle();
     if (settingsError) return apiError(500, settingsError.message);
     const hfWarningThreshold =
       settingsRow === null
         ? DEFAULT_HF_WARNING_THRESHOLD
         : Number(settingsRow.hf_warning_threshold);
+    const targetLtvPct =
+      settingsRow === null
+        ? DEFAULT_TARGET_LTV_PCT
+        : Number(settingsRow.target_ltv_pct);
 
     const healthRows: HealthRowInput[] = [];
     const positions: DebtPositionInput[] = [];
@@ -103,6 +112,7 @@ export async function GET() {
         positions,
         pricesUsd,
         hfWarningThreshold,
+        targetLtvPct,
       }),
     );
   } catch (err) {

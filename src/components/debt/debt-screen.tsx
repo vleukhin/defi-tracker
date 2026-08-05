@@ -25,10 +25,11 @@ import {
   formatRelativeTime,
   tableNumber,
 } from "@/lib/format";
+import { positionSpread } from "@/lib/positions/rates";
 import { DEFAULT_TARGET_LTV_PCT } from "@/lib/settings-defaults";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import { BorrowedWork, positionSpread } from "./borrowed-work";
+import { BorrowedWork } from "./borrowed-work";
 import { DebtChains } from "./debt-chains";
 import { DebtHero } from "./debt-hero";
 import { DebtScenarios } from "./debt-scenarios";

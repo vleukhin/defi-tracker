@@ -523,6 +523,14 @@ export interface DebtSummaryDto {
   hfWarningThreshold: number;
   /** true = minHealthFactor ниже порога — заметное предупреждение (S4.3). */
   belowThreshold: boolean;
+  /**
+   * Целевой LTV, % (docs/07 §8, `user_settings.target_ltv_pct`). Приходит
+   * вместе с долгом по той же причине, что и порог HF: сравнивать цель
+   * с плечом можно только зная и то, и другое, а подставлять умолчание,
+   * пока едет отдельный запрос настроек, значило бы показать отклонение
+   * от чужой цели и через мгновение его убрать.
+   */
+  targetLtvPct: number;
 }
 
 /**
