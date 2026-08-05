@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Disclaimer } from "@/components/dc/card";
 import { PageHeader } from "@/components/dc/page-header";
 import { AccountCard } from "@/components/settings/account-card";
 import { NotificationsCard } from "@/components/settings/notifications-card";
@@ -38,10 +37,6 @@ export default async function SettingsPage() {
         <NotificationsCard />
 
         {isAdmin && user && <UsersManager selfId={user.id} />}
-
-        <Disclaimer>
-          Суммы к ребалансировке и оценки риска — расчёт, а не финансовый совет.
-        </Disclaimer>
       </div>
     </TooltipProvider>
   );

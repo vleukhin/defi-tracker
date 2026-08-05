@@ -124,13 +124,9 @@ export function Verdict({
   );
 }
 
-/** Дисклеймер страницы — один раз внизу, 12px, --text-3. */
-export function Disclaimer({ children }: { children?: ReactNode }) {
-  return (
-    <p className="text-[12px] text-text-3">
-      {children ?? "Расчёт, а не финансовый совет."}
-    </p>
-  );
+/** Сноска страницы — один раз внизу, 12px, --text-3. */
+export function Disclaimer({ children }: { children: ReactNode }) {
+  return <p className="text-[12px] text-text-3">{children}</p>;
 }
 
 /** Пустое состояние: «Записей пока нет» + предложенное действие. */

@@ -65,8 +65,7 @@ export function PortfolioDashboard({
       <PortfolioTable rows={data.rows} totalUsd={data.totalUsd} />
 
       <Disclaimer>
-        Количества к ребалансировке — расчёт, а не финансовый совет. Стоимость
-        по активам учитывает залог в лендинге и ручные записи.
+        Стоимость по активам учитывает залог в лендинге и ручные записи.
       </Disclaimer>
     </>
   );

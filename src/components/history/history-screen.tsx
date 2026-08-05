@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { DcCard, Disclaimer, EmptyState } from "@/components/dc/card";
+import { DcCard, EmptyState } from "@/components/dc/card";
 import { HelpTip } from "@/components/dc/help-tip";
 import { MetaDot, PageHeader } from "@/components/dc/page-header";
 import { Button } from "@/components/ui/button";
@@ -166,8 +166,6 @@ export function HistoryScreen() {
             <SnapshotsList key={period} snapshots={snapshots} />
           </>
         )}
-
-        <Disclaimer />
       </div>
     </TooltipProvider>
   );

@@ -3,7 +3,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { DcCard, Disclaimer, EmptyState } from "@/components/dc/card";
+import { DcCard, EmptyState } from "@/components/dc/card";
 import { Chip } from "@/components/dc/chip";
 import {
   FreshnessDot,
@@ -196,7 +196,6 @@ export function DebtScreen() {
               }
             />
           </DcCard>
-          <Disclaimer />
         </div>
       </TooltipProvider>
     );
@@ -286,8 +285,6 @@ export function DebtScreen() {
             minHealthFactor={summary.minHealthFactor}
           />
         )}
-
-        <Disclaimer />
       </div>
     </TooltipProvider>
   );
