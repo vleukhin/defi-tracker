@@ -810,3 +810,21 @@ export interface ZonesSummaryDto {
   /** Балансы без разметки происхождения. */
   unmarkedFree: number;
 }
+
+// --- Лента сигналов: отметки «выполнено» ---
+
+/**
+ * Отметка, что действие по сигналу выполнено. Ключ натуральный, отпечаток
+ * описывает обстановку: сменилась — сигнал возвращается в ленту, потому
+ * что решение теперь другое (см. миграцию signal_acks).
+ */
+export interface SignalAckDto {
+  signalKey: string;
+  fingerprint: string;
+  ackedAt: string;
+}
+
+/** GET /api/signals/ack — все отметки пользователя. */
+export interface SignalAcksResponseDto {
+  acks: SignalAckDto[];
+}

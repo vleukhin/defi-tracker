@@ -116,6 +116,28 @@ export interface Signal {
   /** Методика и оговорки — уходит под «?», в поток не попадает. */
   hint: string | null;
   target: SignalTarget;
+  /**
+   * Натуральный ключ отметки «выполнено»; null = сигнал не отмечается.
+   * Отмечают только то, где стратегия предписывает разовую операцию:
+   * риск ликвидации — состояние, а не задача, а гигиена гаснет сама,
+   * когда данные починены.
+   */
+  ackKey: string | null;
+  /**
+   * Обстановка, к которой относится отметка. Сменилась — сигнал вернулся:
+   * у GM это точка отсчёта (подвижна, §7), у CLMM — момент выхода из
+   * диапазона. Новый уровень отдельного правила не требует: у него
+   * другой ackKey.
+   */
+  ackFingerprint: string | null;
+  /** Владелец сказал «сделал», и обстановка с тех пор не менялась. */
+  acked: boolean;
+}
+
+/** Строка signal_acks, сведённая к тому, что нужно ленте. */
+export interface SignalAck {
+  signalKey: string;
+  fingerprint: string;
 }
 
 export interface SignalsInput {
@@ -130,8 +152,10 @@ export interface SignalsInput {
   stableBorrowRatePercent: number | null;
   /** Цель плеча, % — приезжает вместе с долгом (docs/07 §8). */
   targetLtvPct: number;
+  /** Отметки «выполнено»; null = ещё не прочитаны. */
+  acks: SignalAck[] | null;
   /** Источники в пути: молчание при загрузке — не «всё спокойно». */
-  pending: { portfolio: boolean; debt: boolean; zones: boolean };
+  pending: { portfolio: boolean; debt: boolean; zones: boolean; acks: boolean };
   /** Состояние экрана: этого нет ни в одном DTO. */
   runtime: {
     debtError: string | null;
@@ -168,13 +192,40 @@ export const SIGNALS_VISIBLE = 5;
 
 const HOUR_MS = 3_600_000;
 
+/**
+ * Сигнал до применения отметок. Поля отметки необязательны: их задают
+ * только те сборщики, чьи сигналы вообще отмечаются, а `acked` знает
+ * один buildSignals — сверять отпечатки в каждой группе значило бы
+ * написать одно правило четыре раза.
+ */
+type SignalDraft = Omit<Signal, "ackKey" | "ackFingerprint" | "acked"> & {
+  ackKey?: string;
+  ackFingerprint?: string;
+};
+
 export function buildSignals(input: SignalsInput, nowMs: number): Signal[] {
-  const signals = [
+  const drafts: SignalDraft[] = [
     ...riskSignals(input, nowMs),
     ...positionSignals(input, nowMs),
     ...leverageSignals(input),
     ...hygieneSignals(input),
   ];
+
+  const ackByKey = new Map(
+    (input.acks ?? []).map((a) => [a.signalKey, a.fingerprint]),
+  );
+
+  const signals: Signal[] = drafts.map((draft) => ({
+    ...draft,
+    ackKey: draft.ackKey ?? null,
+    ackFingerprint: draft.ackFingerprint ?? null,
+    // Отметка действует, только пока обстановка та же: сменилась точка
+    // отсчёта или момент выхода из диапазона — решение новое
+    acked:
+      draft.ackKey !== undefined &&
+      draft.ackFingerprint !== undefined &&
+      ackByKey.get(draft.ackKey) === draft.ackFingerprint,
+  }));
 
   // Единственное подавление в ленте: при HF в опасной зоне отклонение LTV
   // говорит о том же плече вторым голосом и слабее. Остальные конфликты
@@ -197,13 +248,28 @@ export function buildSignals(input: SignalsInput, nowMs: number): Signal[] {
 
 /** Часть источников ещё читается — «действий нет» показывать нельзя. */
 export function hasPendingSources(input: SignalsInput): boolean {
-  return input.pending.portfolio || input.pending.debt || input.pending.zones;
+  return (
+    input.pending.portfolio ||
+    input.pending.debt ||
+    input.pending.zones ||
+    input.pending.acks
+  );
+}
+
+/** Строки, требующие внимания: отмеченные выполненными сюда не входят. */
+export function activeSignals(signals: readonly Signal[]): Signal[] {
+  return signals.filter((s) => !s.acked);
+}
+
+/** Отмеченные выполненными — показываются отдельно и не считаются в счётчике. */
+export function ackedSignals(signals: readonly Signal[]): Signal[] {
+  return signals.filter((s) => s.acked);
 }
 
 // --- Риск ликвидации и слепота -------------------------------------------
 
-function riskSignals(input: SignalsInput, nowMs: number): Signal[] {
-  const out: Signal[] = [];
+function riskSignals(input: SignalsInput, nowMs: number): SignalDraft[] {
+  const out: SignalDraft[] = [];
 
   if (input.runtime.debtError !== null) {
     out.push({
@@ -298,7 +364,7 @@ function hfBelowSignal(
   healthFactor: number,
   zone: HfZone,
   threshold: number,
-): Signal {
+): SignalDraft {
   const drop = liquidationDrop(healthFactor);
   const urgent = HF_ZONE_RANK[zone] >= HF_ZONE_RANK.urgent;
 
@@ -341,11 +407,11 @@ function staleFor(chain: DebtChainDto, nowMs: number): number | null {
 
 // --- Уровни GM и таймер CLMM ---------------------------------------------
 
-function positionSignals(input: SignalsInput, nowMs: number): Signal[] {
+function positionSignals(input: SignalsInput, nowMs: number): SignalDraft[] {
   const positions = input.positions;
   if (positions === null) return [];
 
-  const out: Signal[] = [];
+  const out: SignalDraft[] = [];
   for (const position of positions) {
     if (position.protocol === "gmx_v2") out.push(...gmSignals(position));
     if (position.protocol === "uni_v3") out.push(...clmmSignals(position, nowMs));
@@ -353,10 +419,10 @@ function positionSignals(input: SignalsInput, nowMs: number): Signal[] {
   return out;
 }
 
-function gmSignals(position: PositionDto): Signal[] {
+function gmSignals(position: PositionDto): SignalDraft[] {
   const levels = gmLevels(position);
   const name = gmName(position, levels.marketSymbol);
-  const out: Signal[] = [];
+  const out: SignalDraft[] = [];
 
   const reached = levels.lastReached;
   if (reached !== null) {
@@ -370,6 +436,10 @@ function gmSignals(position: PositionDto): Signal[] {
       key: `gm-level:${position.id}`,
       kind: "gm-level",
       severity: "level",
+      // Ключ по уровню: отметка на −7% про −15% ничего не говорит,
+      // а отпечаток по точке отсчёта — она подвижна (§7)
+      ackKey: `gm-level:${position.zoneKey}:${reached.dropPercent}`,
+      ackFingerprint: fingerprint(levels.entryPriceUsd),
       weight: reached.dropPercent,
       tone: "warn",
       chip: dcPp(-reached.dropPercent, 0),
@@ -385,6 +455,8 @@ function gmSignals(position: PositionDto): Signal[] {
       key: `gm-growth:${position.id}`,
       kind: "gm-growth",
       severity: "level",
+      ackKey: `gm-growth:${position.zoneKey}`,
+      ackFingerprint: fingerprint(levels.entryPriceUsd),
       weight: 1,
       tone: "neutral",
       chip: dcPp(levels.growth.percent, 0),
@@ -399,12 +471,22 @@ function gmSignals(position: PositionDto): Signal[] {
   return out;
 }
 
+/**
+ * Отпечаток обстановки из числа. Точка отсчёта — единственное, что делает
+ * отметку на уровне GM недействительной, и сравнивается она как строка:
+ * в базе отпечаток текстовый, и «100000» из БД обязано совпасть с тем,
+ * что посчитано здесь.
+ */
+function fingerprint(value: number | null): string {
+  return value === null ? "—" : String(value);
+}
+
 /** «GM WBTC» — имя пула по базовому активу; без него остаётся заголовок. */
 function gmName(position: PositionDto, marketSymbol: string | null): string {
   return marketSymbol === null ? position.title : `GM ${marketSymbol}`;
 }
 
-function clmmSignals(position: PositionDto, nowMs: number): Signal[] {
+function clmmSignals(position: PositionDto, nowMs: number): SignalDraft[] {
   if (position.inRange !== false) return [];
 
   const name = position.title;
@@ -457,6 +539,12 @@ function clmmSignals(position: PositionDto, nowMs: number): Signal[] {
     {
       key: `clmm-ready:${position.id}`,
       kind: "clmm-ready",
+      // Отпечаток — момент выхода: вернулась в диапазон и вышла снова —
+      // это другое ожидание и другое решение, а не то же самое
+      ackKey: `clmm-ready:${position.zoneKey}`,
+      // decision !== null означает, что момент выхода разобрался; ?? здесь
+      // только ради типа
+      ackFingerprint: since ?? "—",
       // Вышедший срок обязан стоять выше любого идущего, каким бы долгим
       // тот ни был: там действие разблокировано, здесь ещё нет
       weight: 1000 + decision.hoursElapsed,
@@ -478,8 +566,8 @@ function clmmSignals(position: PositionDto, nowMs: number): Signal[] {
 
 // --- Плечо и ставки ------------------------------------------------------
 
-function leverageSignals(input: SignalsInput): Signal[] {
-  const out: Signal[] = [];
+function leverageSignals(input: SignalsInput): SignalDraft[] {
+  const out: SignalDraft[] = [];
   out.push(...ltvSignals(input));
 
   const positions = input.positions;
@@ -540,7 +628,7 @@ function leverageSignals(input: SignalsInput): Signal[] {
   return out;
 }
 
-function ltvSignals(input: SignalsInput): Signal[] {
+function ltvSignals(input: SignalsInput): SignalDraft[] {
   const debt = input.debt;
   if (debt === null) return [];
 
@@ -584,8 +672,8 @@ function ltvSignals(input: SignalsInput): Signal[] {
 
 // --- Гигиена данных ------------------------------------------------------
 
-function hygieneSignals(input: SignalsInput): Signal[] {
-  const out: Signal[] = [];
+function hygieneSignals(input: SignalsInput): SignalDraft[] {
+  const out: SignalDraft[] = [];
 
   if (input.runtime.zonesError !== null) {
     out.push({
@@ -709,11 +797,11 @@ function hygieneSignals(input: SignalsInput): Signal[] {
   return out;
 }
 
-function positionHygiene(input: SignalsInput): Signal[] {
+function positionHygiene(input: SignalsInput): SignalDraft[] {
   const positions = input.positions;
   if (positions === null) return [];
 
-  const out: Signal[] = [];
+  const out: SignalDraft[] = [];
   let hasStablePosition = false;
 
   for (const position of positions) {
@@ -779,7 +867,7 @@ function positionHygiene(input: SignalsInput): Signal[] {
  * (ответ refresh, статусы залога и статусы свободных балансов), и три
  * строки об одной сети говорили бы одно и то же трижды.
  */
-function chainsUnreadSignal(input: SignalsInput): Signal[] {
+function chainsUnreadSignal(input: SignalsInput): SignalDraft[] {
   const byChain = new Map<string, string>();
 
   for (const status of input.portfolio?.chains ?? []) {

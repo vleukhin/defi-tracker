@@ -7,6 +7,8 @@ import type {
   ZonesSummaryDto,
 } from "@/lib/api/types";
 import {
+  ackedSignals,
+  activeSignals,
   buildSignals,
   hasPendingSources,
   type SignalKind,
@@ -241,7 +243,8 @@ function input(overrides: Partial<SignalsInput> = {}): SignalsInput {
     assetsUsd: 150_000,
     stableBorrowRatePercent: 4.9,
     targetLtvPct: 50,
-    pending: { portfolio: false, debt: false, zones: false },
+    acks: [],
+    pending: { portfolio: false, debt: false, zones: false, acks: false },
     runtime: {
       debtError: null,
       zonesError: null,
@@ -252,8 +255,12 @@ function input(overrides: Partial<SignalsInput> = {}): SignalsInput {
   };
 }
 
+/**
+ * То, что лента показывает: отмеченные выполненными сюда не входят —
+ * buildSignals возвращает и их тоже, свёрнутым списком внизу карточки.
+ */
 function kinds(inp: SignalsInput, nowMs = NOW): SignalKind[] {
-  return buildSignals(inp, nowMs).map((s) => s.kind);
+  return activeSignals(buildSignals(inp, nowMs)).map((s) => s.kind);
 }
 
 // --- порядок -------------------------------------------------------------
@@ -430,7 +437,7 @@ describe("риск ликвидации", () => {
   it("долг ещё грузится — не сигнал, а pending", () => {
     const inp = input({
       debt: null,
-      pending: { portfolio: false, debt: true, zones: false },
+      pending: { portfolio: false, debt: true, zones: false, acks: false },
     });
     expect(kinds(inp)).toEqual([]);
     expect(hasPendingSources(inp)).toBe(true);
@@ -743,7 +750,7 @@ describe("пустая лента", () => {
     const inp = input({
       positions: null,
       zones: null,
-      pending: { portfolio: false, debt: false, zones: true },
+      pending: { portfolio: false, debt: false, zones: true, acks: false },
     });
     expect(buildSignals(inp, NOW)).toEqual([]);
     expect(hasPendingSources(inp)).toBe(true);
@@ -754,5 +761,93 @@ describe("пустая лента", () => {
       positions: [lp({ outOfRangeSince: hoursAgo(25) })],
     });
     expect(buildSignals(inp, NOW)).toEqual(buildSignals(inp, NOW));
+  });
+});
+
+// --- отметки «выполнено» -------------------------------------------------
+
+describe("отметка «выполнено»", () => {
+  /** Ключ и отпечаток отметки для сигнала, который сейчас в ленте. */
+  function ackFor(inp: SignalsInput, kind: SignalKind) {
+    const signal = buildSignals(inp, NOW).find((s) => s.kind === kind);
+    if (!signal?.ackKey || !signal.ackFingerprint) {
+      throw new Error(`сигнал ${kind} не отмечается`);
+    }
+    return { signalKey: signal.ackKey, fingerprint: signal.ackFingerprint };
+  }
+
+  it("отмеченный уровень уходит из активных, но не пропадает совсем", () => {
+    const base = input({ positions: [gm({ priceUsd: 84_000 })] });
+    const acked = input({
+      positions: [gm({ priceUsd: 84_000 })],
+      acks: [ackFor(base, "gm-level")],
+    });
+
+    const all = buildSignals(acked, NOW);
+    expect(activeSignals(all)).toEqual([]);
+    expect(ackedSignals(all).map((s) => s.kind)).toEqual(["gm-level"]);
+  });
+
+  it("следующий уровень отметку не наследует: у него свой ключ", () => {
+    const base = input({ positions: [gm({ priceUsd: 84_000 })] }); // −16%
+    const deeper = input({
+      positions: [gm({ priceUsd: 68_000 })], // −32%
+      acks: [ackFor(base, "gm-level")],
+    });
+    expect(kinds(deeper)).toEqual(["gm-level"]);
+  });
+
+  it("перенос точки отсчёта отменяет отметку: уровни считаются заново", () => {
+    const base = input({ positions: [gm({ priceUsd: 84_000 })] });
+    const moved = input({
+      // Точку отсчёта перенесли выше — тот же уровень, другое решение
+      positions: [gm({ entryPriceUsd: 120_000, priceUsd: 84_000 })],
+      acks: [ackFor(base, "gm-level")],
+    });
+    expect(kinds(moved)).toContain("gm-level");
+  });
+
+  it("новый выход из диапазона отменяет отметку CLMM", () => {
+    const base = input({
+      positions: [lp({ outOfRangeSince: hoursAgo(51) })],
+    });
+    const same = input({
+      positions: [lp({ outOfRangeSince: hoursAgo(51) })],
+      acks: [ackFor(base, "clmm-ready")],
+    });
+    expect(kinds(same)).toEqual([]);
+
+    const again = input({
+      // Вернулась в диапазон и вышла снова — другое ожидание
+      positions: [lp({ outOfRangeSince: hoursAgo(49) })],
+      acks: [ackFor(base, "clmm-ready")],
+    });
+    expect(kinds(again)).toEqual(["clmm-ready"]);
+  });
+
+  it("риск ликвидации и гигиена не отмечаются вовсе", () => {
+    const inp = input({
+      debt: debt([chain({ healthFactor: 1.42 })]),
+      zones: zones({ unmarkedPositions: 2 }),
+    });
+    for (const signal of buildSignals(inp, NOW)) {
+      expect(signal.ackKey).toBeNull();
+    }
+  });
+
+  it("отметка на чужой ключ ничего не скрывает", () => {
+    const inp = input({
+      positions: [gm({ priceUsd: 84_000 })],
+      acks: [{ signalKey: "gm-level:другой:15", fingerprint: "100000" }],
+    });
+    expect(kinds(inp)).toEqual(["gm-level"]);
+  });
+
+  it("пока отметки не прочитаны, лента считается неполной", () => {
+    const inp = input({
+      acks: null,
+      pending: { portfolio: false, debt: false, zones: false, acks: true },
+    });
+    expect(hasPendingSources(inp)).toBe(true);
   });
 });

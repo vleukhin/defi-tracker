@@ -11,6 +11,13 @@ import { Segmented } from "@/components/dc/segmented";
  * Стейблкоины есть и в Stability, и в Yield, поэтому один разрез через
  * другой не выражается — это переключатель, а не два пункта навигации.
  *
+ * Третий режим — «Сигналы»: не проекция капитала, а список того, что
+ * требует действия. Он стоит тут же, потому что отвечает на тот же вопрос
+ * с другой стороны — «что у меня есть» против «что с этим делать», — и
+ * потому что своих данных не требует. Число в подписи и закреплённая
+ * строка риска над любым режимом не дают ленте стать местом, куда надо
+ * не забыть заглянуть.
+ *
  * Выбор живёт в состоянии компонента, а адрес правится напрямую через
  * history.replaceState. Через роутер это делать нельзя: на статически
  * отрендеренной странице (в проде `/` именно такая) `router.replace`
@@ -29,20 +36,13 @@ import { Segmented } from "@/components/dc/segmented";
  * а не в каких монетах он лежит).
  */
 
-export type PortfolioView = "categories" | "zones";
+export type PortfolioView = "categories" | "zones" | "signals";
 
 const DEFAULT_VIEW: PortfolioView = "zones";
 const STORAGE_KEY = "portfolioView";
 
-// Значение в URL и localStorage остаётся «categories»: это ключ хранения,
-// а не подпись — переименование обнулило бы сохранённый выбор и ссылки
-const VIEW_OPTIONS: { value: PortfolioView; label: string }[] = [
-  { value: "categories", label: "Активы" },
-  { value: "zones", label: "Зоны" },
-];
-
 function isView(value: string | null): value is PortfolioView {
-  return value === "categories" || value === "zones";
+  return value === "categories" || value === "zones" || value === "signals";
 }
 
 export interface PortfolioViewState {
@@ -79,10 +79,31 @@ export function usePortfolioView(): PortfolioViewState {
   return { view, setView };
 }
 
-export function PortfolioViewSwitch({ view, setView }: PortfolioViewState) {
+export function PortfolioViewSwitch({
+  view,
+  setView,
+  signalCount,
+}: PortfolioViewState & {
+  /** Сколько строк требует внимания; 0 — подпись без числа. */
+  signalCount?: number;
+}) {
+  // Значение в URL и localStorage остаётся «categories»: это ключ хранения,
+  // а не подпись — переименование обнулило бы сохранённый выбор и ссылки
+  const options: { value: PortfolioView; label: string }[] = [
+    { value: "categories", label: "Активы" },
+    { value: "zones", label: "Зоны" },
+    {
+      value: "signals",
+      // Число прямо в подписи, а не отдельным значком: у переключателя
+      // нет места под второй слой, а весь смысл счётчика — быть видимым
+      // из режима, в котором сама лента не показана
+      label: signalCount ? `Сигналы · ${signalCount}` : "Сигналы",
+    },
+  ];
+
   return (
     <Segmented
-      options={VIEW_OPTIONS}
+      options={options}
       value={view}
       onChange={setView}
       ariaLabel="Разрез портфеля"
