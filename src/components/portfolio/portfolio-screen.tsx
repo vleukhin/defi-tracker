@@ -3,6 +3,7 @@
 import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { DcCard } from "@/components/dc/card";
 import { FreshnessDot, MetaDot, PageHeader } from "@/components/dc/page-header";
 import { useNowMs } from "@/components/dc/use-now";
@@ -14,12 +15,15 @@ import type {
   DebtResponseDto,
   PortfolioDto,
   RefreshResponseDto,
+  SignalAcksResponseDto,
   SnapshotDto,
   SnapshotsResponseDto,
 } from "@/lib/api/types";
 import { formatRelativeTime } from "@/lib/format";
 import { DEFAULT_TARGET_LTV_PCT } from "@/lib/settings-defaults";
 import {
+  ackedSignals,
+  activeSignals,
   buildSignals,
   hasPendingSources,
   type SignalsInput,
@@ -30,7 +34,7 @@ import type { AssetsDelta } from "./overview-strip";
 import { PortfolioDashboard } from "./portfolio-dashboard";
 import { PortfolioHero } from "./portfolio-hero";
 import { PortfolioViewSwitch, usePortfolioView } from "./portfolio-tabs";
-import { SignalsCard } from "./signals-card";
+import { RiskStrip, SignalsCard } from "./signals-card";
 
 /**
  * Главный экран «Портфель»: один капитал в двух разрезах.
@@ -53,6 +57,7 @@ export function PortfolioScreen() {
   const debt = useApi<DebtResponseDto>("/api/debt");
   const zones = useApi<ZonesData>("/api/zones");
   const snapshots = useApi<SnapshotsResponseDto>("/api/snapshots?period=30d");
+  const acks = useApi<SignalAcksResponseDto>("/api/signals/ack");
 
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -130,10 +135,16 @@ export function PortfolioScreen() {
       assetsUsd: zones.data?.assetsUsd ?? null,
       stableBorrowRatePercent: zones.data?.stableBorrow.ratePercent ?? null,
       targetLtvPct: debt.data?.summary.targetLtvPct ?? DEFAULT_TARGET_LTV_PCT,
+      acks: acks.data?.acks ?? null,
       pending: {
         portfolio: portfolio.loading && data === null,
         debt: debt.loading && debt.data === null,
         zones: zones.loading && zones.data === null,
+        // Пока отметки едут, лента показала бы сигнал, на который владелец
+        // уже ответил, и тут же его убрала. Если запрос не удался вовсе,
+        // ждать нечего: сигналы покажутся неотмеченными — лишняя строка
+        // безопаснее скрытой
+        acks: acks.loading && acks.data === null,
       },
       runtime: {
         debtError: debt.error,
@@ -154,6 +165,8 @@ export function PortfolioScreen() {
       zones.error,
       zones.loading,
       portfolio.loading,
+      acks.data,
+      acks.loading,
       refreshError,
       chainIssues,
     ],
@@ -162,6 +175,28 @@ export function PortfolioScreen() {
   const signals = useMemo(
     () => buildSignals(signalsInput, nowMs),
     [signalsInput, nowMs],
+  );
+  const active = useMemo(() => activeSignals(signals), [signals]);
+  const acked = useMemo(() => ackedSignals(signals), [signals]);
+  const signalsPending = hasPendingSources(signalsInput);
+
+  const refetchAcks = acks.refetch;
+  const onAck = useCallback(
+    async (signalKey: string, fingerprint: string | null) => {
+      try {
+        await apiFetch("/api/signals/ack", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signalKey, fingerprint }),
+        });
+        await refetchAcks();
+      } catch (err) {
+        toast.error(
+          err instanceof ApiError ? err.message : "Не удалось сохранить отметку",
+        );
+      }
+    },
+    [refetchAcks],
   );
 
   const header = (
@@ -202,7 +237,11 @@ export function PortfolioScreen() {
           >
             <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
           </Button>
-          <PortfolioViewSwitch view={view} setView={setView} />
+          <PortfolioViewSwitch
+            view={view}
+            setView={setView}
+            signalCount={active.length}
+          />
         </div>
       }
     />
@@ -236,11 +275,15 @@ export function PortfolioScreen() {
 
         {data && (data.wallets.length > 0 || data.totalUsd !== 0) && (
           <>
-            <SignalsCard
-              signals={signals}
-              pending={hasPendingSources(signalsInput)}
-              onOpenZones={() => setView("zones")}
-            />
+            {/* Риск ликвидации виден из любого режима: единственный сценарий,
+                способный принудительно прервать накопление, не может быть
+                тем, за чем надо не забыть сходить на отдельную вкладку */}
+            {view !== "signals" && (
+              <RiskStrip
+                signals={active}
+                onOpenSignals={() => setView("signals")}
+              />
+            )}
 
             <PortfolioHero
               view={view}
@@ -250,7 +293,15 @@ export function PortfolioScreen() {
               delta={assetsDelta(snapshots.data?.snapshots ?? [])}
             />
 
-            {view === "zones" ? (
+            {view === "signals" ? (
+              <SignalsCard
+                signals={active}
+                acked={acked}
+                pending={signalsPending}
+                onOpenZones={() => setView("zones")}
+                onAck={onAck}
+              />
+            ) : view === "zones" ? (
               zones.data ? (
                 <ZonesScreen
                   data={zones.data}

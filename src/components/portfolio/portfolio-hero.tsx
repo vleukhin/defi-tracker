@@ -39,14 +39,16 @@ export function PortfolioHero({
         debtSummary={debtSummary}
         delta={delta}
       />
-      {view === "zones" ? (
-        zones && <ZoneAllocation zones={zones} />
-      ) : (
+      {/* В режиме сигналов внизу стоит разрез по зонам: лента говорит на
+          языке стратегии, и категории под ней были бы про другое */}
+      {view === "categories" ? (
         <CategoryAllocation
           rows={portfolio.rows}
           portfolioUsd={portfolio.overview.portfolioUsd}
           positionsUsd={portfolio.overview.positionsUsd}
         />
+      ) : (
+        zones && <ZoneAllocation zones={zones} />
       )}
     </DcCard>
   );

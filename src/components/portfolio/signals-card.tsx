@@ -31,14 +31,21 @@ const HINT =
 
 export function SignalsCard({
   signals,
+  acked,
   pending,
   onOpenZones,
+  onAck,
 }: {
+  /** Требующие внимания: отмеченные выполненными сюда не входят. */
   signals: Signal[];
+  /** Отмеченные выполненными — свёрнуты внизу, не исчезают насовсем. */
+  acked: Signal[];
   /** Часть источников ещё читается: «действий нет» показывать нельзя. */
   pending: boolean;
   /** Сигналы позиций живут в разрезе «Зоны» — это смена проекции, не переход. */
   onOpenZones: () => void;
+  /** fingerprint = null снимает отметку. */
+  onAck: (signalKey: string, fingerprint: string | null) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? signals : signals.slice(0, SIGNALS_VISIBLE);
@@ -57,6 +64,7 @@ export function SignalsCard({
             ? "Часть данных ещё читается — лента пока неполна."
             : "По стратегии сейчас делать нечего: риск ликвидации в норме, уровни не пройдены, позиции и разметка в порядке."}
         </Verdict>
+        <AckedBlock signals={acked} onAck={onAck} />
       </DcCard>
     );
   }
@@ -79,6 +87,7 @@ export function SignalsCard({
             key={signal.key}
             signal={signal}
             onOpenZones={onOpenZones}
+            onAck={onAck}
           />
         ))}
       </ul>
@@ -94,6 +103,99 @@ export function SignalsCard({
       )}
 
       <Verdict>{verdictFor(signals, pending)}</Verdict>
+      <AckedBlock signals={acked} onAck={onAck} />
+    </DcCard>
+  );
+}
+
+/**
+ * Отмеченное выполненным. Не исчезает насовсем: приложение не знает,
+ * действительно ли операция сделана, — оно знает только, что так сказали.
+ * Поэтому список сворачивается, а не удаляется, и отметку видно снять.
+ */
+function AckedBlock({
+  signals,
+  onAck,
+}: {
+  signals: Signal[];
+  onAck: (signalKey: string, fingerprint: string | null) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  if (signals.length === 0) return null;
+
+  return (
+    <div className="border-line border-t bg-sunken">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="t-meta w-full px-card py-2.5 text-left text-text-3 hover:text-text-2"
+      >
+        {`Отмечено выполненными · ${signals.length}`}
+        <span className="ml-2 text-text-4">{open ? "скрыть" : "показать"}</span>
+      </button>
+
+      {open && (
+        <ul className="grid gap-px bg-line">
+          {signals.map((signal) => (
+            <li
+              key={signal.key}
+              className="flex items-center gap-3 bg-sunken px-card py-2.5"
+            >
+              <span className="t-meta min-w-0 flex-1 text-text-3 line-through">
+                {signal.title}
+              </span>
+              <button
+                type="button"
+                onClick={() => void onAck(signal.ackKey ?? "", null)}
+                className="t-meta shrink-0 text-link underline-offset-4 hover:underline"
+              >
+                вернуть
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Риск ликвидации над любым режимом. Показывает только строки уровня
+ * «ликвидация» и только когда они есть: если действие требуется, узнать
+ * об этом надо не заходя на вкладку.
+ */
+export function RiskStrip({
+  signals,
+  onOpenSignals,
+}: {
+  signals: Signal[];
+  onOpenSignals: () => void;
+}) {
+  const risk = signals.filter((s) => s.severity === "liquidation");
+  if (risk.length === 0) return null;
+
+  return (
+    <DcCard as="section">
+      <ul className="grid gap-px bg-line">
+        {risk.map((signal) => (
+          // Отметки здесь нет намеренно: риск ликвидации — состояние, а не
+          // задача к исполнению. Разрез «Зоны» строкам риска не нужен —
+          // они ведут на «Долг» и «Кошельки», — но подставлен на случай,
+          // если такой сигнал появится: полоса уводит в полную ленту
+          <SignalRow
+            key={signal.key}
+            signal={signal}
+            onOpenZones={onOpenSignals}
+          />
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onOpenSignals}
+        className="t-meta w-full border-line border-t px-card py-2.5 text-left text-link underline-offset-4 hover:underline"
+      >
+        Открыть «Сигналы» →
+      </button>
     </DcCard>
   );
 }
@@ -101,9 +203,12 @@ export function SignalsCard({
 function SignalRow({
   signal,
   onOpenZones,
+  onAck,
 }: {
   signal: Signal;
   onOpenZones: () => void;
+  /** Не передан — строка без кнопки отметки (закреплённая полоса риска). */
+  onAck?: (signalKey: string, fingerprint: string | null) => Promise<void>;
 }) {
   return (
     <li className="flex flex-col gap-1.5 bg-surface px-card py-3 sm:flex-row sm:items-start sm:gap-3">
@@ -127,7 +232,22 @@ function SignalRow({
         )}
       </div>
 
-      <SignalLink signal={signal} onOpenZones={onOpenZones} />
+      <div className="flex shrink-0 items-center gap-3 self-start sm:self-center">
+        {onAck && signal.ackKey && signal.ackFingerprint && (
+          <button
+            type="button"
+            onClick={() =>
+              void onAck(signal.ackKey as string, signal.ackFingerprint)
+            }
+            /* На тач-экране кнопка добирает высоту до 44px (§6); на десктопе
+               остаётся чипом, чтобы не спорить с заголовком строки */
+            className="t-meta whitespace-nowrap rounded-chip bg-chip px-2 py-1 text-text-2 hover:text-text-1 max-sm:min-h-11 max-sm:px-3"
+          >
+            Выполнено
+          </button>
+        )}
+        <SignalLink signal={signal} onOpenZones={onOpenZones} />
+      </div>
     </li>
   );
 }
@@ -144,7 +264,7 @@ function SignalLink({
   onOpenZones: () => void;
 }) {
   const className =
-    "t-meta shrink-0 self-start text-link underline-offset-4 hover:underline sm:self-center";
+    "t-meta shrink-0 whitespace-nowrap text-link underline-offset-4 hover:underline";
 
   if (signal.target === "zones") {
     return (
