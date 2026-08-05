@@ -103,6 +103,20 @@ function portfolio(overrides: Partial<PortfolioDto> = {}): PortfolioDto {
         lastRefreshedAt: hoursAgo(0.1),
       },
     ],
+    // Разрез по зонам приезжает в том же ответе, что и категории. Лента берет
+    // его из отдельных полей SignalsInput, поэтому здесь достаточно пустых
+    // значений — но тип обязан быть полным, иначе фикстура врет об API
+    zones: zones(),
+    positions: [],
+    positionsSummary: {
+      positionsUsd: 0,
+      grossUsd: 0,
+      ownUsd: 0,
+      profitUsd: 0,
+      unpricedCount: 0,
+      unmarkedCount: 0,
+    },
+    stableBorrow: { ratePercent: null, debtUsd: 0, reserves: [] },
     ...overrides,
   };
 }

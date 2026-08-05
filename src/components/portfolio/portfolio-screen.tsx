@@ -56,7 +56,6 @@ export function PortfolioScreen() {
 
   const portfolio = useApi<PortfolioDto>("/api/portfolio");
   const debt = useApi<DebtResponseDto>("/api/debt");
-  const zones = useApi<ZonesData>("/api/zones");
   const snapshots = useApi<SnapshotsResponseDto>("/api/snapshots?period=30d");
   const acks = useApi<SignalAcksResponseDto>("/api/signals/ack");
 
@@ -71,7 +70,6 @@ export function PortfolioScreen() {
 
   const refetchPortfolio = portfolio.refetch;
   const refetchDebt = debt.refetch;
-  const refetchZones = zones.refetch;
 
   const doRefresh = useCallback(async () => {
     if (refreshingRef.current) return;
@@ -93,9 +91,9 @@ export function PortfolioScreen() {
       const allDebounced =
         res.results.length > 0 && res.results.every((r) => r.debounced);
       if (!allDebounced) {
+        // Зоны приезжают в ответе портфеля — отдельного перезапроса нет
         void refetchPortfolio();
         void refetchDebt();
-        void refetchZones();
       }
     } catch (err) {
       setRefreshError(
@@ -105,7 +103,7 @@ export function PortfolioScreen() {
       refreshingRef.current = false;
       setRefreshing(false);
     }
-  }, [refetchPortfolio, refetchDebt, refetchZones]);
+  }, [refetchPortfolio, refetchDebt]);
 
   const hasWallets = (portfolio.data?.wallets.length ?? 0) > 0;
 
@@ -139,6 +137,28 @@ export function PortfolioScreen() {
   const data = portfolio.data;
   const debtSummary = debt.data?.summary ?? null;
 
+  /**
+   * Разрез «Зоны» — проекция того же ответа, а не отдельные данные.
+   *
+   * Плоский список свободных средств, доля категории «Стейблы» и Активы
+   * выводятся из уже полученных строк: раньше их считал сервер в /api/zones,
+   * ради чего собирал портфель второй раз целиком.
+   */
+  const zonesData = useMemo<ZonesData | null>(() => {
+    if (!data) return null;
+    return {
+      zones: data.zones,
+      positions: data.positions,
+      positionsSummary: data.positionsSummary,
+      stableBorrow: data.stableBorrow,
+      assetsUsd: data.overview.assetsUsd,
+      stableCategoryUsd:
+        data.rows.find((r) => r.category === "stable")?.amountUsd ?? 0,
+      free: data.rows.flatMap((r) => r.freeBalances),
+      freeSummary: data.freeSummary,
+    };
+  }, [data]);
+
   // Лента считается из уже загруженных ответов — своих запросов у неё нет.
   // chainIssues и refreshError приходят из POST /api/refresh, а не из DTO,
   // поэтому в модуль они попадают отдельным полем runtime.
@@ -146,16 +166,17 @@ export function PortfolioScreen() {
     () => ({
       portfolio: data,
       debt: debt.data,
-      positions: zones.data?.positions ?? null,
-      zones: zones.data?.zones ?? null,
-      assetsUsd: zones.data?.assetsUsd ?? null,
-      stableBorrowRatePercent: zones.data?.stableBorrow.ratePercent ?? null,
+      positions: zonesData?.positions ?? null,
+      zones: zonesData?.zones ?? null,
+      assetsUsd: zonesData?.assetsUsd ?? null,
+      stableBorrowRatePercent: zonesData?.stableBorrow.ratePercent ?? null,
       targetLtvPct: debt.data?.summary.targetLtvPct ?? DEFAULT_TARGET_LTV_PCT,
       acks: acks.data?.acks ?? null,
       pending: {
         portfolio: portfolio.loading && data === null,
         debt: debt.loading && debt.data === null,
-        zones: zones.loading && zones.data === null,
+        // Зоны едут в том же ответе, что и портфель, — и ждут вместе с ним
+        zones: portfolio.loading && zonesData === null,
         // Пока отметки едут, лента показала бы сигнал, на который владелец
         // уже ответил, и тут же его убрала. Если запрос не удался вовсе,
         // ждать нечего: сигналы покажутся неотмеченными — лишняя строка
@@ -164,7 +185,8 @@ export function PortfolioScreen() {
       },
       runtime: {
         debtError: debt.error,
-        zonesError: zones.error,
+        // Отдельно от портфеля зоны больше не отказывают: источник один
+        zonesError: portfolio.error,
         refreshError,
         chainIssues: [...chainIssues].map(([chain, message]) => ({
           chain,
@@ -177,9 +199,8 @@ export function PortfolioScreen() {
       debt.data,
       debt.error,
       debt.loading,
-      zones.data,
-      zones.error,
-      zones.loading,
+      zonesData,
+      portfolio.error,
       portfolio.loading,
       acks.data,
       acks.loading,
@@ -304,7 +325,7 @@ export function PortfolioScreen() {
             <PortfolioHero
               view={view}
               portfolio={data}
-              zones={zones.data?.zones ?? null}
+              zones={zonesData?.zones ?? null}
               debtSummary={debtSummary}
               delta={assetsDelta(snapshots.data?.snapshots ?? [])}
             />
@@ -318,14 +339,17 @@ export function PortfolioScreen() {
                 onAck={onAck}
               />
             ) : view === "zones" ? (
-              zones.data ? (
+              zonesData ? (
                 <ZonesScreen
-                  data={zones.data}
+                  data={zonesData}
                   debt={debt.data ?? null}
-                  onRefetch={refetchZones}
+                  // Разметка позиции меняет и зоны, и категорию «Стейблы»
+                  // (собственные доли позиций её и образуют), поэтому
+                  // перечитывается портфель целиком, а не один разрез
+                  onRefetch={refetchPortfolio}
                 />
               ) : (
-                <ZonesSkeleton error={zones.error} />
+                <ZonesSkeleton error={portfolio.error} />
               )
             ) : (
               <PortfolioDashboard

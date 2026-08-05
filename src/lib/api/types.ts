@@ -214,6 +214,21 @@ export interface PortfolioDto {
     }[];
   };
   wallets: WalletDto[];
+  /**
+   * Разрез по зонам, позиции и стоимость заёмных стейблов.
+   *
+   * Едут здесь, а не отдельным ответом: движок считает их тем же проходом,
+   * что и категории (см. lib/portfolio/load), и раньше они просто
+   * выбрасывались, а экран запрашивал ровно тот же расчёт вторым запросом
+   * в /api/zones. Один капитал в двух разрезах — и один ответ.
+   *
+   * Отдельный /api/zones остаётся: им пользуется экран «Долг», которому
+   * категории не нужны.
+   */
+  zones: ZonesSummaryDto;
+  positions: PositionDto[];
+  positionsSummary: PositionsSummaryDto;
+  stableBorrow: StableBorrowRateDto;
 }
 
 export interface RefreshResponseDto {

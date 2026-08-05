@@ -4,7 +4,13 @@ import { createTimer } from "@/lib/api/timing";
 import { loadPortfolio } from "@/lib/portfolio/load";
 
 /**
- * GET /api/portfolio — компактный портфель из трех категорий (ТЗ 02 §2а).
+ * GET /api/portfolio — портфель целиком: три категории (ТЗ 02 §2а) и тот же
+ * капитал в разрезе зон стратегии.
+ *
+ * Оба разреза одним ответом, потому что движок считает их одним проходом.
+ * Пока зоны ехали отдельным /api/zones, экран «Портфель» на каждый показ
+ * собирал портфель дважды: два одинаковых расчёта в двух функциях
+ * параллельно. Разрез — это проекция, а не отдельные данные.
  *
  * Только кэши (protocol_positions + coin_prices + ручные записи): ни RPC,
  * ни CoinGecko — дашборд обязан рисоваться быстро. Обновление данных —
@@ -62,6 +68,13 @@ export async function GET() {
         label: w.label,
         lastRefreshedAt: w.last_refreshed_at,
       })),
+      // Второй разрез того же капитала. Движок посчитал его этим же проходом,
+      // и раньше результат выбрасывался, а экран запрашивал тот же расчёт
+      // повторно через /api/zones — полная сборка портфеля дважды на показ
+      zones: portfolio.zones,
+      positions: portfolio.positions,
+      positionsSummary: portfolio.positionsSummary,
+      stableBorrow: portfolio.stableBorrow,
     }, { headers: timer.headers() });
   } catch (err) {
     return apiError(
