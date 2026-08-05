@@ -2,11 +2,10 @@
 
 import { RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DcCard } from "@/components/dc/card";
-import { StatusChip } from "@/components/dc/chip";
 import { FreshnessDot, MetaDot, PageHeader } from "@/components/dc/page-header";
-import { formatHf, formatHfThreshold } from "@/components/debt/hf";
+import { useNowMs } from "@/components/dc/use-now";
 import { LogoMark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -18,13 +17,20 @@ import type {
   SnapshotDto,
   SnapshotsResponseDto,
 } from "@/lib/api/types";
-import { chainLabel, formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime } from "@/lib/format";
+import { DEFAULT_TARGET_LTV_PCT } from "@/lib/settings-defaults";
+import {
+  buildSignals,
+  hasPendingSources,
+  type SignalsInput,
+} from "@/lib/signals/signals";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import type { AssetsDelta } from "./overview-strip";
 import { PortfolioDashboard } from "./portfolio-dashboard";
 import { PortfolioHero } from "./portfolio-hero";
 import { PortfolioViewSwitch, usePortfolioView } from "./portfolio-tabs";
+import { SignalsCard } from "./signals-card";
 
 /**
  * Главный экран «Портфель»: один капитал в двух разрезах.
@@ -52,8 +58,10 @@ export function PortfolioScreen() {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [chainIssues, setChainIssues] = useState<Map<string, string>>(new Map());
   const refreshingRef = useRef(false);
-  // Тик раз в минуту — метки «N мин назад» не застывают
-  const [, setTick] = useState(0);
+  // Одно «сейчас» на весь экран, с тиком раз в минуту: метки «N мин назад»
+  // не застывают, а таймер 48 часов в ленте идёт по тем же часам, что и
+  // такой же таймер на карточке позиции в разрезе «Зоны»
+  const nowMs = useNowMs();
 
   const refetchPortfolio = portfolio.refetch;
   const refetchDebt = debt.refetch;
@@ -107,13 +115,54 @@ export function PortfolioScreen() {
     return () => clearInterval(id);
   }, [hasWallets, doRefresh]);
 
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => clearInterval(id);
-  }, []);
-
   const data = portfolio.data;
   const debtSummary = debt.data?.summary ?? null;
+
+  // Лента считается из уже загруженных ответов — своих запросов у неё нет.
+  // chainIssues и refreshError приходят из POST /api/refresh, а не из DTO,
+  // поэтому в модуль они попадают отдельным полем runtime.
+  const signalsInput = useMemo<SignalsInput>(
+    () => ({
+      portfolio: data,
+      debt: debt.data,
+      positions: zones.data?.positions ?? null,
+      zones: zones.data?.zones ?? null,
+      assetsUsd: zones.data?.assetsUsd ?? null,
+      stableBorrowRatePercent: zones.data?.stableBorrow.ratePercent ?? null,
+      targetLtvPct: debt.data?.summary.targetLtvPct ?? DEFAULT_TARGET_LTV_PCT,
+      pending: {
+        portfolio: portfolio.loading && data === null,
+        debt: debt.loading && debt.data === null,
+        zones: zones.loading && zones.data === null,
+      },
+      runtime: {
+        debtError: debt.error,
+        zonesError: zones.error,
+        refreshError,
+        chainIssues: [...chainIssues].map(([chain, message]) => ({
+          chain,
+          message,
+        })),
+      },
+    }),
+    [
+      data,
+      debt.data,
+      debt.error,
+      debt.loading,
+      zones.data,
+      zones.error,
+      zones.loading,
+      portfolio.loading,
+      refreshError,
+      chainIssues,
+    ],
+  );
+
+  const signals = useMemo(
+    () => buildSignals(signalsInput, nowMs),
+    [signalsInput, nowMs],
+  );
 
   const header = (
     <PageHeader
@@ -187,39 +236,11 @@ export function PortfolioScreen() {
 
         {data && (data.wallets.length > 0 || data.totalUsd !== 0) && (
           <>
-            {debtSummary?.belowThreshold &&
-              debtSummary.minHealthFactor !== null && (
-                <Banner
-                  tone="loss"
-                  chip={`HF ${formatHf(debtSummary.minHealthFactor)}`}
-                  action={
-                    <Link
-                      href="/debt"
-                      className="t-meta text-link underline-offset-4 hover:underline"
-                    >
-                      Открыть «Долг» →
-                    </Link>
-                  }
-                >
-                  Ниже порога{" "}
-                  {formatHfThreshold(debtSummary.hfWarningThreshold)} — риск
-                  ликвидации.
-                </Banner>
-              )}
-
-            {refreshError && (
-              <Banner tone="warn" chip="обновление не прошло">
-                {refreshError} Показаны последние успешно прочитанные данные.
-              </Banner>
-            )}
-
-            {chainIssues.size > 0 && (
-              <Banner tone="warn" chip="данные устарели">
-                {[...chainIssues.entries()]
-                  .map(([chain, message]) => `${chainLabel(chain)}: ${message}`)
-                  .join(" · ")}
-              </Banner>
-            )}
+            <SignalsCard
+              signals={signals}
+              pending={hasPendingSources(signalsInput)}
+              onOpenZones={() => setView("zones")}
+            />
 
             <PortfolioHero
               view={view}
@@ -275,34 +296,17 @@ function assetsDelta(snapshots: SnapshotDto[]): AssetsDelta | null {
   };
 }
 
-/**
- * Строка деградации: нейтральный блок плюс чип статуса. Семантический цвет
- * не растекается на фон и обводку (§2) — его несёт только чип.
- */
-function Banner({
-  tone,
-  chip,
-  children,
-  action,
-}: {
-  tone: "warn" | "loss";
-  chip: string;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-block border border-line bg-sunken px-card py-3">
-      <StatusChip tone={tone}>{chip}</StatusChip>
-      <p className="t-meta min-w-0 flex-1 text-text-2">{children}</p>
-      {action}
-    </div>
-  );
-}
-
 /** Скелетон держит места конечных элементов, крупные числа не подменяются. */
 function ScreenSkeleton() {
   return (
     <div className="flex flex-col gap-4">
+      {/* Место ленты сигналов: без него hero прыгает вверх на первом ответе */}
+      <DcCard>
+        <div className="flex flex-col gap-2.5 px-card py-4">
+          <div className="h-3.5 w-40 rounded-pill bg-chip" />
+          <div className="h-3 w-2/3 rounded-pill bg-chip" />
+        </div>
+      </DcCard>
       <DcCard>
         <div className="flex flex-wrap items-start gap-10 px-6 pt-[22px] pb-5">
           <div className="flex flex-col gap-2">
