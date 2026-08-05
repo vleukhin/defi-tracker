@@ -9,11 +9,25 @@ const PUBLIC_PATHS = ["/login", "/reset-password", "/auth"];
  * API-роуты, не требующие пользовательской сессии.
  *
  * /api/health — health-чек для мониторинга.
- * /api/cron/snapshot — ежедневный джоб: Vercel Cron ходит без куки, и без
- *   этого исключения снепшоты молча не снимались бы никогда (401 от прокси).
- *   Роут не «открытый»: он сам требует Authorization: Bearer CRON_SECRET.
+ * /api/cron/* — джобы Vercel Cron: они ходят без куки, и без этого исключения
+ *   молча не отрабатывали бы никогда (401 от прокси). Роуты не «открытые»:
+ *   каждый сам требует Authorization: Bearer CRON_SECRET.
+ *
+ * Список именно префиксный, а не перечень точных путей. Перечень уже подвёл:
+ * при добавлении /api/cron/health его забыли внести, и мониторинг health
+ * factor — тот, что по стратегии главный индикатор риска, — молча получал
+ * 401 каждые 15 минут. Новый cron-роут не должен требовать правки в двух
+ * местах, чтобы работать.
  */
-const PUBLIC_API_PATHS = ["/api/health", "/api/cron/snapshot"];
+const PUBLIC_API_PATHS = ["/api/health"];
+const PUBLIC_API_PREFIXES = ["/api/cron/"];
+
+export function isPublicApi(pathname: string) {
+  return (
+    PUBLIC_API_PATHS.includes(pathname) ||
+    PUBLIC_API_PREFIXES.some((p) => pathname.startsWith(p))
+  );
+}
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some(
@@ -61,7 +75,7 @@ export async function updateSession(request: NextRequest) {
   // API: не редиректить на /login, а отвечать 401 JSON
   // (роуты дополнительно проверяют сессию сами — защита в глубину).
   if (pathname.startsWith("/api")) {
-    if (!user && !PUBLIC_API_PATHS.includes(pathname)) {
+    if (!user && !isPublicApi(pathname)) {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
     return supabaseResponse;
