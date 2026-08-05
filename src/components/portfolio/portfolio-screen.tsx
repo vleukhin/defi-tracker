@@ -34,6 +34,7 @@ import type { AssetsDelta } from "./overview-strip";
 import { PortfolioDashboard } from "./portfolio-dashboard";
 import { PortfolioHero } from "./portfolio-hero";
 import { PortfolioViewSwitch, usePortfolioView } from "./portfolio-tabs";
+import { needsRefreshOnEnter } from "./refresh-policy";
 import { RiskStrip, SignalsCard } from "./signals-card";
 
 /**
@@ -106,13 +107,28 @@ export function PortfolioScreen() {
     }
   }, [refetchPortfolio, refetchDebt, refetchZones]);
 
-  // Первое обновление — после того как кэш отрисован
   const hasWallets = (portfolio.data?.wallets.length ?? 0) > 0;
+
+  /**
+   * Первое обновление — после того как кэш отрисован, и только если он
+   * устарел (правило и его цена — в refresh-policy.ts).
+   *
+   * Порог свежести — тот же AUTO_REFRESH_MS, что и у интервала ниже: ровно
+   * столько экран живёт на этих данных между тиками автообновления.
+   *
+   * Проверка внутри эффекта, а не в useMemo: Date.now() в рендере — вызов
+   * нечистой функции (react-hooks/purity). Зависимость — сами кошельки:
+   * эффект перезапускается на новых данных, а не на ежеминутном тике nowMs.
+   * Цикла не образует: после обновления отметка становится свежей, а если
+   * сервер ответил дебаунсом, экран не перезапрашивает данные и перезапуска
+   * эффекта не происходит.
+   */
+  const wallets = portfolio.data?.wallets;
   useEffect(() => {
-    if (!hasWallets) return;
+    if (!needsRefreshOnEnter(wallets, Date.now(), AUTO_REFRESH_MS)) return;
     const t = setTimeout(() => void doRefresh(), 0);
     return () => clearTimeout(t);
-  }, [hasWallets, doRefresh]);
+  }, [wallets, doRefresh]);
 
   useEffect(() => {
     if (!hasWallets) return;
