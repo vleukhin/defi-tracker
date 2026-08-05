@@ -266,3 +266,89 @@ describe("loadPortfolioAsAdmin: изоляция пользователя", () =
     expect(userIdFilters).toEqual([]);
   });
 });
+
+/**
+ * Двойник с «воротами»: всё, кроме wallets, зависает до release().
+ * Пока ворота закрыты, выборка могла быть только отправлена, но не получена —
+ * значит, по списку `recorded` видно, что ушло в сеть одним пакетом.
+ */
+function gatedClient(
+  tables: Record<string, unknown[]>,
+  recorded: RecordedQuery[],
+  gate: Promise<void>,
+): SupabaseClient {
+  return {
+    from(table: string) {
+      const query: RecordedQuery = { table, filters: [] };
+      recorded.push(query);
+      const builder = {
+        select: () => builder,
+        order: () => builder,
+        eq: (column: string, value: unknown) => {
+          query.filters.push({ op: "eq", column, value });
+          return builder;
+        },
+        in: (column: string, value: unknown) => {
+          query.filters.push({ op: "in", column, value });
+          return builder;
+        },
+        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) => {
+          const response = { data: tables[table] ?? [], error: null };
+          // Список кошельков — единственная настоящая зависимость: им
+          // фильтруются остальные выборки, поэтому он проходит сразу
+          const settled =
+            table === "wallets" ? Promise.resolve(response) : gate.then(() => response);
+          return settled.then(resolve);
+        },
+      };
+      return builder;
+    },
+  } as unknown as SupabaseClient;
+}
+
+/**
+ * Регрессия на время ответа, а не на числа: тринадцать выборок, идущих по
+ * очереди, превращались в тринадцать round-trip'ов до базы — и это, а не
+ * счёт, было основным временем ответа /api/portfolio и /api/zones.
+ */
+describe("loadPortfolio: независимые выборки уходят пакетом", () => {
+  const BATCHED = [
+    "protocol_positions",
+    "manual_positions",
+    "trades",
+    "portfolio_targets",
+    "deposits",
+    "aave_account_health",
+    "position_marks",
+    "balances_cache",
+    "balance_marks",
+    "chain_read_status",
+  ];
+
+  it("шлет их все, не дожидаясь ответа ни на одну", async () => {
+    const recorded: RecordedQuery[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const supabase = gatedClient(fixtures(), recorded, gate);
+
+    const pending = loadPortfolio(supabase, USER, {
+      admin: supabase,
+      nowMs: NOW,
+    });
+    // Пустой таймаут дает очереди микрозадач опустеть: всё, что могло уйти
+    // в сеть без ожидания ответа, к этому моменту ушло
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const sent = recorded.map((q) => q.table);
+    for (const table of BATCHED) {
+      expect(sent, `${table} ждет своей очереди вместо общего пакета`).toContain(
+        table,
+      );
+    }
+
+    release();
+    await expect(pending).resolves.toBeTruthy();
+  });
+});

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { verifiedUser } from "./session";
 import { supabaseUrl } from "./url";
 
 /** Пути, доступные без авторизации. */
@@ -64,11 +65,12 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // ВАЖНО: не вставлять логику между createServerClient и getUser() —
+  // ВАЖНО: не вставлять логику между createServerClient и проверкой сессии —
   // иначе возможны случайные разлогины (см. документацию @supabase/ssr).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Проверка локальная, по подписи токена (см. session.ts): прокси стоит на
+  // пути КАЖДОГО запроса, и сетевой вызов Auth здесь дороже всего остального.
+  // Обновление истекающего токена getClaims делает сам, куки не теряются.
+  const user = await verifiedUser(supabase);
 
   const { pathname } = request.nextUrl;
 

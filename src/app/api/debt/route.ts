@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, requireUser } from "@/lib/api/auth";
+import { createTimer } from "@/lib/api/timing";
 import { buildDebtResponse, type DebtPositionInput, type HealthRowInput } from "@/lib/api/debt";
 import {
   DEFAULT_HF_WARNING_THRESHOLD,
@@ -18,8 +19,11 @@ import { getCoinPrices } from "@/lib/prices/coins";
  * Пустое состояние (долга нет нигде) — нормальный ответ, не ошибка.
  */
 export async function GET() {
+  const timer = createTimer();
+  const mark = timer.mark;
   const { user, supabase, unauthorized } = await requireUser();
   if (!user) return unauthorized;
+  mark("auth");
 
   try {
     const { data: wallets, error: walletsError } = await supabase
@@ -92,6 +96,8 @@ export async function GET() {
       }
     }
 
+    mark("db");
+
     // Оценка разбивки — только кэш цен: /api/debt обязан отвечать быстро
     const priceIds = [
       ...new Set(
@@ -101,6 +107,7 @@ export async function GET() {
       ),
     ];
     const prices = await getCoinPrices(priceIds, { fetchIfExpired: false });
+    mark("prices");
     const pricesUsd = new Map(
       [...prices.values()].map((p) => [p.coingeckoId, p.priceUsd] as const),
     );
@@ -114,6 +121,7 @@ export async function GET() {
         hfWarningThreshold,
         targetLtvPct,
       }),
+      { headers: timer.headers() },
     );
   } catch (err) {
     return apiError(

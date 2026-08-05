@@ -5,6 +5,7 @@ import { NotificationsCard } from "@/components/settings/notifications-card";
 import { UsersManager } from "@/components/settings/users-manager";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createClient } from "@/lib/supabase/server";
+import { verifiedUser } from "@/lib/supabase/session";
 
 export const metadata: Metadata = { title: "Настройки" };
 
@@ -19,9 +20,8 @@ export const metadata: Metadata = { title: "Настройки" };
  */
 export default async function SettingsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Проверка по подписи токена, без запроса к Auth (см. lib/supabase/session)
+  const user = await verifiedUser(supabase);
   const isAdmin = user?.app_metadata?.role === "admin";
 
   return (

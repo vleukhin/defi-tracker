@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, requireUser } from "@/lib/api/auth";
+import { createTimer } from "@/lib/api/timing";
 import { loadPortfolio } from "@/lib/portfolio/load";
 
 /**
@@ -10,13 +11,18 @@ import { loadPortfolio } from "@/lib/portfolio/load";
  * отдельный POST /api/refresh. RLS изолирует данные; сессия проверяется здесь.
  */
 export async function GET() {
+  // Фазы ответа видны в DevTools → Network → Timing (см. lib/api/timing)
+  const timer = createTimer();
   const { user, supabase, unauthorized } = await requireUser();
   if (!user) return unauthorized;
+  timer.mark("auth");
 
   try {
     const portfolio = await loadPortfolio(supabase, user.id, {
       fetchIfExpired: false,
+      mark: timer.mark,
     });
+    timer.mark("build");
 
     return NextResponse.json({
       totalUsd: portfolio.totalUsd,
@@ -56,7 +62,7 @@ export async function GET() {
         label: w.label,
         lastRefreshedAt: w.last_refreshed_at,
       })),
-    });
+    }, { headers: timer.headers() });
   } catch (err) {
     return apiError(
       500,

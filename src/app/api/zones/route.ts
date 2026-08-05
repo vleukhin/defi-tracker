@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, requireUser } from "@/lib/api/auth";
+import { createTimer } from "@/lib/api/timing";
 import { loadPortfolio } from "@/lib/portfolio/load";
 
 /**
@@ -14,11 +15,16 @@ import { loadPortfolio } from "@/lib/portfolio/load";
  * а собственные доли внутри них живут в категории «Стейблы».
  */
 export async function GET() {
+  const timer = createTimer();
   const { user, supabase, unauthorized } = await requireUser();
   if (!user) return unauthorized;
+  timer.mark("auth");
 
   try {
-    const portfolio = await loadPortfolio(supabase, user.id);
+    const portfolio = await loadPortfolio(supabase, user.id, {
+      mark: timer.mark,
+    });
+    timer.mark("build");
     return NextResponse.json({
       zones: portfolio.zones,
       positions: portfolio.positions,
@@ -40,7 +46,7 @@ export async function GET() {
       assetsUsd: portfolio.overview.assetsUsd,
       stableCategoryUsd:
         portfolio.rows.find((r) => r.category === "stable")?.amountUsd ?? 0,
-    });
+    }, { headers: timer.headers() });
   } catch (err) {
     return apiError(
       500,
