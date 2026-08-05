@@ -23,6 +23,16 @@ export async function GET() {
       zones: portfolio.zones,
       positions: portfolio.positions,
       positionsSummary: portfolio.positionsSummary,
+      // Плоский список свободных балансов для карточки разметки: экран уже
+      // грузит этот эндпоинт, отдельного запроса не появляется
+      free: portfolio.rows.flatMap((r) => r.freeBalances),
+      freeSummary: {
+        ownUsd: portfolio.freeOwnUsd,
+        borrowedUsd: portfolio.freeBorrowedUsd,
+        unmarkedCount: portfolio.unmarkedFreeCount,
+        dust: portfolio.freeDust,
+        other: portfolio.freeOther,
+      },
       // Ставки позиций сравниваются не с нулем, а со стоимостью заемных
       // стейблов: депозит держат, только пока он дороже займа (docs/07 §3)
       stableBorrow: portfolio.stableBorrow,

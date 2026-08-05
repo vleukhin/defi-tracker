@@ -18,6 +18,8 @@ interface RowOverrides {
   manualUsd?: number;
   collateralDetail?: PortfolioRow["collateralDetail"];
   manualEntries?: PortfolioRow["manualEntries"];
+  freeUsd?: number;
+  freeBalances?: PortfolioRow["freeBalances"];
 }
 
 function row(category: PortfolioCategory, o: RowOverrides = {}): PortfolioRow {
@@ -37,9 +39,11 @@ function row(category: PortfolioCategory, o: RowOverrides = {}): PortfolioRow {
     breakdown: {
       collateralUsd: o.collateralUsd ?? 0,
       manualUsd: o.manualUsd ?? amountUsd,
+      freeUsd: o.freeUsd ?? 0,
     },
     collateralDetail: o.collateralDetail ?? [],
     manualEntries: o.manualEntries ?? [],
+    freeBalances: o.freeBalances ?? [],
     warnings: [],
   };
 }
@@ -341,5 +345,100 @@ describe("buildSnapshotRows: долг", () => {
     });
     expect(build.isPartial).toBe(false);
     expect(build.debtUsd).toBe(0);
+  });
+});
+
+/**
+ * Свободные средства в снепшоте (Фаза 7). Балансы кошелька на прошлую дату
+ * восстановила бы разве что archive-нода, а разметку «свои/заемные» — уже
+ * ничто: она перезаписывается на месте.
+ */
+describe("buildSnapshotRows: свободные средства", () => {
+  const okChain = {
+    chain: "arbitrum",
+    ok: true,
+    error: null,
+    checked_at: "2026-07-30T03:00:00Z",
+  };
+
+  function withFree() {
+    const base = healthyPortfolio();
+    return {
+      ...base,
+      hasWallets: true,
+      debtUsd: 0,
+      debtChains: [okChain],
+      freeChains: [okChain],
+      rows: base.rows.map((r) =>
+        r.category === "stable"
+          ? {
+              ...r,
+              breakdown: { ...r.breakdown, freeUsd: 4_000 },
+              freeBalances: [
+                {
+                  key: "w1:arbitrum:0xaf88",
+                  walletId: "w1",
+                  walletLabel: null,
+                  chain: "arbitrum",
+                  token: "0xaf88",
+                  symbol: "USDC",
+                  quantity: "4000",
+                  priceUsd: 1,
+                  valueUsd: 4_000,
+                  priceStale: false,
+                  funds: "own" as const,
+                  countedInCategory: true,
+                  updatedAt: "2026-07-30T02:30:00Z",
+                },
+              ],
+            }
+          : r,
+      ),
+    };
+  }
+
+  it("пишет free_usd и состав вместе с разметкой", () => {
+    const build = buildSnapshotRows(withFree());
+    expect(build.freeUsd).toBe(4_000);
+    const stable = build.items.find((i) => i.category === "stable")!;
+    expect(stable.freeUsd).toBe(4_000);
+    expect(stable.composition.free).toEqual([
+      { symbol: "USDC", chain: "arbitrum", quantity: "4000", funds: "own" },
+    ]);
+    expect(build.isPartial).toBe(false);
+  });
+
+  it("упавшее чтение балансов делает точку частичной", () => {
+    const build = buildSnapshotRows({
+      ...withFree(),
+      freeChains: [
+        { chain: "base", ok: false, error: "RPC down", checked_at: "2026-07-30T03:00:00Z" },
+      ],
+    });
+    expect(build.isPartial).toBe(true);
+    expect(build.partialReasons.join(" ")).toContain("свободные средства");
+  });
+
+  it("балансы ни разу не читались -> free_usd null, но не частичность", () => {
+    // Точка, снятая до включения чтения: ноль здесь означал бы «свободных
+    // не было» и сделал бы ступеньку в total_usd необъяснимой
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: true,
+      debtUsd: 0,
+      debtChains: [okChain],
+    });
+    expect(build.freeUsd).toBeNull();
+    expect(build.isPartial).toBe(false);
+  });
+
+  it("без кошельков свободных честно ноль, а не «неизвестно»", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: false,
+      debtUsd: 0,
+      debtChains: [],
+    });
+    expect(build.freeUsd).toBe(0);
   });
 });

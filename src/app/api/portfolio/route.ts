@@ -35,6 +35,21 @@ export async function GET() {
         ...(c.error ? { error: c.error } : {}),
         checkedAt: c.checked_at,
       })),
+      // Свободные средства читаются отдельным контуром, поэтому и статус
+      // сетей у них свой: залог мог прочитаться, а балансы — нет
+      freeChains: portfolio.freeChains.map((c) => ({
+        chain: c.chain,
+        ok: c.ok,
+        ...(c.error ? { error: c.error } : {}),
+        checkedAt: c.checked_at,
+      })),
+      freeSummary: {
+        ownUsd: portfolio.freeOwnUsd,
+        borrowedUsd: portfolio.freeBorrowedUsd,
+        unmarkedCount: portfolio.unmarkedFreeCount,
+        dust: portfolio.freeDust,
+        other: portfolio.freeOther,
+      },
       wallets: portfolio.wallets.map((w) => ({
         id: w.id,
         address: w.address,

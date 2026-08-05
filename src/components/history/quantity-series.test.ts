@@ -27,6 +27,7 @@ function snapshot(
     percent: 0,
     collateralUsd: 0,
     manualUsd: 0,
+    freeUsd: 0,
   });
   return {
     id: takenOn,
@@ -35,6 +36,7 @@ function snapshot(
     totalUsd: 0,
     debtUsd: null,
     positionsUsd: null,
+    freeUsd: null,
     isPartial,
     items: [
       item("btc", quantities.btc),

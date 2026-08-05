@@ -24,11 +24,43 @@ describe("computeOverview", () => {
       assetsUsd: 150_000,
       portfolioUsd: 150_000,
       positionsUsd: 0,
+      freeBorrowedUsd: 0,
       debtUsd: 40_000,
       netUsd: 110_000,
       depositedUsd: 80_000,
       profitUsd: 30_000,
     });
+  });
+
+  it("свободные заемные входят в Активы, но не в портфель", () => {
+    // 20 000 заняли и еще не разместили: они лежат на кошельке. В категории
+    // не входят (портфель ведется по своим), но Активы обязаны их видеть —
+    // иначе Долг вычтется целиком и Чистая просядет на всю занятую сумму.
+    const o = computeOverview({
+      portfolioUsd: 100_000,
+      positionsUsd: 0,
+      freeBorrowedUsd: 20_000,
+      hasWallets: true,
+      healthRows: [{ totalDebtUsd: 20_000 }],
+      depositedUsd: 100_000,
+    });
+    expect(o.portfolioUsd).toBe(100_000);
+    expect(o.assetsUsd).toBe(120_000);
+    expect(o.netUsd).toBe(100_000);
+    // Заняли и положили в карман — прибыли от этого не появилось
+    expect(o.profitUsd).toBe(0);
+  });
+
+  it("без свободных заемных результат прежний: слагаемое ноль, а не null", () => {
+    const o = computeOverview({
+      portfolioUsd: 10_000,
+      positionsUsd: 5_000,
+      hasWallets: false,
+      healthRows: [],
+      depositedUsd: 0,
+    });
+    expect(o.freeBorrowedUsd).toBe(0);
+    expect(o.assetsUsd).toBe(15_000);
   });
 
   it("долг ни разу не прочитан (кошельки есть) -> debt/net/profit null, не ноль", () => {

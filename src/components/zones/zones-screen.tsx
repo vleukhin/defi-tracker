@@ -9,6 +9,7 @@ import { FilterChips } from "@/components/dc/segmented";
 import { countLabel } from "@/components/portfolio/plural";
 import type {
   DebtResponseDto,
+  FreeBalanceDto,
   PositionDto,
   PositionsSummaryDto,
   StableBorrowRateDto,
@@ -18,6 +19,7 @@ import type {
 import { dcUsd } from "@/lib/format";
 import { ApiError, apiFetch } from "@/lib/use-api";
 import { AaveCard } from "./aave-card";
+import { FreeFundsCard, type FreeSummary } from "./free-funds-card";
 import { PositionCard } from "./position-card";
 import type { MarkPatch } from "./shared";
 import { ZoneCard } from "./zone-card";
@@ -47,6 +49,9 @@ interface ZonesData {
   stableBorrow: StableBorrowRateDto;
   assetsUsd: number | null;
   stableCategoryUsd: number;
+  /** Свободные средства кошельков — плоским списком, без пыли и «прочего». */
+  free: FreeBalanceDto[];
+  freeSummary: FreeSummary;
 }
 
 export type { ZonesData };
@@ -54,7 +59,7 @@ export type { ZonesData };
 const POSITIONS_HINT =
   "Доход позиции — «стоимость + выведено − вложено»: перевод BTC/ETH в залог не выглядит убытком, капитал просто переехал в другую зону.";
 const SANITY_HINT =
-  "Сумма зон обязана совпасть с активами. Собственные доли позиций образуют категорию «Стейблы» — разница между ними это свободные стейблы, не вложенные никуда.";
+  "Сумма зон обязана совпасть с активами. Категорию «Стейблы» образуют собственные доли позиций, записи вручную и свободные стейблы на кошельках — последние теперь видно числом в карточке «Свободные средства».";
 
 type ZoneFilter = StrategyZone | "all";
 
@@ -88,6 +93,8 @@ export function ZonesScreen({
     stableBorrow,
     assetsUsd,
     stableCategoryUsd,
+    free,
+    freeSummary,
   } = data;
 
   const visible = useMemo(
@@ -141,6 +148,12 @@ export function ZonesScreen({
           <ZoneCard key={z.zone} zone={z} />
         ))}
       </section>
+
+      <FreeFundsCard
+        balances={free}
+        summary={freeSummary}
+        onRefetch={onRefetch}
+      />
 
       <SanityStrip
         zonesTotalUsd={zones.totalUsd}

@@ -29,7 +29,13 @@ import {
   persistUniswapV3Status,
   readWalletUniswapV3,
 } from "@/lib/chains/uniswap-v3";
+import {
+  persistBalanceStatus,
+  persistBalances,
+  readWalletBalances,
+} from "@/lib/chains/reader";
 import { CATEGORY_COINGECKO_IDS, getCoinPrices } from "@/lib/prices/coins";
+import { symbolCategory } from "@/lib/symbol-category";
 
 /**
  * POST /api/refresh[?walletId=...] — on-demand обновление (ТЗ Часть 4 §6.1):
@@ -39,15 +45,13 @@ import { CATEGORY_COINGECKO_IDS, getCoinPrices } from "@/lib/prices/coins";
  *    оракул Aave) + vToken.balanceOf по всем резервам (разбивка долга);
  * 4) размещение заемных средств (Фаза 5): депозиты Fluid (один вызов
  *    резолвера на сеть), GM-пулы GMX (Arbitrum) и LP-позиции Uniswap v3;
- * 5) цены категорий, залоговых, долговых токенов и компонентов позиций —
+ * 5) свободные средства кошелька (Фаза 7): нативная монета + ERC-20
+ *    по allowlist, один multicall на сеть;
+ * 6) цены категорий, залоговых, долговых токенов и компонентов позиций —
  *    coin_prices, внешний поход только по истекшему TTL;
- * 6) запись в protocol_positions + aave_account_health + chain_read_status.
+ * 7) запись в protocol_positions + balances_cache + aave_account_health
+ *    + chain_read_status.
  * Без walletId обновляются все кошельки пользователя.
- *
- * Свободные ERC-20 балансы кошелька здесь НЕ читаются: по ТЗ 02 §2а количества
- * берутся из залога и ручных записей. Модуль chains/reader.ts закладывался под
- * Фазу 5, но не понадобился и ей: GM-балансы перечисляются по списку рынков
- * GMX, а LP — через NPM, и курируемый allowlist для этого не нужен.
  */
 
 export const DEBOUNCE_MS = 60_000;
@@ -156,6 +160,36 @@ export async function POST(request: NextRequest) {
         }
       } catch (err) {
         console.warn(`[refresh] LP-позиции кошелька ${wallet.id} не прочитаны:`, err);
+      }
+
+      // Свободные средства кошелька (Фаза 7): нативная монета + ERC-20
+      // по allowlist. Свой try/catch по той же причине, что у Fluid/GMX/LP.
+      // Контур идет последним намеренно: контуры выполняются последовательно,
+      // и если время функции кончится, сохранившимся должно остаться то, что
+      // важнее для стратегии, — залог, долг и размещенные позиции.
+      try {
+        const balanceStatuses = await readWalletBalances(
+          wallet.address as Address,
+        );
+        await persistBalances(admin, wallet.id, balanceStatuses);
+        await persistBalanceStatus(admin, wallet.id, balanceStatuses);
+        for (const s of balanceStatuses) {
+          if (!s.ok) continue;
+          for (const b of s.balances) {
+            // Цена нужна только базовым активам: стейблы оцениваются
+            // константой, токены вне трех категорий не оцениваются вовсе
+            const category = symbolCategory(b.symbol);
+            if (
+              b.raw > 0n &&
+              b.coingeckoId &&
+              (category === "btc" || category === "eth")
+            ) {
+              collateralIds.add(b.coingeckoId);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[refresh] балансы кошелька ${wallet.id} не прочитаны:`, err);
       }
 
       await supabase

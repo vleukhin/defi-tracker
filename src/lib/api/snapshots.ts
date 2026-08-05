@@ -47,8 +47,8 @@ export function periodCutoff(
 
 /** Колонки снепшота вместе с составом (embedded resource PostgREST). */
 export const SNAPSHOT_COLUMNS =
-  "id, taken_on, taken_at, total_usd, debt_usd, positions_usd, is_partial, " +
-  "snapshot_items (category, quantity, composition, price_usd, value_usd, percent, collateral_usd, manual_usd)";
+  "id, taken_on, taken_at, total_usd, debt_usd, positions_usd, free_usd, is_partial, " +
+  "snapshot_items (category, quantity, composition, price_usd, value_usd, percent, collateral_usd, manual_usd, free_usd)";
 
 export interface SnapshotItemRow {
   category: string;
@@ -60,6 +60,8 @@ export interface SnapshotItemRow {
   percent: number | string;
   collateral_usd: number | string;
   manual_usd: number | string;
+  /** Отсутствует у снепшотов, снятых до чтения свободных балансов. */
+  free_usd?: number | string | null;
 }
 
 export interface SnapshotRow {
@@ -70,6 +72,8 @@ export interface SnapshotRow {
   /** Долг на момент съема (Фаза 4); null у старых снепшотов = «неизвестен». */
   debt_usd?: number | string | null;
   positions_usd?: number | string | null;
+  /** null у снепшотов, снятых до чтения свободных балансов. */
+  free_usd?: number | string | null;
   is_partial: boolean;
   snapshot_items: SnapshotItemRow[] | null;
 }
@@ -106,6 +110,9 @@ export function mapSnapshotRow(row: SnapshotRow): SnapshotDto {
       percent: num(item.percent),
       collateralUsd: num(item.collateral_usd),
       manualUsd: num(item.manual_usd),
+      // Старые точки колонки не знали: там ноль — «свободных не учитывали»,
+      // и это ровно то, что было
+      freeUsd: num(item.free_usd ?? 0),
     }));
 
   return {
@@ -115,6 +122,7 @@ export function mapSnapshotRow(row: SnapshotRow): SnapshotDto {
     totalUsd: num(row.total_usd),
     debtUsd: nullableNum(row.debt_usd ?? null),
     positionsUsd: nullableNum(row.positions_usd ?? null),
+    freeUsd: nullableNum(row.free_usd ?? null),
     isPartial: row.is_partial,
     items,
   };

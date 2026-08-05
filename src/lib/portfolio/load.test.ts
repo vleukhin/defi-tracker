@@ -9,6 +9,7 @@ import { loadPortfolio, loadPortfolioAsAdmin } from "./load";
  */
 
 const USER = "a580b020-6f69-471e-b25f-585d6c07a994";
+const WALLET = "11111111-1111-4111-8111-111111111111";
 const OTHER = "b0000000-0000-4000-8000-000000000001";
 const NOW = Date.parse("2026-07-30T03:00:00.000Z");
 
@@ -126,6 +127,9 @@ describe("loadPortfolioAsAdmin: изоляция пользователя", () =
       "trades",
       "portfolio_targets",
       "deposits",
+      // Разметка свободных средств: тоже user-scoped, и забыть про нее
+      // в admin-режиме значило бы утащить чужие пометки в чужой снепшот
+      "balance_marks",
     ]) {
       expect(
         filterOn(recorded, table),
@@ -138,6 +142,7 @@ describe("loadPortfolioAsAdmin: изоляция пользователя", () =
       "protocol_positions",
       "chain_read_status",
       "aave_account_health",
+      "balances_cache",
     ]) {
       expect(
         filterOn(recorded, table).some(
@@ -174,6 +179,79 @@ describe("loadPortfolioAsAdmin: изоляция пользователя", () =
     await expect(
       loadPortfolioAsAdmin(admin, "все", { nowMs: NOW }),
     ).rejects.toThrow(/невалидный userId/);
+  });
+
+  it("свободные балансы собираются: сырое значение, символ, разметка", async () => {
+    const recorded: RecordedQuery[] = [];
+    const data = fixtures();
+    data.balances_cache = [
+      {
+        wallet_id: WALLET,
+        asset_id: "aaaa1111-0000-4000-8000-000000000001",
+        // 20 000 USDC при 6 decimals; строкой — как отдает raw_amount::text
+        raw_amount: "20000000000",
+        updated_at: "2026-07-30T02:30:00.000Z",
+      },
+      {
+        wallet_id: WALLET,
+        asset_id: "aaaa1111-0000-4000-8000-000000000002",
+        // 1e21 wei = 1000 ETH: без каста в text PostgREST вернул бы "1e+21"
+        raw_amount: "1e+21",
+        updated_at: "2026-07-30T02:30:00.000Z",
+      },
+    ];
+    data.assets = [
+      {
+        id: "aaaa1111-0000-4000-8000-000000000001",
+        chain: "arbitrum",
+        contract_address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+        symbol: "USDC",
+        decimals: 6,
+        coingecko_id: "usd-coin",
+      },
+      {
+        id: "aaaa1111-0000-4000-8000-000000000002",
+        chain: "arbitrum",
+        contract_address: null,
+        symbol: "ETH",
+        decimals: 18,
+        coingecko_id: "ethereum",
+      },
+    ];
+    data.balance_marks = [
+      {
+        user_id: USER,
+        wallet_id: WALLET,
+        chain: "arbitrum",
+        token: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+        funds: "borrowed",
+      },
+    ];
+
+    const result = await loadPortfolioAsAdmin(fakeClient(data, recorded), USER, {
+      nowMs: NOW,
+    });
+
+    const stable = result.rows.find((r) => r.category === "stable")!;
+    const eth = result.rows.find((r) => r.category === "eth")!;
+    // Заемные USDC: в категории нет, но в списке и в Активах есть
+    expect(stable.breakdown.freeUsd).toBe(0);
+    expect(stable.freeBalances[0]).toMatchObject({
+      symbol: "USDC",
+      quantity: "20000",
+      valueUsd: 20_000,
+      funds: "borrowed",
+      countedInCategory: false,
+    });
+    expect(result.freeBorrowedUsd).toBe(20_000);
+    // Нативный ETH: экспоненциальная запись развернулась, а не уронила разбор
+    expect(eth.freeBalances[0]).toMatchObject({
+      symbol: "ETH",
+      token: "native",
+      quantity: "1000",
+      funds: null,
+    });
+    expect(result.unmarkedFreeCount).toBe(1);
   });
 
   it("обычный путь (RLS) фильтр по user_id не ставит", async () => {

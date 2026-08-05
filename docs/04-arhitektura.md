@@ -105,6 +105,12 @@ price_cache         asset_id, price_usd, source, fetched_at
 snapshots           id, user_id, taken_at, gross_usd, debt_usd, net_usd, is_partial, payload jsonb
 snapshot_items      snapshot_id FK, asset_id, wallet_id?, quantity, price_usd, value_usd, protocol?
 balances_cache      wallet_id, asset_id, raw_amount numeric, updated_at      -- последнее известное состояние
+balance_marks       user_id, wallet_id FK, chain, token ('native'|0x…),
+                    funds ('own'|'borrowed'), updated_at   -- Фаза 7, PK по всем четырём
+                    -- Разметка свободных средств. Отдельно от balances_cache:
+                    -- тот принадлежит читателю и удаляет нулевые балансы,
+                    -- пометка «заёмные» переживает опустошение баланса.
+                    -- Отсутствие строки = «не размечено» (считается своим).
 ```
 
 - **RLS-политика на каждой user-scoped таблице**: `user_id = auth.uid()`; таблицы, скоупленные кошельком, — через join к `wallets`. Изоляция покрыта автотестами (два пользователя, перекрестные запросы по всем роутам).
@@ -118,6 +124,8 @@ balances_cache      wallet_id, asset_id, raw_amount numeric, updated_at      -- 
 3. Второй multicall при наличии NPM NFT (Фаза 5).
 4. Цены — из `price_cache`; поход во внешние API только при истекшем TTL.
 5. Запись в `balances_cache` / `protocol_positions`; ответ — агрегированное состояние.
+
+Свободные балансы (шаг 2) с Фазы 7 участвуют в расчёте портфеля, а не только пишутся в кэш: контур стоит последним внутри обновления кошелька и падает изолированно — его отказ не уносит уже прочитанные залог, долг и позиции.
 
 ### 6.2. Ежедневный cron (`/api/cron/snapshot`, ~03:00 UTC)
 1. Zerion-свип discovery по каждому кошельку (≤ 100 вызовов).

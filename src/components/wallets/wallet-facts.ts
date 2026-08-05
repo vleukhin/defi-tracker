@@ -37,6 +37,13 @@ export const EMPTY_FACTS: WalletFacts = {
 /** Залог читается модулем Aave — отдельного поля «протокол» у него нет. */
 const COLLATERAL_PROTOCOL = "Aave";
 
+/**
+ * Свободные монеты — не протокол, а балансы самого адреса. В списке «что
+ * читаем» стоят наравне с протоколами: до Фазы 7 подсказка обещала, что
+ * балансы читаются всегда, а на деле их не читал никто.
+ */
+const FREE_BALANCES = "Балансы";
+
 export function walletFacts(
   walletId: string,
   portfolio: PortfolioDto | null,
@@ -59,6 +66,22 @@ export function walletFacts(
         unpriced = true;
       } else {
         valueUsd += c.valueUsd;
+        priced = true;
+      }
+    }
+  }
+
+  // Свободные средства: заёмные тоже считаются — в колонке «Стоимость»
+  // вопрос «сколько лежит на адресе», а не «сколько из этого моё»
+  for (const row of portfolio?.rows ?? []) {
+    for (const b of row.freeBalances) {
+      if (b.walletId !== walletId) continue;
+      chains.add(b.chain);
+      reads.add(FREE_BALANCES);
+      if (b.priceUsd === null) {
+        unpriced = true;
+      } else {
+        valueUsd += b.valueUsd;
         priced = true;
       }
     }

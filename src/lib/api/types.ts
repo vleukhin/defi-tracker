@@ -7,6 +7,20 @@
 export type PortfolioCategory = "btc" | "eth" | "stable";
 
 /**
+ * Происхождение свободных средств на кошельке: свои или заемные.
+ *
+ * ОТСУТСТВИЕ метки (null) — третье состояние, «не размечено», и это не
+ * синоним own. Неразмеченный баланс считается своим (деньги на кошельке
+ * по умолчанию ваши, заемные там — транзит между займом и размещением),
+ * но выводится отдельным числом и помечается на экране.
+ *
+ * Расхождение с трактовкой позиций (там «не размечено» идет в заемные)
+ * намеренное: позиция по стратегии создается на заемные, а баланс кошелька
+ * не создается вовсе — он просто остаток.
+ */
+export type FundsMark = "own" | "borrowed";
+
+/**
  * Почему не посчитались комиссии LP за сутки.
  *
  * Живет здесь, а не рядом с читателем цепочки: значение проходит весь путь
@@ -88,11 +102,40 @@ export interface PortfolioRowDto {
   percentDiff: number | null;
   /** В единицах категории: минус — продать, плюс — купить. */
   amountToBalance: number | null;
-  breakdown: { collateralUsd: number; manualUsd: number };
+  breakdown: { collateralUsd: number; manualUsd: number; freeUsd: number };
   collateralDetail: CollateralDetailDto[];
   manualEntries: ManualEntryDto[];
+  /** Свободные средства категории: свои, неразмеченные И заемные. */
+  freeBalances: FreeBalanceDto[];
   warnings: string[];
   ledger: PortfolioRowLedgerDto;
+}
+
+/**
+ * Свободный баланс на кошельке: не в залоге и не в позиции.
+ *
+ * Заемные остаются в списке с countedInCategory: false — их видно, но
+ * в стоимость категории они не входят. Прятать их было бы хуже: сумма
+ * на экране не сошлась бы с тем, что пользователь видит в кошельке.
+ */
+export interface FreeBalanceDto {
+  /** `${walletId}:${chain}:${token}` — им же адресуется PUT разметки. */
+  key: string;
+  walletId: string;
+  walletLabel: string | null;
+  chain: string;
+  /** 'native' или lowercase-адрес контракта. */
+  token: string;
+  symbol: string;
+  quantity: string;
+  priceUsd: number | null;
+  valueUsd: number;
+  priceStale: boolean;
+  /** null = не размечено (считается своим, но помечается). */
+  funds: FundsMark | null;
+  countedInCategory: boolean;
+  /** Момент чтения баланса — не путать со свежестью цены. */
+  updatedAt: string;
 }
 
 /**
@@ -119,6 +162,13 @@ export interface PortfolioOverviewDto {
   portfolioUsd: number;
   /** Размещенные позиции с неттингом Fluid; null = оценка части позиций неизвестна. */
   positionsUsd: number | null;
+  /**
+   * Свободные заемные средства на кошельках. В portfolioUsd не входят
+   * (категории — про собственные деньги), в assetsUsd входят: иначе Долг
+   * вычитался бы целиком, а занятые и еще не размещенные деньги в Активах
+   * не значились бы.
+   */
+  freeBorrowedUsd: number;
   /** Долг по оракулу Aave (getUserAccountData); null = ни разу не прочитан. */
   debtUsd: number | null;
   netUsd: number | null;
@@ -138,6 +188,31 @@ export interface PortfolioDto {
     anyPriceStale: boolean;
   };
   chains: { chain: string; ok: boolean; error?: string; checkedAt: string }[];
+  /** Статус последнего чтения свободных балансов (source = erc20). */
+  freeChains: {
+    chain: string;
+    ok: boolean;
+    error?: string;
+    checkedAt: string;
+  }[];
+  /** Свод по свободным средствам — отдельно от раскладки по категориям. */
+  freeSummary: {
+    /** Свои и неразмеченные: то, что вошло в категории. */
+    ownUsd: number;
+    /** Заемные: в категории не вошли, в Активы вошли. */
+    borrowedUsd: number;
+    unmarkedCount: number;
+    /** Пыль ниже порога: скрыта из списков, но названа числом. */
+    dust: { count: number; valueUsd: number };
+    /** Токены вне трех категорий: только количества, без оценки. */
+    other: {
+      walletId: string;
+      walletLabel: string | null;
+      chain: string;
+      symbol: string;
+      quantity: string;
+    }[];
+  };
   wallets: WalletDto[];
 }
 
@@ -244,6 +319,17 @@ export interface TradeResponseDto {
 export interface SnapshotCompositionDto {
   collateral: { symbol: string; chain: string; quantity: string }[];
   manual: { label: string; amount: string }[];
+  /**
+   * Свободные средства на кошельках (Фаза 7). Поле необязательное: точки,
+   * снятые до чтения балансов, о них не знали, и пустой массив в них означал
+   * бы «свободных не было» вместо «мы их не видели».
+   */
+  free?: {
+    symbol: string;
+    chain: string;
+    quantity: string;
+    funds: FundsMark | null;
+  }[];
 }
 
 export interface SnapshotItemDto {
@@ -262,6 +348,8 @@ export interface SnapshotItemDto {
   /** Разбивка «залог / вручную» (S3.1). */
   collateralUsd: number;
   manualUsd: number;
+  /** Свободные средства категории (Фаза 7); заемные сюда не входят. */
+  freeUsd: number;
 }
 
 export interface SnapshotDto {
@@ -281,6 +369,13 @@ export interface SnapshotDto {
    * портфель; Активы точки = totalUsd + positionsUsd. null = не было известно.
    */
   positionsUsd: number | null;
+  /**
+   * Свободные средства на кошельках (свои и неразмеченные) на момент съема.
+   * Уже входят в totalUsd — выделены отдельно, чтобы ступеньку в истории
+   * в день включения чтения балансов можно было объяснить числом.
+   * null = снепшот снят до того, как балансы начали читаться.
+   */
+  freeUsd: number | null;
   /**
    * true = данные заведомо неполные: упало чтение сети либо цена
    * категории/залогового токена отсутствовала или устарела. Такую точку
@@ -674,9 +769,11 @@ export interface ZoneBreakdownDto {
   collateralUsd: number;
   /** Ручные записи, отнесенные к зоне. */
   manualUsd: number;
+  /** Свободные средства кошельков — целиком, включая заемные. */
+  freeUsd: number;
   /** Читаемые позиции зоны; null = стоимость части неизвестна. */
   positionsUsd: number | null;
-  /** collateral + manual + positions; null при неизвестных позициях. */
+  /** collateral + manual + free + positions; null при неизвестных позициях. */
   valueUsd: number | null;
   /** Доля от суммы зон; null пока знаменатель неизвестен. */
   percent: number | null;
@@ -698,4 +795,10 @@ export interface ZonesSummaryDto {
   unpricedPositions: number;
   /** Позиции без разметки собственной доли. */
   unmarkedPositions: number;
+  /** Свободные свои и неразмеченные — то, что вошло в категории. */
+  freeOwnUsd: number;
+  /** Свободные заемные: в зонах есть (Yield), в категориях нет. */
+  freeBorrowedUsd: number;
+  /** Балансы без разметки происхождения. */
+  unmarkedFree: number;
 }

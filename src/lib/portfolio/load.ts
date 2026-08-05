@@ -6,7 +6,10 @@ import {
   type AaveDebtPositionPayload,
 } from "@/lib/chains/aave-debt";
 import { isStableSymbol } from "@/lib/stables";
+import { symbolCategory } from "@/lib/symbol-category";
+import { rawToQuantity } from "./raw-amount";
 import type {
+  FundsMark,
   PortfolioOverviewDto,
   PositionDto,
   PositionsSummaryDto,
@@ -18,6 +21,7 @@ import {
   buildStableBorrow,
   type StableBorrowReserveInput,
 } from "@/lib/positions/borrow-rate";
+import { ERC20_SOURCE } from "@/lib/positions/sources";
 import {
   POSITION_PROTOCOLS,
   buildPositions,
@@ -26,7 +30,11 @@ import {
   type PositionMark,
   type PositionRowInput,
 } from "@/lib/positions/positions";
-import { buildZones, type ManualAtom } from "@/lib/positions/zones";
+import {
+  buildZones,
+  type FreeAtom,
+  type ManualAtom,
+} from "@/lib/positions/zones";
 import { computeOverview } from "./overview";
 import {
   CATEGORY_COINGECKO_IDS,
@@ -42,6 +50,7 @@ import {
 import {
   computePortfolio,
   type CollateralInput,
+  type FreeBalanceInput,
   type ManualInput,
   type PortfolioCategory,
   type PortfolioResult,
@@ -92,6 +101,8 @@ export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
   chains: ChainStatusRow[];
   /** Статус последнего чтения долга/HF (source = aave_v3_debt, Фаза 4). */
   debtChains: ChainStatusRow[];
+  /** Статус последнего чтения свободных балансов (source = erc20, Фаза 7). */
+  freeChains: ChainStatusRow[];
   /** Связка пяти чисел: Активы · Долг · Чистая · Внесено · Прибыль (S4.2). */
   overview: PortfolioOverviewDto;
   /** Размещенные позиции (Фаза 5): Fluid, GM-пулы, LP. */
@@ -386,12 +397,96 @@ export async function loadPortfolio(
     ]),
   );
 
-  // --- Цены: категории, залоговые токены и компоненты позиций ---
+  // --- Свободные средства кошельков (Фаза 7) ---
+  //
+  // То, что лежит на адресе и не участвует ни в залоге, ни в позициях.
+  // Читается chains/reader.ts в balances_cache; справочник assets дает
+  // символ, decimals и coingecko id; balance_marks — происхождение денег.
+  const free: FreeBalanceInput[] = [];
+  if (wallets.length > 0) {
+    const { data: balanceRows, error: balancesError } = await supabase
+      .from("balances_cache")
+      // raw_amount кастуется в text прямо в запросе: numeric(78,0) вмещает
+      // uint256, а JSON-числом крупный баланс вернулся бы как "1e+21"
+      .select("wallet_id, asset_id, raw_amount::text, updated_at")
+      .in("wallet_id", walletIds);
+    if (balancesError)
+      throw new Error(`balances_cache: ${balancesError.message}`);
+
+    const assetIds = [
+      ...new Set((balanceRows ?? []).map((r) => r.asset_id as string)),
+    ];
+    // is_hidden — единственный глобальный рычаг «этот токен не показывать»;
+    // колонка заведена в Фазе 1 и до сих пор не использовалась
+    const { data: assetRows, error: assetsError } =
+      assetIds.length === 0
+        ? { data: [], error: null }
+        : await supabase
+            .from("assets")
+            .select("id, chain, contract_address, symbol, decimals, coingecko_id")
+            .in("id", assetIds)
+            .in("kind", ["native", "erc20"])
+            .eq("is_hidden", false);
+    if (assetsError) throw new Error(`assets: ${assetsError.message}`);
+    const assetById = new Map(
+      (assetRows ?? []).map((a) => [a.id as string, a]),
+    );
+
+    // Разметка «свои / заемные». Отсутствие строки = «не размечено»,
+    // и это не то же самое, что own (см. миграцию balance_marks)
+    const { data: fundsRows, error: fundsError } = await scopeUser(
+      supabase
+        .from("balance_marks")
+        .select("user_id, wallet_id, chain, token, funds"),
+    );
+    if (fundsError) throw new Error(`balance_marks: ${fundsError.message}`);
+    assertOwned((fundsRows ?? []) as { user_id?: string }[], "balance_marks");
+    const fundsByKey = new Map<string, FundsMark>(
+      (fundsRows ?? []).map((r) => [
+        `${r.wallet_id as string}:${r.chain as string}:${r.token as string}`,
+        r.funds as FundsMark,
+      ]),
+    );
+
+    for (const row of balanceRows ?? []) {
+      const asset = assetById.get(row.asset_id as string);
+      if (!asset) continue; // скрытый токен или не из справочника балансов
+      const wallet = walletById.get(row.wallet_id as string);
+      const token = (asset.contract_address as string | null) ?? "native";
+      const key = `${row.wallet_id as string}:${asset.chain as string}:${token}`;
+      const symbol = asset.symbol as string;
+      free.push({
+        key,
+        walletId: row.wallet_id as string,
+        walletLabel: wallet?.label ?? null,
+        chain: asset.chain as string,
+        token,
+        symbol,
+        // null = токен вне трех категорий: движок его не оценивает
+        category: symbolCategory(symbol),
+        coingeckoId: (asset.coingecko_id as string | null) ?? null,
+        quantity: rawToQuantity(
+          row.raw_amount as string,
+          Number(asset.decimals),
+        ),
+        funds: fundsByKey.get(key) ?? null,
+        updatedAt: row.updated_at as string,
+      });
+    }
+  }
+
+  // --- Цены: категории, залоговые токены, компоненты позиций и свободные
+  // базовые активы. Стейблы оцениваются константой, а токены вне трех
+  // категорий не оцениваются вовсе — их id в запрос не идут ---
   const priceIds = [
     CATEGORY_COINGECKO_IDS.btc,
     CATEGORY_COINGECKO_IDS.eth,
     ...collateral.map((c) => c.coingeckoId),
     ...positionPriceIds(positionRows),
+    ...free
+      .filter((b) => b.category === "btc" || b.category === "eth")
+      .map((b) => b.coingeckoId)
+      .filter((id): id is string => id !== null),
   ];
   const prices = await getCoinPrices(priceIds, {
     admin: opts.admin,
@@ -425,6 +520,7 @@ export async function loadPortfolio(
   const result = computePortfolio({
     collateral,
     manual: [...manual, ...ownEntries],
+    free,
     targets,
     prices,
     stablePriceUsd: STABLE_PRICE_USD,
@@ -447,11 +543,12 @@ export async function loadPortfolio(
   // Источники раздельные: залог (aave_v3) и долг/HF (aave_v3_debt) ---
   const chains: ChainStatusRow[] = [];
   const debtChains: ChainStatusRow[] = [];
+  const freeChains: ChainStatusRow[] = [];
   if (wallets.length > 0) {
     const { data: statusRows, error: statusError } = await supabase
       .from("chain_read_status")
       .select("source, chain, ok, error, checked_at")
-      .in("source", [AAVE_PROTOCOL, AAVE_DEBT_SOURCE])
+      .in("source", [AAVE_PROTOCOL, AAVE_DEBT_SOURCE, ERC20_SOURCE])
       .in("wallet_id", walletIds);
     if (statusError)
       throw new Error(`chain_read_status: ${statusError.message}`);
@@ -476,9 +573,12 @@ export async function loadPortfolio(
       }
     }
     for (const [key, status] of bySourceChain) {
-      (key.startsWith(`${AAVE_DEBT_SOURCE}:`) ? debtChains : chains).push(
-        status,
-      );
+      const bucket = key.startsWith(`${AAVE_DEBT_SOURCE}:`)
+        ? debtChains
+        : key.startsWith(`${ERC20_SOURCE}:`)
+          ? freeChains
+          : chains;
+      bucket.push(status);
     }
   }
 
@@ -497,6 +597,18 @@ export async function loadPortfolio(
         zone: manualZones.get(e.id) ?? null,
       })),
   );
+  // Свободные средства входят в зоны ЦЕЛИКОМ, включая заемные: в разрезе
+  // по зонам ничего не вычитается. Берутся из результата движка, а не из
+  // входа: там они уже оценены и очищены от пыли и токенов вне категорий
+  const freeAtoms: FreeAtom[] = result.rows.flatMap((row) =>
+    row.freeBalances.map((b) => ({
+      id: b.key,
+      category: row.category,
+      symbol: b.symbol,
+      valueUsd: b.valueUsd,
+      funds: b.funds,
+    })),
+  );
   const zones = buildZones({
     collateral: result.rows.flatMap((row) =>
       row.collateralDetail.map((c) => ({
@@ -505,6 +617,7 @@ export async function loadPortfolio(
       })),
     ),
     manual: manualAtoms,
+    free: freeAtoms,
     positions: positions.positions.map((p) => ({
       id: p.id,
       protocol: p.protocol,
@@ -518,6 +631,8 @@ export async function loadPortfolio(
   const overview = computeOverview({
     portfolioUsd: result.totalUsd,
     positionsUsd: positions.summary.positionsUsd,
+    // Заемные свободные в категории не входят, а в Активы обязаны
+    freeBorrowedUsd: result.freeBorrowedUsd,
     hasWallets: wallets.length > 0,
     healthRows,
     depositedUsd,
@@ -529,6 +644,7 @@ export async function loadPortfolio(
     wallets,
     chains,
     debtChains,
+    freeChains,
     overview,
     positions: positions.positions,
     positionsSummary: positions.summary,

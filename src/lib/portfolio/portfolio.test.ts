@@ -3,6 +3,7 @@ import {
   computePortfolio,
   validateTargets,
   type CollateralInput,
+  type FreeBalanceInput,
   type ManualInput,
   type PriceInput,
 } from "./portfolio";
@@ -31,6 +32,23 @@ function collateral(over: Partial<CollateralInput> = {}): CollateralInput {
 
 function manual(over: Partial<ManualInput> = {}): ManualInput {
   return { id: "m1", category: "stable", label: "GMX пул", amount: "1000", ...over };
+}
+
+function free(over: Partial<FreeBalanceInput> = {}): FreeBalanceInput {
+  return {
+    key: "w1:ethereum:native",
+    walletId: "w1",
+    walletLabel: "Основной",
+    chain: "ethereum",
+    token: "native",
+    symbol: "ETH",
+    category: "eth",
+    coingeckoId: "ethereum",
+    quantity: "1",
+    funds: null,
+    updatedAt: "2026-08-04T09:00:00.000Z",
+    ...over,
+  };
 }
 
 describe("computePortfolio", () => {
@@ -281,5 +299,172 @@ describe("validateTargets", () => {
 
   it("пустой набор целей допустим", () => {
     expect(validateTargets([])).toEqual({ sumPct: 0, warning: null });
+  });
+});
+
+/**
+ * Свободные средства на кошельке (Фаза 7).
+ *
+ * Главное, что здесь проверяется, — почему это отдельный вход, а не ручная
+ * запись: ручная запись оценивается по цене КАТЕГОРИИ, свободный баланс —
+ * по своей.
+ */
+describe("computePortfolio: свободные средства", () => {
+  it("оценивает свободный wstETH по СВОЕЙ цене, а не по цене ETH", () => {
+    const res = computePortfolio({
+      collateral: [],
+      manual: [],
+      free: [
+        free({
+          symbol: "wstETH",
+          token: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+          coingeckoId: "wrapped-steth",
+          quantity: "1",
+        }),
+      ],
+      targets: {},
+      prices: prices({ ethereum: 2000, "wrapped-steth": 2480 }),
+    });
+    const eth = res.rows.find((r) => r.category === "eth")!;
+    expect(eth.breakdown.freeUsd).toBe(2480);
+    // Количество категории — ETH-эквивалент: 2480 / 2000 = 1.24 ETH.
+    // Через ручную запись здесь получился бы ровно 1 ETH, то есть −24%
+    expect(eth.amount).toBeCloseTo(1.24, 10);
+  });
+
+  it("заемные не входят в категорию, но остаются в списке", () => {
+    const res = computePortfolio({
+      collateral: [],
+      manual: [],
+      free: [
+        free({
+          key: "w1:arbitrum:0xaf88",
+          symbol: "USDC",
+          token: "0xaf88",
+          chain: "arbitrum",
+          category: "stable",
+          coingeckoId: "usd-coin",
+          quantity: "20000",
+          funds: "borrowed",
+        }),
+        free({
+          key: "w1:arbitrum:0xff",
+          symbol: "USDT",
+          token: "0xff",
+          chain: "arbitrum",
+          category: "stable",
+          coingeckoId: "tether",
+          quantity: "5000",
+          funds: "own",
+        }),
+      ],
+      targets: {},
+      prices: prices({ bitcoin: 64000, ethereum: 2000 }),
+    });
+    const stable = res.rows.find((r) => r.category === "stable")!;
+    expect(stable.breakdown.freeUsd).toBe(5000);
+    expect(stable.amountUsd).toBe(5000);
+    // Заемный виден в списке, просто не посчитан
+    expect(stable.freeBalances).toHaveLength(2);
+    expect(stable.freeBalances.find((b) => b.symbol === "USDC")).toMatchObject({
+      valueUsd: 20_000,
+      countedInCategory: false,
+    });
+    expect(res.freeBorrowedUsd).toBe(20_000);
+    expect(res.freeOwnUsd).toBe(5000);
+  });
+
+  it("неразмеченный считается своим, но попадает в счетчик", () => {
+    const res = computePortfolio({
+      collateral: [],
+      manual: [],
+      free: [
+        free({ category: "stable", symbol: "USDC", quantity: "3000", funds: null }),
+      ],
+      targets: {},
+      prices: prices({ bitcoin: 64000, ethereum: 2000 }),
+    });
+    const stable = res.rows.find((r) => r.category === "stable")!;
+    expect(stable.breakdown.freeUsd).toBe(3000);
+    expect(res.unmarkedFreeCount).toBe(1);
+    expect(res.freeBorrowedUsd).toBe(0);
+  });
+
+  it("пыль ниже порога уходит в freeDust, а не молча в ноль", () => {
+    const res = computePortfolio({
+      collateral: [],
+      manual: [],
+      free: [
+        // 0,0001 ETH ≈ $0,20 — газовая сдача на четвертой сети
+        free({ quantity: "0.0001" }),
+        free({ key: "w1:base:native", chain: "base", quantity: "5" }),
+      ],
+      targets: {},
+      prices: prices({ ethereum: 2000 }),
+    });
+    const eth = res.rows.find((r) => r.category === "eth")!;
+    expect(eth.freeBalances).toHaveLength(1);
+    expect(res.freeDust.count).toBe(1);
+    expect(res.freeDust.valueUsd).toBeCloseTo(0.2, 10);
+    // Пыль не размечена, но в счетчик неразмеченных не идет: просить
+    // разметить $0,20 — шум
+    expect(res.unmarkedFreeCount).toBe(1);
+  });
+
+  it("токен вне трех категорий не оценивается и в портфель не входит", () => {
+    const res = computePortfolio({
+      collateral: [],
+      manual: [],
+      free: [
+        free({
+          symbol: "LINK",
+          token: "0x5149",
+          category: null,
+          coingeckoId: "chainlink",
+          quantity: "12",
+        }),
+      ],
+      targets: {},
+      prices: prices({ ethereum: 2000, chainlink: 15 }),
+    });
+    expect(res.totalUsd).toBe(0);
+    expect(res.freeOther).toEqual([
+      {
+        walletId: "w1",
+        walletLabel: "Основной",
+        chain: "ethereum",
+        symbol: "LINK",
+        quantity: "12",
+      },
+    ]);
+  });
+
+  it("баланс без цены дает предупреждение, а не тихий ноль", () => {
+    const res = computePortfolio({
+      collateral: [],
+      manual: [],
+      free: [free({ symbol: "cbETH", coingeckoId: "coinbase-wrapped-staked-eth" })],
+      targets: {},
+      prices: prices({ ethereum: 2000 }),
+    });
+    const eth = res.rows.find((r) => r.category === "eth")!;
+    expect(eth.warnings.join(" ")).toContain("cbETH");
+    // Без цены баланс оценивается в 0 и потому уходит в пыль — но не молча:
+    // предупреждение уже выставлено
+    expect(res.freeDust.count).toBe(1);
+  });
+
+  it("без входа free результат прежний: freeUsd = 0, счетчики пустые", () => {
+    const res = computePortfolio({
+      collateral: [collateral()],
+      manual: [manual()],
+      targets: {},
+      prices: prices({ bitcoin: 64000, ethereum: 2000, "wrapped-bitcoin": 64000 }),
+    });
+    expect(res.totalUsd).toBe(65_000);
+    expect(res.rows.every((r) => r.breakdown.freeUsd === 0)).toBe(true);
+    expect(res.freeBorrowedUsd).toBe(0);
+    expect(res.freeOther).toEqual([]);
+    expect(res.freeDust).toEqual({ count: 0, valueUsd: 0 });
   });
 });

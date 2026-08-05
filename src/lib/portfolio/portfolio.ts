@@ -1,3 +1,5 @@
+import type { FundsMark } from "@/lib/api/types";
+
 /**
  * Движок портфеля: три фиксированные категории (ТЗ 02 §2а).
  *
@@ -51,6 +53,36 @@ export interface ManualInput {
   amount: string;
 }
 
+/**
+ * Свободные средства на кошельке — то, что лежит на адресе и не участвует
+ * ни в залоге, ни в позициях (читаются chains/reader.ts).
+ *
+ * Отдельный вход, а не ручная запись, по двум причинам. Первая: ручная
+ * запись оценивается по цене КАТЕГОРИИ, а свободный wstETH надо оценивать
+ * по своей — иначе он завысил бы количество ETH почти на четверть (главное
+ * правило движка, см. шапку модуля). Вторая: у баланса есть кошелек, сеть,
+ * контракт, свежесть чтения и метка происхождения, которых в ManualInput нет.
+ */
+export interface FreeBalanceInput {
+  /** `${walletId}:${chain}:${token}` — им же адресуется PUT разметки. */
+  key: string;
+  walletId: string;
+  walletLabel: string | null;
+  chain: string;
+  /** 'native' или lowercase-адрес контракта — как в balance_marks.token. */
+  token: string;
+  symbol: string;
+  /** null = токен вне трех категорий: в портфель не входит (см. freeOther). */
+  category: PortfolioCategory | null;
+  coingeckoId: string | null;
+  /** Количество монет десятичной строкой (formatUnits по decimals). */
+  quantity: string;
+  /** null = не размечено; считается своим, но пересчитывается отдельно. */
+  funds: FundsMark | null;
+  /** Момент чтения баланса: свежесть балансов и свежесть цен — разное. */
+  updatedAt: string;
+}
+
 export interface PriceInput {
   priceUsd: number;
   fetchedAt: string;
@@ -60,6 +92,12 @@ export interface PriceInput {
 export interface ComputeInput {
   collateral: CollateralInput[];
   manual: ManualInput[];
+  /**
+   * Свободные средства кошельков. Необязательное: до включения чтения
+   * балансов вызывающие его не передавали, и поведение движка без него
+   * должно остаться прежним до последней цифры.
+   */
+  free?: FreeBalanceInput[];
   /** Цель в процентах по категории; отсутствие ключа = цель не задана. */
   targets: Partial<Record<PortfolioCategory, number>>;
   /** Цены по coingecko id (категорий и залоговых токенов). */
@@ -88,6 +126,28 @@ export interface ManualDetail {
   valueUsd: number;
 }
 
+export interface FreeBalanceDetail {
+  key: string;
+  walletId: string;
+  walletLabel: string | null;
+  chain: string;
+  token: string;
+  symbol: string;
+  quantity: string;
+  priceUsd: number | null;
+  valueUsd: number;
+  priceStale: boolean;
+  funds: FundsMark | null;
+  /**
+   * false = заемные: в стоимость категории не входят (портфель ведется
+   * по собственным средствам — ровно поэтому из категорий вычитаются
+   * собственные доли позиций), но из списка не исчезают: иначе вопрос
+   * «почему сумма не сходится с тем, что я вижу в кошельке» без ответа.
+   */
+  countedInCategory: boolean;
+  updatedAt: string;
+}
+
 export interface PortfolioRow {
   category: PortfolioCategory;
   label: string;
@@ -102,11 +162,22 @@ export interface PortfolioRow {
   percentDiff: number | null;
   /** В единицах категории: минус — продать, плюс — купить. */
   amountToBalance: number | null;
-  breakdown: { collateralUsd: number; manualUsd: number };
+  breakdown: { collateralUsd: number; manualUsd: number; freeUsd: number };
   collateralDetail: CollateralDetail[];
   manualEntries: ManualDetail[];
+  /** Свободные средства категории: свои, неразмеченные И заемные. */
+  freeBalances: FreeBalanceDetail[];
   /** Проблемы, которые нужно показать пользователю (не молчать). */
   warnings: string[];
+}
+
+/** Токен, который портфель не ведет: без категории и без оценки. */
+export interface FreeOtherDetail {
+  walletId: string;
+  walletLabel: string | null;
+  chain: string;
+  symbol: string;
+  quantity: string;
 }
 
 export interface PortfolioResult {
@@ -116,9 +187,32 @@ export interface PortfolioResult {
   /** Самая старая цена среди использованных — для метки свежести. */
   oldestPriceAt: string | null;
   anyPriceStale: boolean;
+  /** Заемные свободные: в категории не входят, в «Активы» входят. */
+  freeBorrowedUsd: number;
+  /** Свободные свои и неразмеченные — то, что вошло в категории. */
+  freeOwnUsd: number;
+  /** Сколько балансов не размечено: молчаливого умолчания быть не должно. */
+  unmarkedFreeCount: number;
+  /** Пыль ниже порога: скрыта, но названа числом — не теряется молча. */
+  freeDust: { count: number; valueUsd: number };
+  /** Токены вне трех категорий: не оцениваются и в «Активы» не входят. */
+  freeOther: FreeOtherDetail[];
 }
 
 const DEFAULT_CATEGORY_IDS = { btc: "bitcoin", eth: "ethereum" } as const;
+
+/**
+ * Порог пыли для свободных средств, в долларах.
+ *
+ * Порог именно долларовый, а не количественный: 0,001 BTC — это не пыль,
+ * а 3000 SHIB — пыль, и различить их можно только после оценки. Поэтому
+ * отсечение живет здесь, а не в читателе: кэш хранит показания, а не
+ * решения, и передумать про порог должно быть можно без повторного чтения
+ * сети.
+ *
+ * Отсеченное не пропадает молча — уходит в freeDust отдельным числом.
+ */
+export const FREE_DUST_USD = 1;
 
 /** Безопасный парсинг десятичной строки: мусор трактуется как 0, не как NaN. */
 function toNumber(value: string): number {
@@ -138,6 +232,91 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
       return { priceUsd: stablePrice, fetchedAt: "", stale: false };
     }
     return input.prices.get(categoryIds[category]) ?? null;
+  }
+
+  // --- Свободные средства: оценка и отсев до раскладки по категориям ---
+  //
+  // Считается один раз, а не внутри цикла по категориям: пыль и токены вне
+  // трех категорий не принадлежат ни одной строке, а число неразмеченных
+  // нужно по портфелю целиком.
+  const freeOther: FreeOtherDetail[] = [];
+  const freeDust = { count: 0, valueUsd: 0 };
+  const freeByCategory: Record<PortfolioCategory, FreeBalanceDetail[]> = {
+    btc: [],
+    eth: [],
+    stable: [],
+  };
+  const freeWarnings: Record<PortfolioCategory, string[]> = {
+    btc: [],
+    eth: [],
+    stable: [],
+  };
+  let freeBorrowedUsd = 0;
+  let freeOwnUsd = 0;
+  let unmarkedFreeCount = 0;
+
+  for (const b of input.free ?? []) {
+    // Токен вне трех категорий (LINK, ARB, аирдропы) — не оцениваем вовсе:
+    // зоны стратегии у него нет, и выдумать ее значило бы порвать инвариант
+    // «сумма зон = Активы». Показываем количеством, без долларов.
+    if (b.category === null) {
+      freeOther.push({
+        walletId: b.walletId,
+        walletLabel: b.walletLabel,
+        chain: b.chain,
+        symbol: b.symbol,
+        quantity: b.quantity,
+      });
+      continue;
+    }
+
+    // Стейбл — по фиксированной цене; BTC/ETH-подобные — по СВОЕЙ цене,
+    // как залог: свободный wstETH это не 1 ETH
+    const assetPrice =
+      b.category === "stable"
+        ? { priceUsd: stablePrice, fetchedAt: "", stale: false }
+        : b.coingeckoId
+          ? (input.prices.get(b.coingeckoId) ?? null)
+          : null;
+    const valueUsd = assetPrice ? toNumber(b.quantity) * assetPrice.priceUsd : 0;
+    if (assetPrice) {
+      if (assetPrice.fetchedAt) usedPriceAt.push(assetPrice.fetchedAt);
+      if (assetPrice.stale) anyPriceStale = true;
+    } else {
+      freeWarnings[b.category].push(
+        `нет цены для ${b.symbol} (${b.chain}, свободный баланс)`,
+      );
+    }
+
+    if (valueUsd < FREE_DUST_USD) {
+      freeDust.count += 1;
+      freeDust.valueUsd += valueUsd;
+      continue;
+    }
+
+    if (b.funds === null) unmarkedFreeCount += 1;
+    // Заемные в категорию не входят: она ведется по собственным средствам.
+    // В «Активы» и в зоны они входят целиком — иначе Чистая была бы занижена
+    // ровно на эту сумму (долг-то вычитается полностью).
+    const countedInCategory = b.funds !== "borrowed";
+    if (countedInCategory) freeOwnUsd += valueUsd;
+    else freeBorrowedUsd += valueUsd;
+
+    freeByCategory[b.category].push({
+      key: b.key,
+      walletId: b.walletId,
+      walletLabel: b.walletLabel,
+      chain: b.chain,
+      token: b.token,
+      symbol: b.symbol,
+      quantity: b.quantity,
+      priceUsd: assetPrice?.priceUsd ?? null,
+      valueUsd,
+      priceStale: assetPrice?.stale ?? false,
+      funds: b.funds,
+      countedInCategory,
+      updatedAt: b.updatedAt,
+    });
   }
 
   const rows: PortfolioRow[] = PORTFOLIO_CATEGORIES.map((category) => {
@@ -197,7 +376,15 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
       });
     }
 
-    const amountUsd = collateralUsd + manualUsd;
+    // --- Свободные средства категории ---
+    const freeBalances = freeByCategory[category];
+    warnings.push(...freeWarnings[category]);
+    const freeUsd = freeBalances.reduce(
+      (sum, b) => sum + (b.countedInCategory ? b.valueUsd : 0),
+      0,
+    );
+
+    const amountUsd = collateralUsd + manualUsd + freeUsd;
 
     return {
       category,
@@ -212,9 +399,10 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
       targetPercent: null,
       percentDiff: null,
       amountToBalance: null,
-      breakdown: { collateralUsd, manualUsd },
+      breakdown: { collateralUsd, manualUsd, freeUsd },
       collateralDetail,
       manualEntries,
+      freeBalances,
       warnings,
     };
   });
@@ -248,6 +436,11 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
     oldestPriceAt:
       usedPriceAt.length > 0 ? usedPriceAt.slice().sort()[0] : null,
     anyPriceStale,
+    freeBorrowedUsd,
+    freeOwnUsd,
+    unmarkedFreeCount,
+    freeDust,
+    freeOther,
   };
 }
 

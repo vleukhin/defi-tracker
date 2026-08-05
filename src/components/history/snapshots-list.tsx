@@ -55,6 +55,7 @@ function orderedItems(snapshot: SnapshotDto): SnapshotItemDto[] {
         percent: 0,
         collateralUsd: 0,
         manualUsd: 0,
+        freeUsd: 0,
       },
   );
 }

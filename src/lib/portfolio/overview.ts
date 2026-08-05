@@ -45,6 +45,18 @@ export interface OverviewInput {
   healthRows: HealthDebtInput[];
   /** Подписанная сумма журнала deposits. */
   depositedUsd: number;
+  /**
+   * Свободные ЗАЕМНЫЕ средства на кошельках (Фаза 7).
+   *
+   * Отдельное слагаемое, потому что в три категории они не входят: портфель
+   * ведется по собственным средствам. В Активы входить обязаны — иначе
+   * повторилась бы ошибка Фазы 5: Долг вычитается целиком, и Чистая была бы
+   * занижена ровно на сумму занятых, но еще не размещенных денег.
+   *
+   * Не nullable: заемный баланс без цены дает warning в строке категории,
+   * а не делает Активы неизвестными — тот же прием, что у залога.
+   */
+  freeBorrowedUsd?: number;
 }
 
 export function computeOverview(input: OverviewInput): PortfolioOverviewDto {
@@ -62,8 +74,11 @@ export function computeOverview(input: OverviewInput): PortfolioOverviewDto {
   // Активы = портфель + размещенные позиции (Фаза 5). Считать Активы одним
   // портфелем нельзя: заемные деньги, ушедшие в пул, из Активов выпадали бы,
   // а Долг вычитался целиком — Чистая занижалась ровно на эту сумму.
+  const freeBorrowedUsd = input.freeBorrowedUsd ?? 0;
   const assetsUsd =
-    input.positionsUsd === null ? null : input.portfolioUsd + input.positionsUsd;
+    input.positionsUsd === null
+      ? null
+      : input.portfolioUsd + input.positionsUsd + freeBorrowedUsd;
 
   const netUsd =
     assetsUsd === null || debtUsd === null ? null : assetsUsd - debtUsd;
@@ -73,6 +88,7 @@ export function computeOverview(input: OverviewInput): PortfolioOverviewDto {
     assetsUsd,
     portfolioUsd: input.portfolioUsd,
     positionsUsd: input.positionsUsd,
+    freeBorrowedUsd,
     debtUsd,
     netUsd,
     depositedUsd: input.depositedUsd,

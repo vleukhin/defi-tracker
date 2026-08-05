@@ -27,7 +27,12 @@ import {
   persistUniswapV3Status,
   readWalletUniswapV3,
 } from "@/lib/chains/uniswap-v3";
-import type { SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
+import {
+  persistBalanceStatus,
+  persistBalances,
+  readWalletBalances,
+} from "@/lib/chains/reader";
+import type { FundsMark, SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
 import { loadPortfolio, loadPortfolioAsAdmin } from "./load";
 import type { ChainStatusRow, LoadPortfolioResult } from "./load";
 import type { PortfolioCategory, PortfolioRow } from "./portfolio";
@@ -63,6 +68,13 @@ export interface SnapshotSource {
    * пула в прошлом нам недоступны.
    */
   positionsUsd?: number | null;
+  /** Статус чтения свободных балансов по сетям (source = erc20, Фаза 7). */
+  freeChains?: ChainStatusRow[];
+  /**
+   * Свободные ЗАЕМНЫЕ средства на момент съема. В категории не входят,
+   * поэтому в сумму items их не найти, а Активы точки без них не сходятся.
+   */
+  freeBorrowedUsd?: number;
 }
 
 /**
@@ -75,6 +87,20 @@ export interface SnapshotSource {
 export interface SnapshotComposition {
   collateral: { symbol: string; chain: string; quantity: string }[];
   manual: { label: string; amount: string }[];
+  /**
+   * Свободные средства на кошельках (Фаза 7). Необязательное поле: точки,
+   * снятые до чтения балансов, о них не знали, и пустой массив в них был бы
+   * враньем — «свободных не было» вместо «мы их не видели».
+   *
+   * funds пишется вместе с количеством: разметку «свои/заемные» на прошлую
+   * дату не восстановить вообще ничем — она перезаписывается на месте.
+   */
+  free?: {
+    symbol: string;
+    chain: string;
+    quantity: string;
+    funds: FundsMark | null;
+  }[];
 }
 
 export interface SnapshotItemInput {
@@ -89,6 +115,8 @@ export interface SnapshotItemInput {
   percent: number;
   collateralUsd: number;
   manualUsd: number;
+  /** Свободные средства категории (только вошедшие в нее — не заемные). */
+  freeUsd: number;
   /** Сырые количества — единственное, что нельзя восстановить задним числом. */
   composition: SnapshotComposition;
 }
@@ -99,6 +127,12 @@ export interface SnapshotBuild {
   debtUsd: number | null;
   /** Размещенные позиции на момент съема; null = стоимость неизвестна. */
   positionsUsd: number | null;
+  /**
+   * Свободные средства на момент съема: свои и неразмеченные, вошедшие
+   * в категории. null = балансы еще ни разу не читались — ноль здесь означал
+   * бы «свободных не было» и сделал бы ступеньку в total_usd необъяснимой.
+   */
+  freeUsd: number | null;
   isPartial: boolean;
   /** Человекочитаемые причины частичности — в лог cron'а и в ответ API. */
   partialReasons: string[];
@@ -153,6 +187,18 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
     partialReasons.push("долг ни разу не прочитан");
   }
 
+  // Свободные средства (Фаза 7): упавшая сеть оставляет в кэше вчерашние
+  // балансы, и точка истории опирается на них. Отсутствие статуса вообще
+  // частичности НЕ дает: балансы могли еще ни разу не читаться — это не
+  // неполные данные, а их осознанное отсутствие в старых снепшотах
+  for (const chain of portfolio.freeChains ?? []) {
+    if (!chain.ok) {
+      partialReasons.push(
+        `свободные средства: сеть ${chain.chain} недоступна${chain.error ? `: ${chain.error}` : ""}`,
+      );
+    }
+  }
+
   const items: SnapshotItemInput[] = portfolio.rows.map((row) => {
     if (row.price === null) {
       partialReasons.push(`нет цены категории ${row.label}`);
@@ -176,6 +222,7 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
       percent: row.percent,
       collateralUsd: row.breakdown.collateralUsd,
       manualUsd: row.breakdown.manualUsd,
+      freeUsd: row.breakdown.freeUsd,
       // Сырые количества пишутся ВСЕГДА, даже когда цены нет и
       // quantity === null: счетчик монет за день не должен теряться
       composition: {
@@ -187,6 +234,14 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
         manual: row.manualEntries.map((m) => ({
           label: m.label,
           amount: m.amount,
+        })),
+        // Заемные тоже пишутся: состав должен отвечать на вопрос «что лежало
+        // на кошельке», а не только «что попало в категорию»
+        free: row.freeBalances.map((b) => ({
+          symbol: b.symbol,
+          chain: b.chain,
+          quantity: b.quantity,
+          funds: b.funds,
         })),
       },
     };
@@ -202,6 +257,13 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
     totalUsd: portfolio.totalUsd,
     debtUsd: portfolio.debtUsd ?? null,
     positionsUsd: portfolio.positionsUsd ?? null,
+    // Балансы ни разу не читались — null, а не ноль (см. миграцию). Ровно
+    // та же развилка, что у долга в computeOverview: кошельков нет — свободных
+    // средств честно ноль; кошельки есть, а чтения не было — неизвестно
+    freeUsd:
+      portfolio.hasWallets && (portfolio.freeChains ?? []).length === 0
+        ? null
+        : items.reduce((sum, i) => sum + i.freeUsd, 0),
     isPartial: partialReasons.length > 0,
     partialReasons,
     items,
@@ -238,6 +300,7 @@ interface SnapshotRow {
   total_usd: number | string;
   debt_usd: number | string | null;
   positions_usd: number | string | null;
+  free_usd: number | string | null;
   is_partial: boolean;
 }
 
@@ -296,6 +359,9 @@ export async function createSnapshot(
     debtUsd: portfolio.overview.debtUsd,
     // Размещенные позиции (Фаза 5) — вторая половина Активов
     positionsUsd: portfolio.overview.positionsUsd,
+    // Свободные средства (Фаза 7): свой контур чтения — свой статус сетей
+    freeChains: portfolio.freeChains,
+    freeBorrowedUsd: portfolio.overview.freeBorrowedUsd,
   });
 
   const { data: snapshotRow, error: snapshotError } = await admin
@@ -308,11 +374,14 @@ export async function createSnapshot(
         total_usd: build.totalUsd,
         debt_usd: build.debtUsd,
         positions_usd: build.positionsUsd,
+        free_usd: build.freeUsd,
         is_partial: build.isPartial,
       },
       { onConflict: "user_id,taken_on" },
     )
-    .select("id, taken_on, taken_at, total_usd, debt_usd, positions_usd, is_partial")
+    .select(
+      "id, taken_on, taken_at, total_usd, debt_usd, positions_usd, free_usd, is_partial",
+    )
     .single();
   if (snapshotError) throw new Error(`snapshots upsert: ${snapshotError.message}`);
   const snapshot = snapshotRow as SnapshotRow;
@@ -328,6 +397,7 @@ export async function createSnapshot(
       percent: item.percent,
       collateral_usd: item.collateralUsd,
       manual_usd: item.manualUsd,
+      free_usd: item.freeUsd,
     })),
     { onConflict: "snapshot_id,category" },
   );
@@ -342,6 +412,7 @@ export async function createSnapshot(
     percent: item.percent,
     collateralUsd: item.collateralUsd,
     manualUsd: item.manualUsd,
+    freeUsd: item.freeUsd,
   }));
 
   return {
@@ -353,6 +424,7 @@ export async function createSnapshot(
       debtUsd: snapshot.debt_usd === null ? null : Number(snapshot.debt_usd),
       positionsUsd:
         snapshot.positions_usd === null ? null : Number(snapshot.positions_usd),
+      freeUsd: snapshot.free_usd === null ? null : Number(snapshot.free_usd),
       isPartial: snapshot.is_partial,
       items,
     },
@@ -426,6 +498,18 @@ export async function refreshUserWallets(
         await persistUniswapV3Status(admin, wallet.id as string, lpStatuses);
       } catch (err) {
         console.warn(`[snapshot] LP-позиции ${wallet.address}:`, err);
+      }
+      // Свободные средства кошелька (Фаза 7). Последними: контуры идут
+      // последовательно, а баланс на прошлую дату задним числом уже
+      // не восстановить — но залог, долг и позиции важнее.
+      try {
+        const balanceStatuses = await readWalletBalances(
+          wallet.address as Address,
+        );
+        await persistBalances(admin, wallet.id as string, balanceStatuses);
+        await persistBalanceStatus(admin, wallet.id as string, balanceStatuses);
+      } catch (err) {
+        console.warn(`[snapshot] балансы ${wallet.address}:`, err);
       }
 
       await admin

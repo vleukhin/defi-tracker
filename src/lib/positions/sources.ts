@@ -16,6 +16,15 @@ export const POSITION_SOURCES = [
   UNIV3_SOURCE,
 ] as const;
 
+/**
+ * Свободные средства на кошельке (нативная монета + ERC-20 по allowlist).
+ *
+ * В POSITION_SOURCES намеренно не входит: это не протокол размещения,
+ * а деньги, которые еще никуда не положены. Строк в protocol_positions
+ * не порождает — только balances_cache и статус чтения.
+ */
+export const ERC20_SOURCE = "erc20" as const;
+
 /** Подписи протоколов для интерфейса. */
 export const PROTOCOL_LABELS: Record<
   (typeof POSITION_SOURCES)[number],

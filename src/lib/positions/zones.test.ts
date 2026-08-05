@@ -4,6 +4,7 @@ import {
   defaultZoneForCategory,
   zoneOfManual,
   type BuildZonesInput,
+  type FreeAtom,
 } from "./zones";
 
 /**
@@ -216,5 +217,88 @@ describe("зона по умолчанию", () => {
     expect(
       zoneOfManual({ id: "a", category: "stable", label: "s", valueUsd: 1, zone: null }),
     ).toBe("stability");
+  });
+});
+
+/**
+ * Свободные средства на кошельке (Фаза 7).
+ *
+ * Разметка «свои / заемные» — единственное, что двигает эти деньги между
+ * зонами; сумма зон при этом не меняется.
+ */
+describe("свободные средства в зонах", () => {
+  const freeStable = (over: Partial<FreeAtom> = {}): FreeAtom => ({
+    id: "w1:arbitrum:0xaf88",
+    category: "stable",
+    symbol: "USDC",
+    valueUsd: 10_000,
+    funds: null,
+    ...over,
+  });
+
+  it("заемные стейблы — Yield, а не Stability", () => {
+    // Заняли под залог и еще не разместили: деньги в пути в зону доходности,
+    // а не в резерв. Stability по стратегии состоит из собственных денег
+    const r = buildZones({ ...empty, free: [freeStable({ funds: "borrowed" })] });
+    expect(zoneValue(r, "yield")).toBe(10_000);
+    expect(zoneValue(r, "stability")).toBe(0);
+  });
+
+  it("свои и неразмеченные стейблы — Stability", () => {
+    for (const funds of ["own", null] as const) {
+      const r = buildZones({ ...empty, free: [freeStable({ funds })] });
+      expect(zoneValue(r, "stability")).toBe(10_000);
+      expect(zoneValue(r, "yield")).toBe(0);
+    }
+  });
+
+  it("свои и неразмеченные BTC/ETH — Growth; заемные и здесь Yield", () => {
+    for (const funds of ["own", "borrowed", null] as const) {
+      const r = buildZones({
+        ...empty,
+        free: [freeStable({ category: "eth", symbol: "ETH", funds })],
+      });
+      // Правило «заемные -> Yield» сильнее категории: занятый ETH — рабочий
+      // капитал, который вернут кредитору, а не растимая база стратегии
+      const expected = funds === "borrowed" ? "yield" : "growth";
+      expect(zoneValue(r, expected)).toBe(10_000);
+    }
+  });
+
+  it("инвариант держится: свободные входят целиком, включая заемные", () => {
+    const r = buildZones({
+      collateral: [{ category: "btc", valueUsd: 100_000 }],
+      manual: [
+        { id: "m1", category: "stable", label: "Биржа", valueUsd: 5_000, zone: null },
+      ],
+      free: [
+        freeStable({ funds: "borrowed", valueUsd: 20_000 }),
+        freeStable({ id: "w1:base:native", funds: "own", valueUsd: 3_000 }),
+      ],
+      positions: [
+        { id: "p1", protocol: "gmx_v2", title: "GM", valueUsd: 8_000, zone: "yield", ownUsd: 1_000 },
+      ],
+    });
+    // 100 000 залог + 5 000 ручные + 23 000 свободные + 8 000 позиция
+    expect(r.totalUsd).toBe(136_000);
+    expect(r.freeOwnUsd).toBe(3_000);
+    expect(r.freeBorrowedUsd).toBe(20_000);
+    expect(r.unmarkedFree).toBe(0);
+  });
+
+  it("разметка перекладывает сумму между зонами, не меняя итог", () => {
+    const totals = (["own", "borrowed"] as const).map((funds) => {
+      const r = buildZones({ ...empty, free: [freeStable({ funds })] });
+      return r.totalUsd;
+    });
+    expect(totals[0]).toBe(totals[1]);
+  });
+
+  it("без входа free результат прежний", () => {
+    const r = buildZones(empty);
+    expect(r.freeOwnUsd).toBe(0);
+    expect(r.freeBorrowedUsd).toBe(0);
+    expect(r.unmarkedFree).toBe(0);
+    expect(r.zones.every((z) => z.freeUsd === 0)).toBe(true);
   });
 });

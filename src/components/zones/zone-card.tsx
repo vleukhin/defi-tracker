@@ -63,6 +63,7 @@ function composition(zone: ZoneBreakdownDto): string {
     parts.push(countLabel(zone.positionCount, "позиция", "позиции", "позиций"));
   }
   if (zone.collateralUsd > 0) parts.push("залог");
-  if (zone.manualUsd > 0) parts.push("свободные стейблы");
+  if (zone.manualUsd > 0) parts.push("записи вручную");
+  if (zone.freeUsd > 0) parts.push("свободные");
   return parts.length === 0 ? "пока пусто" : parts.join(" · ");
 }

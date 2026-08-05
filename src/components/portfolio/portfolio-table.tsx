@@ -319,16 +319,18 @@ function RowWarnings({ row }: { row: PortfolioRowDto }) {
   );
 }
 
-/** Состав категории: залог в лендинге и ручные записи. */
+/** Состав категории: залог в лендинге, свободные средства и ручные записи. */
 function RowDetail({ row }: { row: PortfolioRowDto }) {
   const empty =
-    row.collateralDetail.length === 0 && row.manualEntries.length === 0;
+    row.collateralDetail.length === 0 &&
+    row.manualEntries.length === 0 &&
+    row.freeBalances.length === 0;
 
   if (empty) {
     return (
       <p className="t-meta text-text-3">
-        Пока пусто. Залог подтянется из лендинга, остальное вносится вручную
-        на странице «Цели».
+        Пока пусто. Залог и свободные монеты подтянутся с кошельков, остальное
+        вносится вручную на странице «Цели».
       </p>
     );
   }
@@ -367,6 +369,61 @@ function RowDetail({ row }: { row: PortfolioRowDto }) {
                       <span className="mx-1.5 text-text-4">=</span>
                       <span className="font-medium text-text-1">
                         {dcUsd(d.valueUsd)}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {row.freeBalances.length > 0 && (
+        <div>
+          <p className="t-label">
+            Свободно на кошельках · {dcUsd(row.breakdown.freeUsd)}
+          </p>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {row.freeBalances.map((b) => (
+              <li
+                key={b.key}
+                className="flex flex-wrap items-baseline justify-between gap-x-4 text-[13px]"
+              >
+                <span>
+                  {b.symbol}
+                  <span className="ml-2 text-[12px] text-text-3">
+                    {chainLabel(b.chain)}
+                    {b.walletLabel ? ` · ${b.walletLabel}` : ""}
+                  </span>
+                  {/* Заёмные видно, но в сумму категории они не вошли —
+                      без пометки строка выглядела бы ошибкой сложения */}
+                  {!b.countedInCategory && (
+                    <span className="ml-2 text-[12px] text-text-3">
+                      заёмные, вне категории
+                    </span>
+                  )}
+                </span>
+                <span
+                  className="font-mono text-text-2"
+                  title={tableQuantity(b.quantity, true)}
+                >
+                  {tableQuantity(b.quantity)}
+                  {b.priceUsd === null ? (
+                    <span className="ml-2 font-sans text-warn">нет цены</span>
+                  ) : (
+                    <>
+                      <span className="mx-1.5 text-text-4">×</span>
+                      {tableUsd(b.priceUsd, usdDecimals(b.priceUsd))}
+                      <span className="mx-1.5 text-text-4">=</span>
+                      <span
+                        className={
+                          b.countedInCategory
+                            ? "font-medium text-text-1"
+                            : "text-text-3"
+                        }
+                      >
+                        {dcUsd(b.valueUsd)}
                       </span>
                     </>
                   )}

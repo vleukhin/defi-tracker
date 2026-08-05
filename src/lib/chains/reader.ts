@@ -4,13 +4,25 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CHAIN_IDS, getChainClients, type ChainId } from "./config";
 import { TOKEN_ALLOWLIST } from "./allowlist";
 import { logApiCall } from "@/lib/metrics";
+import { CATEGORY_COINGECKO_IDS } from "@/lib/prices/coins";
+import { ERC20_SOURCE } from "@/lib/positions/sources";
 
 /**
- * Чтение балансов (ТЗ Часть 4 §3.2):
+ * Чтение свободных средств кошелька (ТЗ Часть 4 §3.2):
  * нативный баланс + balanceOf по allowlist — один multicall на сеть,
  * allowFailure: true (упавший вызов = «неизвестно», НЕ ноль),
  * 4 сети параллельно, отказ одной сети изолирован (ok: false).
  * Все сырые значения — bigint + decimals из справочника.
+ *
+ * «Свободные» — то, что лежит на адресе и не участвует ни в залоге, ни
+ * в позициях. Пересечений с ними нет по построению: залог живет в aToken'ах,
+ * долг в vToken'ах, депозит Fluid в fToken'ах, GM-пулы перечисляются по
+ * списку рынков GMX, а LP Uniswap — это ERC-721, которого balanceOf по
+ * ERC-20 не видит. В allowlist лежат UNDERLYING-адреса, и сторож в
+ * allowlist.test.ts следит, чтобы так и осталось.
+ *
+ * Модуль писался в Фазе 1 и до Фазы 7 никем не вызывался: количества брались
+ * из залога и ручных записей.
  */
 
 export interface TokenBalanceReading {
@@ -20,6 +32,11 @@ export interface TokenBalanceReading {
   symbol: string;
   decimals: number;
   raw: bigint;
+  /**
+   * CoinGecko id — чтобы вызывающий собрал список цен, не импортируя
+   * allowlist во второй раз. null = у токена нет листинга в справочнике.
+   */
+  coingeckoId: string | null;
 }
 
 export interface ChainReadStatus {
@@ -89,6 +106,8 @@ export async function readChainBalances(
         symbol: "ETH",
         decimals: 18,
         raw: native,
+        // Все четыре сети — L1 и его роллапы, нативная монета везде ETH
+        coingeckoId: CATEGORY_COINGECKO_IDS.eth,
       },
     ];
     const failedTokens: ChainReadStatus["failedTokens"] = [];
@@ -102,6 +121,7 @@ export async function readChainBalances(
           symbol: token.symbol,
           decimals: token.decimals,
           raw: res.result,
+          coingeckoId: token.coingeckoId,
         });
       } else {
         const reason =
@@ -223,4 +243,29 @@ export async function persistBalances(
       .in("asset_id", zeroAssetIds);
     if (error) throw new Error(`balances_cache cleanup: ${error.message}`);
   }
+}
+
+/**
+ * Статус чтения балансов по сетям — чтобы GET /api/portfolio (только кэш,
+ * без RPC) честно показывал деградацию: свободные средства на упавшей сети
+ * не «стали нулем», а неизвестны, и кэш по ней остался прежним.
+ */
+export async function persistBalanceStatus(
+  admin: SupabaseClient,
+  walletId: string,
+  statuses: ChainReadStatus[],
+): Promise<void> {
+  const checkedAt = new Date().toISOString();
+  const { error } = await admin.from("chain_read_status").upsert(
+    statuses.map((s) => ({
+      wallet_id: walletId,
+      source: ERC20_SOURCE,
+      chain: s.chain,
+      ok: s.ok,
+      error: s.error ?? null,
+      checked_at: checkedAt,
+    })),
+    { onConflict: "wallet_id,source,chain" },
+  );
+  if (error) throw new Error(`chain_read_status upsert: ${error.message}`);
 }
