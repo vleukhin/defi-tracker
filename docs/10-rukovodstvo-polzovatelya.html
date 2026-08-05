@@ -1,0 +1,1193 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>DeFi Portfolio — руководство нового пользователя</title>
+<!--FONTS-->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet">
+<!--/FONTS-->
+<style>
+/* ===========================================================================
+   Руководство нового пользователя. Оформление — дизайн-код 1.0
+   (docs/08-dizain-kod.md): те же токены, что в src/app/globals.css, тёмная
+   тема как основная, IBM Plex Sans/Mono, плотность через волосяные линии.
+   Печатается в A4 скриптом scripts/build-guide-pdf.mjs.
+   ========================================================================= */
+:root {
+  --bg-canvas: #0a0c0f;
+  --bg-sunken: #0f1216;
+  --bg-surface: #12151a;
+  --bg-raised: #1d222a;
+  --bg-chip: #151a20;
+
+  --line: #1a1f26;
+  --line-card: #1f252d;
+  --line-strong: #2c333e;
+
+  --text-1: #e9ecf1;
+  --text-2: #98a2af;
+  --text-3: #667080;
+  --text-4: #39424f;
+
+  --profit: #3ecf8e;
+  --loss: #f2585f;
+  --warn: #e7a94a;
+  --accent: #4c8fff;
+
+  --zone-growth: #d6a159;
+  --zone-growth-text: #e6bc84;
+  --zone-yield: #8a7bf0;
+  --zone-yield-text: #a99ef5;
+  --zone-stability: #38a9c4;
+  --zone-stability-text: #6fc3d8;
+
+  --asset-btc: #e8993a;
+  --asset-eth: #6e7cf5;
+  --asset-stable: #2fbfa0;
+
+  --radius-card: 14px;
+  --radius-block: 12px;
+  --radius-control: 8px;
+  --radius-chip: 7px;
+}
+
+@page { size: A4; margin: 0; }
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-canvas);
+  color: var(--text-1);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Лист A4 с фиксированной высотой: пагинация задаётся вручную, чтобы
+   карточка шага никогда не разрывалась между страницами. */
+.sheet {
+  position: relative;
+  width: 210mm;
+  height: 297mm;
+  padding: 13mm 14mm 16mm;
+  page-break-after: always;
+  break-after: page;
+  overflow: hidden;
+}
+.sheet:last-child { page-break-after: auto; break-after: auto; }
+
+/* ---------- типографические роли ---------- */
+.t-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.t-h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.022em; margin: 0; }
+.t-h2 { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
+.t-h3 { font-size: 14px; font-weight: 600; letter-spacing: -0.012em; margin: 0; }
+.t-meta { font-size: 11.5px; line-height: 1.45; color: var(--text-2); }
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.t2 { color: var(--text-2); }
+.t3 { color: var(--text-3); }
+
+/* ---------- шапка листа ---------- */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+.logo-mark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  width: 24px;
+  height: 24px;
+  padding: 4px 4px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--bg-chip);
+}
+.logo-mark i { display: block; width: 3px; border-radius: 1px; }
+.logo-mark i:nth-child(1) { height: 6px;  background: var(--zone-growth); }
+.logo-mark i:nth-child(2) { height: 10px; background: var(--zone-yield); }
+.logo-mark i:nth-child(3) { height: 14px; background: var(--zone-stability); }
+.logo-name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.logo-name span { font-weight: 450; color: var(--text-3); }
+.head .spacer { flex: 1; }
+.head .where { font-size: 11.5px; color: var(--text-3); }
+
+/* ---------- подвал листа ---------- */
+.foot {
+  position: absolute;
+  left: 14mm;
+  right: 14mm;
+  bottom: 9mm;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+.foot .spacer { flex: 1; }
+.foot .num { font-family: "IBM Plex Mono", monospace; color: var(--text-3); }
+
+/* ---------- карточки ---------- */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--line-card);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+/* Отступ между карточками в потоке. Внутри grid-раскладок он снимается:
+   там расстояние задаёт gap, а margin разъехался бы по строкам сетки. */
+.card + .card { margin-top: 9px; }
+.pillars > .card + .card,
+.grid-2 > .card + .card { margin-top: 0; }
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 15px;
+}
+.card-head + .card-body { border-top: 1px solid var(--line); }
+.card-body { padding: 11px 15px; }
+.card-body.sunken { background: var(--bg-sunken); }
+.card-head .grow { flex: 1; min-width: 0; }
+.card-head .hint { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+
+/* Плитка номера шага — та же геометрия, что у плитки протокола (§5) */
+.tile {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-chip);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* Строка-вывод: что изменится на экране после шага */
+.verdict {
+  border-top: 1px solid var(--line);
+  padding: 8px 15px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--bg-sunken);
+}
+.verdict b { font-weight: 600; color: var(--text-1); }
+
+/* ---------- чипы ---------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--radius-chip);
+  background: var(--bg-chip);
+  border: 1px solid var(--line-card);
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.chip.warn  { background: rgba(231,169,74,.08); border-color: rgba(231,169,74,.18); color: var(--warn); }
+.chip.ok    { background: rgba(62,207,142,.08); border-color: rgba(62,207,142,.18); color: var(--profit); }
+.chip.loss  { background: rgba(242,88,95,.08);  border-color: rgba(242,88,95,.18);  color: var(--loss); }
+.chip.growth    { background: rgba(214,161,89,.10);  border-color: transparent; color: var(--zone-growth-text); }
+.chip.yield     { background: rgba(138,123,240,.10); border-color: transparent; color: var(--zone-yield-text); }
+.chip.stability { background: rgba(56,169,196,.10);  border-color: transparent; color: var(--zone-stability-text); }
+
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dot.btc { background: var(--asset-btc); }
+.dot.eth { background: var(--asset-eth); }
+.dot.stable { background: var(--asset-stable); }
+.dot.growth { background: var(--zone-growth); }
+.dot.yield { background: var(--zone-yield); }
+.dot.stability { background: var(--zone-stability); }
+
+/* ---------- списки шагов ---------- */
+ol.steps, ul.plain { margin: 0; padding: 0; list-style: none; }
+ol.steps > li {
+  position: relative;
+  padding-left: 20px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+ol.steps > li:last-child { margin-bottom: 0; }
+ol.steps { counter-reset: s; }
+ol.steps > li::before {
+  counter-increment: s;
+  content: counter(s);
+  position: absolute;
+  left: 0;
+  top: 0.5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
+  background: var(--bg-raised);
+  color: var(--text-3);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px;
+  line-height: 14px;
+  text-align: center;
+}
+ul.plain > li {
+  position: relative;
+  padding-left: 13px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+ul.plain > li:last-child { margin-bottom: 0; }
+ul.plain > li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+
+/* Путь по интерфейсу: «Портфель → Зоны» */
+.path {
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--bg-chip);
+  border: 1px solid var(--line-card);
+  border-radius: var(--radius-control);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.path b { color: var(--text-1); font-weight: 500; }
+
+kbd {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  color: var(--text-1);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+code {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  color: var(--text-1);
+  background: var(--bg-sunken);
+  border-radius: 5px;
+  padding: 1px 3px;
+}
+
+/* ---------- таблицы ---------- */
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  padding: 7px 15px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-sunken);
+}
+td {
+  padding: 6px 15px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: "IBM Plex Mono", monospace; }
+td.field { white-space: nowrap; font-weight: 500; }
+
+/* ---------- сетки ---------- */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid-2 > .card + .card { margin-top: 0; }
+
+/* ---------- титул ---------- */
+.title-block { padding: 4mm 0 6mm; }
+.title-kicker { margin-bottom: 10px; }
+.title-h {
+  font-size: 40px;
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0 0 10px;
+}
+.title-sub { font-size: 14px; color: var(--text-2); max-width: 135mm; }
+.title-meta { margin-top: 14px; display: flex; gap: 8px; align-items: center; }
+
+/* Три тезиса стратегии — карточки с верхней кромкой цвета зоны (§2) */
+.pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pillar { border-top-width: 2px; border-top-style: solid; }
+.pillar.growth { border-top-color: var(--zone-growth); }
+.pillar.yield { border-top-color: var(--zone-yield); }
+.pillar.stability { border-top-color: var(--zone-stability); }
+.pillar .num {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  display: block;
+  margin: 6px 0 5px;
+}
+.pillar p { margin: 0; font-size: 11.5px; color: var(--text-2); }
+
+/* Чек-лист */
+.check { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 16px; }
+.check div {
+  position: relative;
+  padding-left: 22px;
+  font-size: 12.5px;
+  padding-top: 1px;
+}
+.check div::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+}
+
+/* Полоса риска — тот же приём, что на карточке долга */
+.scale {
+  height: 7px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--loss) 0%, var(--warn) 22%, var(--bg-raised) 46%, var(--bg-raised) 100%);
+  position: relative;
+  margin: 9px 0 5px;
+}
+.scale .mark {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--text-1);
+}
+.scale-legend { display: flex; font-size: 10.5px; color: var(--text-3); }
+.scale-legend .spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- ======================= ЛИСТ 1 — титул ======================= -->
+<section class="sheet">
+  <div class="head">
+    <span class="logo-mark"><i></i><i></i><i></i></span>
+    <span class="logo-name">DeFi<span> Portfolio</span></span>
+    <span class="spacer"></span>
+    <span class="where">руководство нового пользователя</span>
+  </div>
+
+  <div class="title-block">
+    <div class="t-label title-kicker">Стратегия Capital Growth · версия 1.0</div>
+    <h1 class="title-h">Как завести<br>свои данные</h1>
+    <p class="title-sub">
+      Одиннадцать шагов от первого входа до ежедневной проверки: что
+      приложение читает само, что вносите вы и почему разница между
+      «своим» и «заёмным» меняет каждое число на экране.
+    </p>
+    <div class="title-meta">
+      <span class="chip">11 шагов</span>
+      <span class="chip">≈ 40 минут на первую настройку</span>
+      <span class="chip ok">только чтение</span>
+    </div>
+  </div>
+
+  <div class="pillars">
+    <div class="card pillar growth">
+      <div class="card-body">
+        <div class="t-label">Метрика</div>
+        <span class="num">BTC · ETH</span>
+        <p>Цель — количество базовых активов, а не доллары. Долларовая
+           стоимость показывается, но целью не является.</p>
+      </div>
+    </div>
+    <div class="card pillar yield">
+      <div class="card-body">
+        <div class="t-label">Два разреза</div>
+        <span class="num">3 + 3</span>
+        <p>Категории отвечают «в чём лежит» (BTC / ETH / стейблы), зоны —
+           «какую задачу решает». Стейблы есть сразу в двух зонах.</p>
+      </div>
+    </div>
+    <div class="card pillar stability">
+      <div class="card-body">
+        <div class="t-label">Доступ</div>
+        <span class="num">read&#8209;only</span>
+        <p>Приложение не может распоряжаться средствами. Приватные ключи и
+           сид-фразы не спрашиваются нигде и никогда.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="card-head">
+      <div class="grow">
+        <h2 class="t-h2">Что читается само, а что вносите вы</h2>
+        <div class="hint">Вносить руками нужно только то, чего приложение
+          физически не видит, и то, о чём нельзя догадаться из данных.</div>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:50%">Приложение читает из сети</th>
+          <th>Вы вносите руками</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <ul class="plain">
+              <li>Залог BTC / ETH на Aave v3</li>
+              <li>Долг, LTV и health factor — каждые 15 минут</li>
+              <li>Позиции Fluid, GMX (GM) и Uniswap с составом и комиссиями</li>
+              <li>Свободные монеты на добавленных адресах</li>
+              <li>Цены активов (CoinGecko)</li>
+            </ul>
+          </td>
+          <td>
+            <ul class="plain">
+              <li>Адреса кошельков — что вообще читать</li>
+              <li>Целевые доли BTC / ETH / стейблов</li>
+              <li>Монеты вне видимости: биржа, чужой кошелёк</li>
+              <li>Журнал «Внесено» — свои деньги в портфель и обратно</li>
+              <li>Разметку: зона, своё / заёмное, выведено, цена входа</li>
+              <li>Целевой LTV и порог предупреждения по HF</li>
+            </ul>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="verdict">
+      Правило разделения простое: <b>число, которое можно прочитать в
+      блокчейне, вносить не надо</b> — оно уже там. Руками задаётся намерение
+      (цели, зоны, происхождение денег) и то, что лежит вне поля зрения.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body" style="display:flex;gap:16px;align-items:center">
+      <span class="chip warn">важно с самого начала</span>
+      <p class="t-meta" style="margin:0;flex:1">
+        Пустое поле и ноль — <b style="color:var(--text-1)">разные значения</b>.
+        Пусто означает «не сказали», ноль — «здесь ровно ничего». На разметке
+        позиции ноль в поле «Вложено своих» объявил бы доходом всю стоимость
+        позиции, а пустое поле честно покажет «не размечено».
+      </p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>DeFi Portfolio · руководство нового пользователя</span>
+    <span class="spacer"></span>
+    <span class="num">1</span>
+  </div>
+</section>
+
+<!-- ======================= ЛИСТ 2 — шаги 1–3 ======================= -->
+<section class="sheet">
+  <div class="head">
+    <span class="logo-mark"><i></i><i></i><i></i></span>
+    <span class="logo-name">DeFi<span> Portfolio</span></span>
+    <span class="spacer"></span>
+    <span class="where">Шаги 1–3 · вход, кошельки, цели</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">1</span>
+      <div class="grow">
+        <h2 class="t-h2">Вход в приложение</h2>
+        <div class="hint">Публичной регистрации нет: аккаунт создаёт
+          администратор в «Настройках», пароль — не короче 8 символов.</div>
+      </div>
+      <span class="path"><b>/login</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Откройте адрес приложения — без сессии оно само уводит на страницу входа.</li>
+        <li>Введите email и пароль, выданные администратором, и нажмите <kbd>Войти</kbd>.</li>
+        <li>Пароль забыт — ссылка <b>«Забыли пароль?»</b> под формой отправит письмо со сбросом.</li>
+        <li>Тема переключается в <span class="path"><b>Настройки → Аккаунт и вид → Тема</b></span>; по умолчанию тёмная.</li>
+      </ol>
+    </div>
+    <div class="verdict">
+      После входа открывается «Портфель». Пока не добавлен ни один адрес,
+      он честно пуст — с кнопками «Добавить кошелёк» и «Внести вручную».
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">2</span>
+      <div class="grow">
+        <h2 class="t-h2">Добавьте адреса кошельков</h2>
+        <div class="hint">Это единственный источник автоматических данных:
+          без адреса читать нечего.</div>
+      </div>
+      <span class="path"><b>Кошельки</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Нажмите <kbd>Добавить адрес</kbd> — форма раскроется под заголовком.</li>
+        <li><b>EVM-адрес</b> — публичный адрес вида <code>0x…</code>. Контрольная сумма
+          проверяется сразу: неверный адрес не уйдёт на сервер.</li>
+        <li><b>Метка</b> (необязательно) — «Основной», «Ledger»: по ней адрес
+          узнаётся в таблицах свободных средств.</li>
+        <li>Нажмите <kbd>Добавить</kbd>. Сеть выбирать не нужно: адрес сразу
+          отслеживается в Ethereum, Arbitrum, Base и Optimism.</li>
+        <li>Повторите для каждого адреса, который участвует в стратегии.</li>
+      </ol>
+      <p class="t-meta" style="margin:8px 0 0">
+        Колонка <b>«Что читаем»</b> показывает, что нашлось по адресу; колонка
+        <b>«Синхрон»</b> — когда читали в последний раз (после 15 минут точка
+        уходит в предупреждение).
+      </p>
+    </div>
+    <div class="verdict">
+      Приватных ключей и сид-фраз здесь нет и не будет: адрес — публичное
+      значение, по нему можно только читать. <b>Любая просьба ввести
+      сид-фразу — не это приложение.</b>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">3</span>
+      <div class="grow">
+        <h2 class="t-h2">Задайте целевые доли</h2>
+        <div class="hint">Без целей приложение показывает, что есть, но не
+          говорит, что с этим делать.</div>
+      </div>
+      <span class="path"><b>Цели → Целевые доли</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Впишите проценты в три поля: <span class="dot btc"></span> BTC,
+          <span class="dot eth"></span> ETH, <span class="dot stable"></span> стейблы.
+          Десятичный разделитель — запятая: <code>52,5</code>.</li>
+        <li>Следите за чипом <b>«сумма»</b> в шапке карточки: пока она не равна
+          <code>100%</code>, кнопка сохранения заблокирована.</li>
+        <li>Нажмите <kbd>Сохранить цели</kbd>.</li>
+        <li>Сбросить цели — очистить все три поля и сохранить пустыми.</li>
+      </ol>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Колонка</th><th>Что показывает</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="field">Сейчас ↔ цель</td><td>Полоса фактической доли цветом актива и белая метка цели на ней.</td></tr>
+        <tr><td class="field">Отклонение</td><td>Разница факта и цели. Больше <span class="mono">5%</span> — подсвечивается как предупреждение.</td></tr>
+        <tr><td class="field">К ребалансировке</td><td><b>Количеством монет</b> первой строкой, сумма в долларах — второй. Так и ведётся главная метрика стратегии.</td></tr>
+      </tbody>
+    </table>
+    <div class="verdict">
+      Цели задаются только для трёх категорий: сплиты внутри Yield
+      (40 / 40 / 20, GM 70 / 30) в этой версии настройками не задаются.
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>DeFi Portfolio · руководство нового пользователя</span>
+    <span class="spacer"></span>
+    <span class="num">2</span>
+  </div>
+</section>
+
+<!-- ======================= ЛИСТ 3 — шаги 4–5 ======================= -->
+<section class="sheet">
+  <div class="head">
+    <span class="logo-mark"><i></i><i></i><i></i></span>
+    <span class="logo-name">DeFi<span> Portfolio</span></span>
+    <span class="spacer"></span>
+    <span class="where">Шаги 4–5 · ручные монеты и журнал «Внесено»</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">4</span>
+      <div class="grow">
+        <h2 class="t-h2">Внесите монеты, которых приложение не видит</h2>
+        <div class="hint">Только невидимое: биржевой баланс, кошелёк вне
+          списка, монеты у брокера.</div>
+      </div>
+      <span class="path"><b>Цели → Монеты вручную</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Выберите актив сегментом: <span class="dot btc"></span> BTC,
+          <span class="dot eth"></span> ETH или <span class="dot stable"></span> стейблы.</li>
+        <li><b>«Где лежит»</b> — свободная подпись до 60 символов: «Биржа»,
+          «Холодный кошелёк».</li>
+        <li><b>Количество</b> — монетами (<code>0,5</code>), а для стейблов —
+          сумма в долларах (<code>15000</code>).</li>
+        <li>Нажмите <kbd>Добавить</kbd>. Запись сразу попадает в долю категории.</li>
+      </ol>
+    </div>
+    <div class="card-body sunken" style="border-top:1px solid var(--line)">
+      <div class="t-label" style="margin-bottom:6px">Чего сюда вносить не надо</div>
+      <ul class="plain">
+        <li>Залог на Aave — читается автоматически.</li>
+        <li>Свободные монеты на уже добавленных адресах — читаются автоматически.</li>
+        <li>Стоимость позиций Fluid / GM / Uniswap — она приходит вместе с позицией.</li>
+      </ul>
+    </div>
+    <div class="verdict">
+      Если запись описывает те же деньги, что читаются с кошелька, карточка
+      предупредит строкой — <b>отличить биржевой баланс от кошелькового
+      автоматически нельзя</b>, поэтому решение за вами: лишнюю запись надо
+      удалить, иначе деньги посчитаны дважды.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">5</span>
+      <div class="grow">
+        <h2 class="t-h2">Заполните журнал «Внесено»</h2>
+        <div class="hint">Только собственные деньги. Заёмные средства и доход
+          от них сюда не попадают.</div>
+      </div>
+      <span class="path"><b>Цели → Внесено</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Выберите операцию: <b>Пополнение</b> или <b>Вывод</b>. Знак ставит
+          сегмент — сумма всегда вводится положительной.</li>
+        <li><b>Сумма</b> в долларах, <b>дата</b> операции (будущим числом
+          записать нельзя), при желании — <b>заметка</b>.</li>
+        <li>Нажмите <kbd>Записать</kbd>.</li>
+        <li>Внесите так всю историю пополнений и выводов — журнал существует
+          именно для того, чтобы прошлое можно было проверить и поправить.</li>
+      </ol>
+      <p class="t-meta" style="margin:9px 0 0">
+        Сумма журнала — крупное число в шапке карточки, справа от него
+        <b>«Прибыль»</b>. Считается она так:
+      </p>
+      <p class="mono" style="margin:7px 0 0;font-size:13px;color:var(--text-1)">
+        прибыль = чистая стоимость − внесено
+      </p>
+      <p class="t-meta" style="margin:5px 0 0">
+        Чистая стоимость — это «Активы минус долг»: сколько останется, если
+        закрыть все займы. Пока журнал пуст, прибыль показывается как
+        <span class="mono">—</span>: сравнивать не с чем.
+      </p>
+    </div>
+    <div class="verdict">
+      Заёмные стейблы во «Внесено» не записываются никогда. Иначе долг был бы
+      учтён дважды — и как обязательство, и как ваш вклад, — а прибыль
+      просела бы на всю занятую сумму.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="grow">
+        <h2 class="t-h2">Две записи, которые чаще всего путают</h2>
+        <div class="hint">Обе живут на странице «Цели», но отвечают на разные
+          вопросы и попадают в разные числа.</div>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:150px">Запись</th><th>Отвечает на вопрос</th><th style="width:210px">Влияет на</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="field">Монеты вручную</td>
+          <td>Сколько у меня <b>есть</b> монет вне поля зрения приложения</td>
+          <td>Доли категорий, отклонение от цели, «к ребалансировке»</td>
+        </tr>
+        <tr>
+          <td class="field">Внесено</td>
+          <td>Сколько собственных денег я <b>вложил</b> в портфель и забрал обратно</td>
+          <td>Только «Прибыль» — на состав портфеля не влияет</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="verdict">
+      Купили BTC на бирже за свои — это <b>две записи</b>: пополнение во
+      «Внесено» (если деньги пришли извне) и монета в «Монетах вручную».
+      Перевод между своими кошельками — <b>ни одной</b>: деньги не пришли и
+      не ушли.
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>DeFi Portfolio · руководство нового пользователя</span>
+    <span class="spacer"></span>
+    <span class="num">3</span>
+  </div>
+</section>
+
+<!-- ======================= ЛИСТ 4 — шаги 6–7 ======================= -->
+<section class="sheet">
+  <div class="head">
+    <span class="logo-mark"><i></i><i></i><i></i></span>
+    <span class="logo-name">DeFi<span> Portfolio</span></span>
+    <span class="spacer"></span>
+    <span class="where">Шаги 6–7 · разметка денег и позиций</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">6</span>
+      <div class="grow">
+        <h2 class="t-h2">Пометьте свободные средства: свои или заёмные</h2>
+        <div class="hint">Монеты, которые лежат на кошельке и не участвуют ни
+          в залоге, ни в позициях.</div>
+      </div>
+      <span class="path"><b>Портфель → Зоны → Свободные средства</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Переключите разрез портфеля на <b>«Зоны»</b> — карточка стоит перед
+          списком позиций.</li>
+        <li>В строке каждого баланса выберите происхождение:
+          <b>Свои</b>, <b>Заёмные</b> или <b>—</b> (снять разметку).</li>
+        <li>Метка ставится на <b>кошелёк + сеть + токен</b>: один и тот же токен
+          бывает своим на холодном адресе и заёмным на рабочем.</li>
+        <li>Чип <span class="chip warn">N балансов без разметки</span> подскажет,
+          где решение ещё не принято.</li>
+      </ol>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:110px">Метка</th><th>Что из этого следует</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="field">Свои</td>
+          <td>Входят в три категории и в «Активы». Зона — по категории: стейблы в
+            <span class="chip stability"><span class="dot stability"></span>Stability</span>,
+            BTC и ETH в <span class="chip growth"><span class="dot growth"></span>Growth</span>.</td>
+        </tr>
+        <tr>
+          <td class="field">Заёмные</td>
+          <td>В три категории <b>не входят</b> — портфель ведётся по собственным
+            средствам, — но входят в «Активы» целиком и уходят в
+            <span class="chip yield"><span class="dot yield"></span>Yield</span>:
+            это деньги в пути в зону доходности, а не резерв.</td>
+        </tr>
+        <tr>
+          <td class="field">—</td>
+          <td>Считаются <b>своими</b> и попадают в категории, но остаются в счётчике
+            без разметки. Молчание не должно выкидывать свободный WBTC из главной
+            метрики стратегии.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="verdict">
+      Балансы дешевле <span class="mono">$1</span> свёрнуты в строку «скрыто N
+      балансов»; токены вне трёх категорий (LINK, ARB, аирдропы) показаны
+      количеством без оценки — зоны стратегии у них нет.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">7</span>
+      <div class="grow">
+        <h2 class="t-h2">Разметьте позиции</h2>
+        <div class="hint">Кнопка с ползунками в шапке карточки позиции —
+          Fluid, GM-пул, Uniswap.</div>
+      </div>
+      <span class="path"><b>Портфель → Зоны → карточка позиции</b></span>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:150px">Поле</th><th>Что вписать</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="field">Зона</td>
+          <td>Какую задачу решает позиция: Growth, Yield или Stability.</td></tr>
+        <tr><td class="field">Вложено своих, $</td>
+          <td>Сколько собственных денег в позиции. Из этих пометок складывается
+            категория «Стейблы» — отдельным числом её вводить не нужно.</td></tr>
+        <tr><td class="field">Вложено заёмных, $</td>
+          <td>Заёмная часть. Двумя числами, а не одним: остаток «стоимость минус
+            своё» бывает и долгом, и доходом, и убытком пула.</td></tr>
+        <tr><td class="field">Выведено, $</td>
+          <td>Стоимость забранного из позиции — BTC/ETH с продажи GM, ушедшие в
+            залог. Без этого числа переехавший капитал выглядит убытком.</td></tr>
+        <tr><td class="field">Цена входа <span class="t3">(только GM)</span></td>
+          <td>Точка отсчёта: цена базового актива на момент входа. От неё считаются
+            уровни <span class="mono">−7 / −15 / −30 / −50 / −70%</span>. После
+            продажи GM на уровне и повторной покупки перенесите её сюда же.</td></tr>
+      </tbody>
+    </table>
+    <div class="card-body sunken" style="border-top:1px solid var(--line)">
+      <p class="mono" style="margin:0;font-size:13px">доход = стоимость + выведено − вложено</p>
+      <p class="t-meta" style="margin:5px 0 0">
+        Доход делится между своим и заёмным пропорционально вложенному. Пустое
+        поле — «не размечено», и это не ноль.
+      </p>
+    </div>
+    <div class="verdict">
+      Разметка правится редко — при заведении позиции и при выводе, — но пока
+      её нет, позиция считается заёмной целиком и в категории не попадает.
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>DeFi Portfolio · руководство нового пользователя</span>
+    <span class="spacer"></span>
+    <span class="num">4</span>
+  </div>
+</section>
+
+<!-- ======================= ЛИСТ 5 — шаги 8–9 ======================= -->
+<section class="sheet">
+  <div class="head">
+    <span class="logo-mark"><i></i><i></i><i></i></span>
+    <span class="logo-name">DeFi<span> Portfolio</span></span>
+    <span class="spacer"></span>
+    <span class="where">Шаги 8–9 · плечо и предупреждения</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">8</span>
+      <div class="grow">
+        <h2 class="t-h2">Задайте целевой LTV и порог health factor</h2>
+        <div class="hint">LTV отвечает «сколько плеча взято», HF — «далеко ли
+          ликвидация». Это разные вопросы и разные экраны.</div>
+      </div>
+      <span class="path"><b>Долг</b> · <b>Настройки</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>На экране <b>«Долг»</b> впишите <b>Целевой LTV</b> — по стратегии
+          рабочий уровень около <code>50</code>. Значение сохраняется при
+          <kbd>Enter</kbd> или уходе из поля.</li>
+        <li>Справа появится ответ одним числом: <b>«взять ещё $X»</b> или
+          <b>«погасить $X»</b>, и каким станет долг при цели.</li>
+        <li>В <span class="path"><b>Настройки → Аккаунт и вид</b></span> задайте
+          <b>порог предупреждения по health factor</b> — число больше
+          <span class="mono">1,00</span> и не больше <span class="mono">3,00</span>;
+          по умолчанию <span class="mono">1,50</span>. Нажмите <kbd>Сохранить</kbd>.</li>
+      </ol>
+
+      <div class="scale"><span class="mark" style="left:62%"></span></div>
+      <div class="scale-legend">
+        <span>ликвидация</span>
+        <span style="margin-left:14px">опасно</span>
+        <span class="spacer"></span>
+        <span>безопасно</span>
+      </div>
+      <p class="t-meta" style="margin:8px 0 0">
+        Экран «Долг» показывает залог, долг со ставкой, LTV с лимитом, цену
+        ликвидации и запас прочности по падению. Сценарии падения залога
+        (<span class="mono">−10 / −20 / −30%</span>) живут там же — не путайте
+        их с уровнями действий по GM: те считаются от цены входа пула.
+      </p>
+    </div>
+    <div class="verdict">
+      Цель не ниже порога ликвидации — заявка на принудительное закрытие
+      позиции; приложение об этом предупредит прямо в строке.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="tile">9</span>
+      <div class="grow">
+        <h2 class="t-h2">Подключите уведомления в телеграм</h2>
+        <div class="hint">Единственный способ узнать о падении HF, не держа
+          экран открытым.</div>
+      </div>
+      <span class="path"><b>Настройки → Уведомления</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Нажмите <kbd>Подключить</kbd> — приложение выдаст код привязки,
+          он действует <b>15 минут</b>.</li>
+        <li>Откройте бота ссылкой рядом с кодом и нажмите «Запустить» — или
+          отправьте ему <code>/start код</code>.</li>
+        <li>Вернитесь и нажмите <kbd>Проверить</kbd>: привязку разбирает крон
+          раз в 15 минут, кнопка делает это сразу.</li>
+        <li>Убедитесь в статусе <span class="chip ok">подключён</span> и
+          отправьте <kbd>Отправить тестовое</kbd>.</li>
+      </ol>
+      <p class="t-meta" style="margin:9px 0 0">
+        Переключатель <b>«Присылать предупреждения»</b> временно выключает
+        сообщения, сохраняя привязку. Кнопка «Отключить» разрывает её
+        совсем — подключать бота придётся заново.
+      </p>
+    </div>
+    <table>
+      <thead><tr><th>Приложение напишет, когда</th><th class="num" style="width:130px">Порог</th></tr></thead>
+      <tbody>
+        <tr><td>Health factor ушёл ниже вашего порога</td><td class="num">ваш порог</td></tr>
+        <tr><td>Достигнут экстренный уровень — продать часть GM и поднять HF к 1,5</td><td class="num">1,30</td></tr>
+        <tr><td>Резкое падение health factor</td><td class="num">−10%</td></tr>
+        <tr><td>HF вернулся выше порога</td><td class="num">возврат</td></tr>
+        <tr><td>Данные не читаются — молчание не должно выглядеть спокойствием</td><td class="num">&gt; 6 ч</td></tr>
+      </tbody>
+    </table>
+    <div class="verdict">
+      Считается по паре <b>кошелёк + сеть</b>: ликвидация приходит к
+      конкретной позиции, а не к портфелю в среднем.
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>DeFi Portfolio · руководство нового пользователя</span>
+    <span class="spacer"></span>
+    <span class="num">5</span>
+  </div>
+</section>
+
+<!-- ======================= ЛИСТ 6 — шаги 10–11 и рутина ======================= -->
+<section class="sheet">
+  <div class="head">
+    <span class="logo-mark"><i></i><i></i><i></i></span>
+    <span class="logo-name">DeFi<span> Portfolio</span></span>
+    <span class="spacer"></span>
+    <span class="where">Шаги 10–11 · сделки, история, ежедневная проверка</span>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head">
+        <span class="tile">10</span>
+        <div class="grow">
+          <h2 class="t-h2">Ведите сделки</h2>
+          <div class="hint">Нужны для средней цены и реализованного
+            результата.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <ol class="steps">
+          <li><span class="path"><b>Сделки → Новая сделка</b></span></li>
+          <li>Категория и сторона: <b>Купить</b> или <b>Продать</b>.</li>
+          <li><b>Количество</b>, затем <b>цена за единицу</b> <i>или</i>
+            <b>сумма сделки</b> — второе поле форма посчитает сама и подпишет
+            «рассчитано».</li>
+          <li><b>Дата</b> (не в будущем) и заметка.</li>
+          <li><kbd>Добавить сделку</kbd>.</li>
+        </ol>
+        <p class="t-meta" style="margin:9px 0 0">
+          Покупка пересчитывает среднюю цену категории, продажа среднюю не
+          меняет — только реализованный результат. Список фильтруется по
+          активу, датам и заметке; строку можно поправить и удалить.
+        </p>
+      </div>
+      <div class="verdict">
+        Сделки не заменяют разметку и не двигают балансы: те читаются из сети.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <span class="tile">11</span>
+        <div class="grow">
+          <h2 class="t-h2">Проверьте историю</h2>
+          <div class="hint">Снепшот — срез портфеля на дату.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <ol class="steps">
+          <li>Снепшот снимается автоматически раз в сутки, в
+            <span class="mono">03:00 UTC</span>.</li>
+          <li>Кнопка <kbd>Снепшот сейчас</kbd> на экране «История» снимает срез
+            вручную; повторный за сегодня обновляет существующий.</li>
+          <li>Графики: стоимость портфеля и <b>количества BTC / ETH / стейблов</b> —
+            основа главной метрики стратегии.</li>
+        </ol>
+        <p class="t-meta" style="margin:9px 0 0">
+          В снепшот пишутся и суммы, и состав вместе с разметкой: балансы на
+          прошлую дату восстановить уже нечем.
+        </p>
+      </div>
+      <div class="verdict">
+        История наполняется со временем — в первый день она пуста, и это норма.
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="grow">
+        <h2 class="t-h2">Ежедневная проверка — полминуты</h2>
+        <div class="hint">Всё, что требует действия сегодня, собрано в один
+          список; обходить экраны не нужно.</div>
+      </div>
+      <span class="path"><b>Портфель → Сигналы</b></span>
+    </div>
+    <div class="card-body">
+      <ol class="steps">
+        <li>Откройте <b>«Портфель»</b>. Число рядом с подписью
+          <span class="chip">Сигналы · 3</span> — сколько строк ждёт решения.</li>
+        <li>Строки риска ликвидации закреплены <b>над любым режимом</b>: за ними
+          не надо специально заходить.</li>
+        <li>Пройдите список сверху вниз — он отсортирован по неотвратимости.</li>
+        <li>Выполненное отметьте: отметка сама теряет силу при новом уровне или
+          переносе точки отсчёта.</li>
+      </ol>
+    </div>
+    <table>
+      <thead><tr><th style="width:34px" class="num">#</th><th>Порядок сигналов</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><b>Риск ликвидации</b> — HF в опасной зоне, слепота дольше 6 часов, непрочитанный долг.</td></tr>
+        <tr><td class="num">2</td><td><b>Пройденный уровень GM</b> с действием стратегии на нём.</td></tr>
+        <tr><td class="num">3</td><td><b>Таймер 48 часов</b> у CLMM, вышедшей из диапазона.</td></tr>
+        <tr><td class="num">4</td><td><b>Плечо и ставки</b> — LTV мимо цели больше чем на 5%, депозит дешевле займа, перекос сплита GM.</td></tr>
+        <tr><td class="num">5</td><td><b>Гигиена данных</b> — неразмеченные балансы и позиции.</td></tr>
+      </tbody>
+    </table>
+    <div class="verdict">
+      Данные обновляются сами раз в 15 минут; кнопка <b>⟳</b> рядом с
+      переключателем режимов делает это немедленно, но не чаще раза в минуту.
+      Health factor читается кроном независимо от того, открыт ли экран.
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>DeFi Portfolio · руководство нового пользователя</span>
+    <span class="spacer"></span>
+    <span class="num">6</span>
+  </div>
+</section>
+
+<!-- ======================= ЛИСТ 7 — правила, чек-лист ======================= -->
+<section class="sheet">
+  <div class="head">
+    <span class="logo-mark"><i></i><i></i><i></i></span>
+    <span class="logo-name">DeFi<span> Portfolio</span></span>
+    <span class="spacer"></span>
+    <span class="where">Справочно · ввод чисел, чек-лист, безопасность</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="grow">
+        <h2 class="t-h2">Как приложение читает и пишет числа</h2>
+        <div class="hint">Одни и те же правила во всех формах и таблицах.</div>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th style="width:180px">Правило</th><th>Пример</th></tr></thead>
+      <tbody>
+        <tr><td class="field">Десятичный разделитель — запятая</td><td class="mono">4,90%&nbsp;&nbsp;·&nbsp;&nbsp;0,5 BTC</td></tr>
+        <tr><td class="field">Разряды разделяет пробел</td><td class="mono">$186 495</td></tr>
+        <tr><td class="field">Копейки — только до $1000</td><td class="mono">$302,91, но $25 251</td></tr>
+        <tr><td class="field">Минус — типографский</td><td class="mono">−$2 847 · −6,2%</td></tr>
+        <tr><td class="field">Количества монет — 4 знака</td><td class="mono">6,9777 WETH</td></tr>
+        <tr><td class="field">Нет значения — прочерк</td><td class="mono">— (а не $0,00)</td></tr>
+        <tr><td class="field">Суммы разметки — неотрицательные</td><td class="mono">0 допустим, отрицательное — нет</td></tr>
+        <tr><td class="field">Цена входа — строго больше нуля</td><td class="mono">от нуля падение не считается</td></tr>
+        <tr><td class="field">Даты — не в будущем</td><td class="mono">сделки и журнал «Внесено»</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="grow">
+        <h2 class="t-h2">Чек-лист первого дня</h2>
+        <div class="hint">Пока не закрыт весь список, часть чисел на экране
+          останется прочерками.</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="check">
+        <div>Вошёл под своим аккаунтом</div>
+        <div>Добавил все адреса кошельков</div>
+        <div>Задал целевые доли, сумма 100%</div>
+        <div>Внёс монеты с биржи и внешних кошельков</div>
+        <div>Заполнил журнал «Внесено» за всё время</div>
+        <div>Пометил свободные балансы: свои / заёмные</div>
+        <div>Разметил каждую позицию: зона и суммы</div>
+        <div>Указал цену входа у GM-пулов</div>
+        <div>Задал целевой LTV на экране «Долг»</div>
+        <div>Задал порог health factor</div>
+        <div>Подключил телеграм и получил тестовое</div>
+        <div>Открыл «Сигналы» и разобрал список</div>
+      </div>
+    </div>
+    <div class="verdict">
+      Признак, что настройка закончена: на «Портфеле» нет строк гигиены
+      данных, а «Прибыль» показывает число, а не <span class="mono">—</span>.
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head">
+        <div class="grow"><h2 class="t-h2">Три частые ошибки</h2></div>
+      </div>
+      <div class="card-body">
+        <ul class="plain">
+          <li><b>Двойной счёт.</b> Ручная запись про «холодный кошелёк», который
+            уже добавлен адресом, удваивает деньги. Приложение предупредит, но
+            удалять запись вам.</li>
+          <li><b>Ноль вместо пустого.</b> Ноль в «Вложено своих» означает «своих
+            денег здесь нет» и объявляет доходом всю стоимость позиции.</li>
+          <li><b>Заёмные во «Внесено».</b> Журнал только для собственных денег —
+            иначе прибыль занижена на всю сумму займа.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="grow"><h2 class="t-h2">Безопасность</h2></div>
+        <span class="chip ok">read-only</span>
+      </div>
+      <div class="card-body">
+        <ul class="plain">
+          <li>Приложение работает <b>только на чтение</b> и не может
+            распоряжаться средствами.</li>
+          <li>Полей для приватных ключей и сид-фраз нет ни на одном экране —
+            и не появится.</li>
+          <li>Адрес кошелька — публичное значение: по нему видно балансы, но
+            нельзя ничего перевести.</li>
+          <li>Публичной регистрации нет: аккаунты создаёт администратор в
+            «Настройках».</li>
+        </ul>
+      </div>
+      <div class="verdict">
+        Любая страница, просящая сид-фразу «для подключения кошелька», —
+        не это приложение.
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>Стратегия — docs/07 · дизайн-код — docs/08 · цены активов предоставляет CoinGecko</span>
+    <span class="spacer"></span>
+    <span class="num">7</span>
+  </div>
+</section>
+
+</body>
+</html>
