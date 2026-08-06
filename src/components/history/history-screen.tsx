@@ -8,6 +8,7 @@ import { MetaDot, PageHeader } from "@/components/dc/page-header";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type {
+  DepositsResponseDto,
   SnapshotDto,
   SnapshotPeriod,
   SnapshotResponseDto,
@@ -18,6 +19,7 @@ import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { CompositionChart } from "./composition-chart";
 import { PeriodSwitcher, periodFull } from "./period-switcher";
+import { ProfitChart } from "./profit-chart";
 import { QuantityCharts } from "./quantity-charts";
 import { SnapshotsList } from "./snapshots-list";
 import { ValueChart } from "./value-chart";
@@ -39,6 +41,10 @@ export function HistoryScreen() {
   const { data, error, loading, refetch } = useApi<SnapshotsResponseDto>(
     `/api/snapshots?period=${period}`,
   );
+  // Журнал «Внесено» — второй источник графика Прибыли: в снепшот сумма
+  // не пишется, она восстанавливается реплеем по happened_on. Период здесь
+  // не нужен — на дату точки нужна сумма ВСЕГО журнала до неё
+  const journal = useApi<DepositsResponseDto>("/api/deposits");
   const [taking, setTaking] = useState(false);
 
   async function takeSnapshot() {
@@ -156,11 +162,22 @@ export function HistoryScreen() {
 
         {data !== null && snapshots.length >= 1 && (
           <>
-            {/* Порядок: стоимость → количества → пропорции → список.
+            {/* Порядок: стоимость → количества → прибыль → пропорции → список.
                 Доллары отвечают на вопрос «сколько», монеты — «чего именно
-                стало больше», пропорции остаются контекстом */}
+                стало больше», прибыль — «сколько из этого заработано»,
+                пропорции остаются контекстом. Монеты выше прибыли намеренно:
+                главная метрика стратегии — они (AGENTS.md), и долларовый
+                график не должен спускать их под сгиб */}
             <ValueChart snapshots={snapshots} periodLabel={periodLabel} />
             <QuantityCharts snapshots={snapshots} periodLabel={periodLabel} />
+            <ProfitChart
+              snapshots={snapshots}
+              deposits={journal.data?.deposits ?? null}
+              // Ошибка журнала гасит только эту карточку: остальная история
+              // от депозитов не зависит
+              journalError={journal.error}
+              periodLabel={periodLabel}
+            />
             <CompositionChart snapshots={snapshots} periodLabel={periodLabel} />
             {/* key по периоду: смена периода возвращает список на первую страницу */}
             <SnapshotsList key={period} snapshots={snapshots} />
@@ -237,6 +254,16 @@ function HistorySkeleton() {
           </DcCard>
         ))}
       </div>
+
+      <DcCard as="section">
+        <div className="flex flex-col gap-2.5 px-5 pt-[18px] pb-3.5">
+          <Bar className="h-2.5 w-24" />
+          <Bar className="h-8 w-44" />
+        </div>
+        <div className="border-line border-t bg-sunken px-4 py-4">
+          <Bar className="h-[150px] w-full sm:h-[190px]" />
+        </div>
+      </DcCard>
     </div>
   );
 }

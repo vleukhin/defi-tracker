@@ -397,6 +397,37 @@ describe("buildSnapshotRows: свободные средства", () => {
     };
   }
 
+  it("free_borrowed_usd пишется отдельно от free_usd: в категории заемные не входят", () => {
+    // Активы точки = total_usd + positions_usd + free_borrowed_usd. Без
+    // третьего слагаемого Чистая занижена ровно на занятую, но еще
+    // не размещенную сумму — ошибка, которую закрывала Фаза 5
+    const build = buildSnapshotRows({ ...withFree(), freeBorrowedUsd: 20_000 });
+    expect(build.freeBorrowedUsd).toBe(20_000);
+    expect(build.freeUsd).toBe(4_000);
+  });
+
+  it("балансы не читались -> free_borrowed_usd null вместе с free_usd", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: true,
+      debtUsd: 0,
+      debtChains: [okChain],
+      freeBorrowedUsd: 20_000,
+    });
+    expect(build.freeBorrowedUsd).toBeNull();
+    expect(build.freeUsd).toBeNull();
+  });
+
+  it("без кошельков заемных честно ноль, а не «неизвестно»", () => {
+    const build = buildSnapshotRows({
+      ...healthyPortfolio(),
+      hasWallets: false,
+      debtUsd: 0,
+      debtChains: [],
+    });
+    expect(build.freeBorrowedUsd).toBe(0);
+  });
+
   it("пишет free_usd и состав вместе с разметкой", () => {
     const build = buildSnapshotRows(withFree());
     expect(build.freeUsd).toBe(4_000);

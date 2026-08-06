@@ -47,7 +47,8 @@ export function periodCutoff(
 
 /** Колонки снепшота вместе с составом (embedded resource PostgREST). */
 export const SNAPSHOT_COLUMNS =
-  "id, taken_on, taken_at, total_usd, debt_usd, positions_usd, free_usd, is_partial, " +
+  "id, taken_on, taken_at, total_usd, debt_usd, collateral_usd, health_factor, " +
+  "positions_usd, free_usd, free_borrowed_usd, is_partial, " +
   "snapshot_items (category, quantity, composition, price_usd, value_usd, percent, collateral_usd, manual_usd, free_usd)";
 
 export interface SnapshotItemRow {
@@ -71,9 +72,15 @@ export interface SnapshotRow {
   total_usd: number | string;
   /** Долг на момент съема (Фаза 4); null у старых снепшотов = «неизвестен». */
   debt_usd?: number | string | null;
+  /** Залог оракула Aave; отсутствует у снепшотов до появления колонки. */
+  collateral_usd?: number | string | null;
+  /** Минимальный HF; null = долга нет или не читалось (различает debt_usd). */
+  health_factor?: number | string | null;
   positions_usd?: number | string | null;
   /** null у снепшотов, снятых до чтения свободных балансов. */
   free_usd?: number | string | null;
+  /** Отсутствует у снепшотов, снятых до появления колонки. */
+  free_borrowed_usd?: number | string | null;
   is_partial: boolean;
   snapshot_items: SnapshotItemRow[] | null;
 }
@@ -121,8 +128,13 @@ export function mapSnapshotRow(row: SnapshotRow): SnapshotDto {
     takenAt: row.taken_at,
     totalUsd: num(row.total_usd),
     debtUsd: nullableNum(row.debt_usd ?? null),
+    collateralUsd: nullableNum(row.collateral_usd ?? null),
+    healthFactor: nullableNum(row.health_factor ?? null),
     positionsUsd: nullableNum(row.positions_usd ?? null),
     freeUsd: nullableNum(row.free_usd ?? null),
+    // Именно `?? null`, в отличие от item-level free_usd ниже: ноль здесь
+    // означал бы «заемных на кошельке не было», а точка о них просто не знала
+    freeBorrowedUsd: nullableNum(row.free_borrowed_usd ?? null),
     isPartial: row.is_partial,
     items,
   };

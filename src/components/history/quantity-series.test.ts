@@ -35,8 +35,11 @@ function snapshot(
     takenAt: `${takenOn}T03:00:00.000Z`,
     totalUsd: 0,
     debtUsd: null,
+    collateralUsd: null,
+    healthFactor: null,
     positionsUsd: null,
     freeUsd: null,
+    freeBorrowedUsd: null,
     isPartial,
     items: [
       item("btc", quantities.btc),

@@ -33,8 +33,18 @@ import {
  */
 const DOMAIN_PAD = 0.08;
 
-export function valueDomain(values: readonly number[]): ValueAxis {
-  const finite = values.filter((v) => Number.isFinite(v));
+export function valueDomain(
+  values: readonly number[],
+  /**
+   * Величины, которые обязаны попасть в домен, даже если ряд до них
+   * не доходит: порог HF и целевой LTV. График риска, на котором не видно
+   * границы решения, отвечает на вопрос «как менялось», но не на вопрос
+   * «насколько близко» — а спрашивают его. Ликвидационные уровни сюда
+   * НЕ передаются: они далеко, и домен под них расплющил бы кривую.
+   */
+  include: readonly number[] = [],
+): ValueAxis {
+  const finite = [...values, ...include].filter((v) => Number.isFinite(v));
   if (finite.length === 0) return { min: 0, max: 0, ticks: [] };
   const lo = Math.min(...finite);
   const hi = Math.max(...finite);
@@ -125,6 +135,42 @@ export function PartialMarker({ className }: { className?: string }) {
         className,
       )}
     />
+  );
+}
+
+/**
+ * Опорная линия графика: ноль у Прибыли, порог HF и целевой LTV у риска.
+ *
+ * Это НЕ сетка, запрещённая дизайн-кодом §5: сетка — повторяющиеся
+ * декоративные линии, а здесь каждая линия несёт значение, осмысленное
+ * независимо от данных (безубыток, порог предупреждения, цель, ликвидация).
+ * Цвет линейный, не зелёный/красный: цвет результата в графике не живёт.
+ * Уровни ликвидации отличаются ФОРМОЙ (пунктир), а не цветом — они говорят
+ * о другом: не «куда стремимся», а «где всё кончится».
+ */
+export function ChartRefLine({
+  y,
+  label,
+  dashed,
+}: {
+  /** Позиция в процентах сверху. */
+  y: number;
+  label: string;
+  dashed?: boolean;
+}) {
+  return (
+    <div
+      aria-hidden
+      style={{ top: `${y}%` }}
+      className={cn(
+        "absolute inset-x-0 border-line-strong border-t",
+        dashed && "border-dashed",
+      )}
+    >
+      <span className="t-axis absolute top-0.5 left-0 bg-sunken pr-1">
+        {label}
+      </span>
+    </div>
   );
 }
 
@@ -344,14 +390,17 @@ export function ChartNote({
    * но цены категории не было и количество не выведено.
    */
   missingLabel = "дни без снепшота",
+  /** Своя оговорка карточки — например, сколько точек осталось без Прибыли. */
+  extra,
   className,
 }: {
   missing: number;
   anyPartial: boolean;
   missingLabel?: string;
+  extra?: React.ReactNode;
   className?: string;
 }) {
-  if (missing === 0 && !anyPartial) return null;
+  if (missing === 0 && !anyPartial && !extra) return null;
   return (
     <div
       className={cn(
@@ -370,6 +419,7 @@ export function ChartNote({
           разрывы — {missingLabel}: <span className="font-mono">{missing}</span>
         </span>
       )}
+      {extra}
     </div>
   );
 }

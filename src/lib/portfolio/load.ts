@@ -35,6 +35,11 @@ import {
   type FreeAtom,
   type ManualAtom,
 } from "@/lib/positions/zones";
+import {
+  type DebtHealthRow,
+  type DebtHealthSummary,
+  summarizeDebtHealth,
+} from "./debt-health";
 import { computeOverview } from "./overview";
 import {
   CATEGORY_COINGECKO_IDS,
@@ -105,6 +110,8 @@ export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
   freeChains: ChainStatusRow[];
   /** Связка пяти чисел: Активы · Долг · Чистая · Внесено · Прибыль (S4.2). */
   overview: PortfolioOverviewDto;
+  /** Залог и минимальный HF по оракулу Aave — вторая половина LTV. */
+  debtHealth: DebtHealthSummary;
   /** Размещенные позиции (Фаза 5): Fluid, GM-пулы, LP. */
   positions: PositionDto[];
   /** Вклад позиций в Активы и учет собственного капитала внутри них. */
@@ -279,7 +286,9 @@ export async function loadPortfolio(
           "aave_account_health",
           supabase
             .from("aave_account_health")
-            .select("wallet_id, chain, total_debt_usd")
+            .select(
+              "wallet_id, chain, total_debt_usd, total_collateral_usd, health_factor",
+            )
             .in("wallet_id", walletIds),
         )
       : noRows,
@@ -438,12 +447,18 @@ export async function loadPortfolio(
   // --- Долг (Фаза 4): канонические totals из aave_account_health.
   // Wallet-scoped (как protocol_positions): под RLS фильтр избыточен,
   // но делает выборку одинаковой на обоих путях ---
-  const healthRows: { totalDebtUsd: number | null }[] = healthData.map(
-    (row) => ({
-      totalDebtUsd:
-        row.total_debt_usd === null ? null : Number(row.total_debt_usd),
-    }),
-  );
+  const healthRows: DebtHealthRow[] = healthData.map((row) => ({
+    totalDebtUsd:
+      row.total_debt_usd === null ? null : Number(row.total_debt_usd),
+    // Залог и HF нужны снепшоту (история LTV и HF): аккаунт читается один
+    // раз, и брать из его строк только долг было бы странной экономией
+    totalCollateralUsd:
+      row.total_collateral_usd === null
+        ? null
+        : Number(row.total_collateral_usd),
+    healthFactor:
+      row.health_factor === null ? null : Number(row.health_factor),
+  }));
 
   // --- Размещенные позиции (Фаза 5): Fluid, GM-пулы, LP ---
   const positionRows: PositionRowInput[] = [];
@@ -724,6 +739,7 @@ export async function loadPortfolio(
     debtChains,
     freeChains,
     overview,
+    debtHealth: summarizeDebtHealth(healthRows, wallets.length > 0),
     positions: positions.positions,
     positionsSummary: positions.summary,
     zones,

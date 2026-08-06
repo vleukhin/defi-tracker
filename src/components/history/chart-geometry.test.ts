@@ -12,6 +12,7 @@ import {
   splitRuns,
   timeScale,
   yPercent,
+  zeroBaseline,
 } from "./chart-geometry";
 
 describe("dayNumber", () => {
@@ -148,6 +149,22 @@ describe("yPercent", () => {
     expect(yPercent(axis, 100)).toBe(100);
     expect(yPercent(axis, 200)).toBe(0);
     expect(yPercent(axis, 150)).toBe(50);
+  });
+});
+
+describe("zeroBaseline", () => {
+  it("рисуется только у знакопеременного ряда", () => {
+    expect(zeroBaseline({ min: -100, max: 100, ticks: [] })).toBe(50);
+    expect(zeroBaseline({ min: -300, max: 100, ticks: [] })).toBe(25);
+  });
+
+  it("ряд одного знака нулевой линии не получает: домен под ноль не раздвигается", () => {
+    // У ряда «+30 000 … +40 000» прибитая к нулю шкала превратила бы
+    // кривую в прямую по верхнему краю карточки
+    expect(zeroBaseline({ min: 30_000, max: 40_000, ticks: [] })).toBeNull();
+    expect(zeroBaseline({ min: -40_000, max: -30_000, ticks: [] })).toBeNull();
+    // Ноль на самом краю домена линией не отбивается: она слилась бы с рамкой
+    expect(zeroBaseline({ min: 0, max: 40_000, ticks: [] })).toBeNull();
   });
 });
 

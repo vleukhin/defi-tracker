@@ -18,6 +18,8 @@ import type {
   PositionDto,
   RefreshResponseDto,
   SettingsDto,
+  SnapshotPeriod,
+  SnapshotsResponseDto,
   StableBorrowRateDto,
 } from "@/lib/api/types";
 import {
@@ -35,6 +37,7 @@ import { DebtChains } from "./debt-chains";
 import { DebtHero } from "./debt-hero";
 import { DebtScenarios } from "./debt-scenarios";
 import { liquidationLtvPercent } from "./risk";
+import { RiskChart } from "./risk-chart";
 
 /**
  * Экран «Долг» (README §6): насколько близка ликвидация, что будет с
@@ -67,6 +70,12 @@ export function DebtScreen() {
   // Цель LTV правится тут же, поэтому храним локально: перезапрашивать
   // настройки ради собственной правки — лишний круг
   const settings = useApi<SettingsDto>("/api/settings");
+  // История риска: HF и LTV живут в дневных снепшотах — тех же, что
+  // на экране «История». Период переключается прямо в карточке
+  const [riskPeriod, setRiskPeriod] = useState<SnapshotPeriod>("30d");
+  const history = useApi<SnapshotsResponseDto>(
+    `/api/snapshots?period=${riskPeriod}`,
+  );
   const [targetLtvOverride, setTargetLtvOverride] = useState<number | null>(
     null,
   );
@@ -278,6 +287,17 @@ export function DebtScreen() {
             loading={leverage.loading || zones.loading}
           />
         </div>
+
+        <RiskChart
+          snapshots={history.data?.snapshots ?? null}
+          loading={history.loading}
+          error={history.error}
+          period={riskPeriod}
+          onPeriodChange={setRiskPeriod}
+          threshold={threshold}
+          targetLtvPct={targetLtvPct}
+          liquidationLtvPct={liquidationLtvPercent(chains)}
+        />
 
         {chains.length > 0 && (
           <DebtChains
