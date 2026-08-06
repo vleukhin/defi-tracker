@@ -113,7 +113,7 @@ export function DebtScreen() {
 
   if (debt.data === null) return null;
 
-  const { summary, chains } = debt.data;
+  const { summary, chains, basePricesUsd } = debt.data;
   const threshold = summary.hfWarningThreshold;
   // Своя правка важнее ответа сервера: он мог быть прочитан до неё.
   // Пока настройки не пришли — дефолт стратегии, а не «—»: цель нужна
@@ -270,6 +270,10 @@ export function DebtScreen() {
             collateralUsd={riskChain?.totalCollateralUsd ?? totalCollateralUsd}
             threshold={threshold}
             multiChain={chainsWithDebt.length > 1}
+            // Состав залога — той же сети, по которой считается сценарий:
+            // цены подписывают её падение, а не портфель целиком
+            collateralCategories={riskChain?.collateralCategories ?? []}
+            basePricesUsd={basePricesUsd}
           />
           <BorrowedWork
             positions={positions}

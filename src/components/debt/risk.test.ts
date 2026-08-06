@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   SAFETY_DANGER_PERCENT,
   SAFETY_LIQUIDATION_PERCENT,
+  basePriceColumns,
+  dropScenarios,
   ltvRebalance,
+  priceAtDrop,
   safetyPosition,
 } from "./risk";
 
@@ -36,6 +39,61 @@ describe("ltvRebalance", () => {
     const r = ltvRebalance(100_000, 0, 50);
     expect(r?.action).toBe("borrow");
     expect(r?.deltaUsd).toBeCloseTo(50_000, 6);
+  });
+});
+
+describe("basePriceColumns", () => {
+  const PRICES = { btc: 95_000, eth: 3_200 };
+
+  it("показывает только те активы, которыми залог обеспечен", () => {
+    expect(basePriceColumns(["btc"], PRICES).map((c) => c.category)).toEqual([
+      "btc",
+    ]);
+    expect(
+      basePriceColumns(["eth", "btc"], PRICES).map((c) => c.label),
+    ).toEqual(["ETH", "BTC"]);
+  });
+
+  it("залог не читался — оба базовых актива, а не пустая таблица", () => {
+    expect(basePriceColumns([], PRICES).map((c) => c.category)).toEqual([
+      "btc",
+      "eth",
+    ]);
+  });
+
+  it("нет цены — нет колонки: столбец прочерков ничего не сообщает", () => {
+    expect(
+      basePriceColumns(["btc", "eth"], { btc: 95_000, eth: null }).map(
+        (c) => c.category,
+      ),
+    ).toEqual(["btc"]);
+    expect(basePriceColumns([], { btc: null, eth: null })).toEqual([]);
+    // Мусор из кэша (ноль или NaN) — тоже не цена
+    expect(basePriceColumns([], { btc: 0, eth: Number.NaN })).toEqual([]);
+  });
+});
+
+describe("priceAtDrop", () => {
+  it("ступень падения залога читается ценой актива", () => {
+    expect(priceAtDrop(95_000, 0.3)).toBeCloseTo(66_500, 6);
+    expect(priceAtDrop(3_200, 0)).toBeCloseTo(3_200, 6);
+  });
+
+  it("цена ликвидации согласована со строкой таблицы", () => {
+    // HF 1,74 -> ликвидация при падении на 1 − 1/1,74 ≈ 42,5%
+    const rows = dropScenarios({
+      healthFactor: 1.74,
+      collateralUsd: 100_000,
+      threshold: 1.5,
+    });
+    const liq = rows.find((r) => r.liquidation)!;
+    // Залог и цена падают на одну и ту же долю: доля залога, приходящаяся
+    // на актив, при синхронном движении не меняется
+    expect(priceAtDrop(95_000, liq.drop) / 95_000).toBeCloseTo(
+      liq.collateralUsd! / 100_000,
+      9,
+    );
+    expect(priceAtDrop(95_000, liq.drop)).toBeCloseTo(95_000 / 1.74, 6);
   });
 });
 

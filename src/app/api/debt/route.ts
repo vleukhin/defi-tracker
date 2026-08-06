@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { apiError, requireUser } from "@/lib/api/auth";
 import { createTimer } from "@/lib/api/timing";
-import { buildDebtResponse, type DebtPositionInput, type HealthRowInput } from "@/lib/api/debt";
+import {
+  buildDebtResponse,
+  type CollateralInput,
+  type DebtPositionInput,
+  type HealthRowInput,
+} from "@/lib/api/debt";
 import {
   DEFAULT_HF_WARNING_THRESHOLD,
   DEFAULT_TARGET_LTV_PCT,
 } from "@/lib/api/settings";
 import { AAVE_PROTOCOL } from "@/lib/chains/aave";
 import type { AaveDebtPositionPayload } from "@/lib/chains/aave-debt";
-import { getCoinPrices } from "@/lib/prices/coins";
+import { CATEGORY_COINGECKO_IDS, getCoinPrices } from "@/lib/prices/coins";
 
 /**
  * GET /api/debt — экран «Долг» (Фаза 4, S4.1/S4.3): по каждой сети — залог,
@@ -51,6 +56,7 @@ export async function GET() {
 
     const healthRows: HealthRowInput[] = [];
     const positions: DebtPositionInput[] = [];
+    const collateral: CollateralInput[] = [];
 
     if (walletIds.length > 0) {
       const { data: health, error: healthError } = await supabase
@@ -83,10 +89,24 @@ export async function GET() {
       if (positionsError) return apiError(500, positionsError.message);
       for (const row of positionRows ?? []) {
         const payload = row.payload as
-          | (Partial<AaveDebtPositionPayload> & { kind?: string })
+          | (Partial<AaveDebtPositionPayload> & {
+              kind?: string;
+              category?: string;
+            })
           | null;
-        // В protocol_positions лежат и залог, и долг — здесь только долг
-        if (payload?.kind !== "debt" || !payload.symbol) continue;
+        // В protocol_positions лежат и залог, и долг. Долг разбирается ниже,
+        // а из залога нужна одна вещь — чем он обеспечен: сценарии падения
+        // переводят его в цены базовых активов
+        if (payload?.kind !== "debt") {
+          if (payload?.category === "btc" || payload?.category === "eth") {
+            collateral.push({
+              chain: row.chain as string,
+              category: payload.category,
+            });
+          }
+          continue;
+        }
+        if (!payload.symbol) continue;
         positions.push({
           chain: row.chain as string,
           symbol: payload.symbol,
@@ -98,13 +118,17 @@ export async function GET() {
 
     mark("db");
 
-    // Оценка разбивки — только кэш цен: /api/debt обязан отвечать быстро
+    // Оценка разбивки — только кэш цен: /api/debt обязан отвечать быстро.
+    // Цены BTC и ETH берутся тем же запросом: сценарии падения залога
+    // подписаны ценами базовых активов, а лишнего похода в сеть это не стоит
     const priceIds = [
-      ...new Set(
-        positions
+      ...new Set([
+        ...positions
           .map((p) => p.coingeckoId)
           .filter((id): id is string => id !== null),
-      ),
+        CATEGORY_COINGECKO_IDS.btc,
+        CATEGORY_COINGECKO_IDS.eth,
+      ]),
     ];
     const prices = await getCoinPrices(priceIds, { fetchIfExpired: false });
     mark("prices");
@@ -117,7 +141,12 @@ export async function GET() {
         hasWallets: walletIds.length > 0,
         healthRows,
         positions,
+        collateral,
         pricesUsd,
+        basePricesUsd: {
+          btc: pricesUsd.get(CATEGORY_COINGECKO_IDS.btc) ?? null,
+          eth: pricesUsd.get(CATEGORY_COINGECKO_IDS.eth) ?? null,
+        },
         hfWarningThreshold,
         targetLtvPct,
       }),

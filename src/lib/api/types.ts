@@ -511,6 +511,12 @@ export interface DebtItemDto {
 }
 
 /**
+ * Базовый актив залога: стейблов в залоге стратегия не держит, поэтому
+ * это `PortfolioCategory` без стейблов, а не отдельный список символов.
+ */
+export type CollateralCategory = Exclude<PortfolioCategory, "stable">;
+
+/**
  * Долг по одной сети (S4.3): totals и HF — из оракула Aave
  * (getUserAccountData), разбивка — по v-токенам.
  */
@@ -523,6 +529,13 @@ export interface DebtChainDto {
   /** totalDebtUsd / totalCollateralUsd; null без данных или без залога. */
   utilization: number | null;
   items: DebtItemDto[];
+  /**
+   * Чем обеспечен залог сети — по кэшу залоговых строк protocol_positions.
+   * Нужен сценариям падения: они переводят падение залога в цены базовых
+   * активов, и колонку по активу, которого в залоге нет, показывать незачем.
+   * Пустой список = залог ещё не читался, а не «залога нет».
+   */
+  collateralCategories: CollateralCategory[];
   /** Момент последнего успешного чтения getUserAccountData. */
   checkedAt: string;
 }
@@ -556,6 +569,12 @@ export interface DebtSummaryDto {
 export interface DebtResponseDto {
   chains: DebtChainDto[];
   summary: DebtSummaryDto;
+  /**
+   * Цены базовых активов из того же кэша coin_prices — чтобы сценарии
+   * падения залога назывались ценой BTC и ETH, а не только процентом.
+   * null = цены в кэше нет; экран покажет прочерк, а не выдуманное число.
+   */
+  basePricesUsd: Record<CollateralCategory, number | null>;
 }
 
 // --- Фаза 5: размещение заемных средств ---
