@@ -7,7 +7,11 @@ import type {
   ZonesSummaryDto,
 } from "@/lib/api/types";
 import { CategoryAllocation, ZoneAllocation } from "./allocation-bar";
-import { type AssetsDelta, OverviewStrip } from "./overview-strip";
+import {
+  type AssetsDelta,
+  type CoinAmount,
+  OverviewStrip,
+} from "./overview-strip";
 import type { PortfolioView } from "./portfolio-tabs";
 
 /**
@@ -24,6 +28,7 @@ export function PortfolioHero({
   zones,
   debtSummary,
   delta,
+  coins,
 }: {
   view: PortfolioView;
   portfolio: PortfolioDto;
@@ -31,6 +36,8 @@ export function PortfolioHero({
   zones: ZonesSummaryDto | null;
   debtSummary: DebtSummaryDto | null;
   delta: AssetsDelta | null;
+  /** Количества BTC и ETH: главная метрика стратегии (docs/07 §4). */
+  coins: CoinAmount[];
 }) {
   return (
     <DcCard>
@@ -38,6 +45,7 @@ export function PortfolioHero({
         overview={portfolio.overview}
         debtSummary={debtSummary}
         delta={delta}
+        coins={coins}
       />
       {/* В режиме сигналов внизу стоит разрез по зонам: лента говорит на
           языке стратегии, и категории под ней были бы про другое */}

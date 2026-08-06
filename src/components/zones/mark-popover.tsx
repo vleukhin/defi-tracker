@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { zoneTextColor } from "@/components/dc/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HelpTip } from "@/components/dc/help-tip";
 import { Label } from "@/components/ui/label";
 import {
   Popover,
@@ -179,7 +180,9 @@ function MarkForm({
                   : undefined
               }
               className={cn(
-                "flex h-8 items-center justify-center rounded-control px-2 text-[12.5px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                // Единственный способ переназначить зону позиции — 32px
+                // под палец мало (§6)
+                "flex h-8 items-center justify-center rounded-control px-2 text-[12.5px] outline-none transition-colors duration-120 ease-out pointer-coarse:h-11 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
                 zone === o.value
                   ? "font-medium"
                   : "text-text-3 hover:bg-raised hover:text-text-1",
@@ -253,9 +256,15 @@ function AmountField({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id} className="t-label" title={hint}>
-        {label}
-      </Label>
+      {/* Пояснение живёт в «?», а не в title: на тач-экране title
+          не показывается никогда, а под ним здесь лежит объяснение точки
+          отсчёта — величины, от которой стратегия считает все уровни */}
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={id} className="t-label">
+          {label}
+        </Label>
+        {hint && <HelpTip>{hint}</HelpTip>}
+      </div>
       <Input
         id={id}
         value={value}

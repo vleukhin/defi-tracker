@@ -1,11 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import type { DebtSummaryDto } from "@/lib/api/types";
+import type { DebtResponseDto, DebtSummaryDto } from "@/lib/api/types";
 import { NBSP, tableNumber } from "@/lib/format";
+import { useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { DEBT_UNREAD_HINT, formatHf, hfTitle, hfStatus } from "./hf";
 import { hfTone } from "./risk";
+
+/**
+ * Пилюля HF в шапке приложения (дизайн-код §6).
+ *
+ * Живёт в layout, а не на экране: HF — единственный показатель, способный
+ * принудительно прервать стратегию, и следят за ним ежедневно. Пока пилюля
+ * стояла только в hero «Портфеля», на «Сделках», «Истории», «Кошельках»
+ * и «Целях» её не было вовсе, а на самом «Портфеле» она уезжала за первый
+ * же свайп.
+ *
+ * Читает кэш /api/debt, без похода в RPC — как подсказка в «Настройках».
+ * Шапка общая для всех страниц и при переходах не размонтируется, поэтому
+ * запрос уходит один раз на загрузку приложения.
+ */
+export function HfBadgeLive() {
+  const { data } = useApi<DebtResponseDto>("/api/debt");
+  return <HfBadge summary={data?.summary ?? null} />;
+}
 
 /**
  * Постоянный HF-индикатор в hero портфеля (S4.3): показатель, за которым
@@ -52,7 +71,9 @@ export function HfBadge({ summary }: { summary: DebtSummaryDto | null }) {
         style={{ background: color }}
       />
       <span className="font-mono text-[15px] leading-none">{value}</span>
-      <span className="text-[12px] leading-none opacity-75">
+      {/* На узких экранах в шапке остаётся только само число: порог там
+          соперничает за место с логотипом и кнопкой меню */}
+      <span className="text-[12px] leading-none opacity-75 max-[420px]:hidden">
         порог {tableNumber(summary.hfWarningThreshold, 2)}
       </span>
     </Pill>

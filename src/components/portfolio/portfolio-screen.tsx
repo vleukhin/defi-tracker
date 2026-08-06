@@ -6,6 +6,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DcCard } from "@/components/dc/card";
 import { FreshnessDot, MetaDot, PageHeader } from "@/components/dc/page-header";
+import {
+  periodChange,
+  quantitySeries,
+} from "@/components/history/quantity-series";
 import { useNowMs } from "@/components/dc/use-now";
 import { LogoMark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -14,6 +18,7 @@ import { ZonesScreen, type ZonesData } from "@/components/zones/zones-screen";
 import type {
   DebtResponseDto,
   PortfolioDto,
+  PortfolioRowDto,
   RefreshResponseDto,
   SignalAcksResponseDto,
   SnapshotDto,
@@ -34,7 +39,7 @@ import {
 } from "@/lib/signals/signals";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import type { AssetsDelta } from "./overview-strip";
+import type { AssetsDelta, CoinAmount } from "./overview-strip";
 import { PortfolioDashboard } from "./portfolio-dashboard";
 import { PortfolioHero } from "./portfolio-hero";
 import { PortfolioViewSwitch, usePortfolioView } from "./portfolio-tabs";
@@ -335,6 +340,7 @@ export function PortfolioScreen() {
               zones={zonesData?.zones ?? null}
               debtSummary={debtSummary}
               delta={assetsDelta(snapshots.data?.snapshots ?? [])}
+              coins={coinAmounts(data.rows, snapshots.data?.snapshots ?? [])}
             />
 
             {view === "signals" ? (
@@ -386,6 +392,28 @@ function assetsDelta(snapshots: SnapshotDto[]): AssetsDelta | null {
   const delta = periodDelta(snapshots, "assets");
   if (delta === null) return null;
   return { ...delta, label: ASSETS_DELTA_LABEL };
+}
+
+/**
+ * Количества BTC и ETH для hero — главная метрика стратегии (docs/07 §4).
+ *
+ * Стейблы отбрасываются по единице: их количество и есть доллары.
+ * Изменение берётся из готовой periodChange по тому же окну снепшотов,
+ * что и дельта активов, и остаётся null, пока истории меньше двух точек —
+ * ноль вместо «неизвестно» здесь читался бы как «ничего не изменилось».
+ */
+function coinAmounts(
+  rows: PortfolioRowDto[],
+  snapshots: SnapshotDto[],
+): CoinAmount[] {
+  return rows
+    .filter((row) => row.unit !== "USD" && row.amount !== null)
+    .map((row) => ({
+      key: row.category,
+      unit: row.unit,
+      amount: row.amount as number,
+      change: periodChange(quantitySeries(snapshots, row.category))?.abs ?? null,
+    }));
 }
 
 /** Скелетон держит места конечных элементов, крупные числа не подменяются. */

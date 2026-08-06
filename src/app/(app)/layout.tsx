@@ -1,4 +1,5 @@
 import { AppNav } from "@/components/app-nav";
+import { HfBadgeLive } from "@/components/debt/hf-badge";
 
 /**
  * Layout авторизованной части приложения.
@@ -14,7 +15,9 @@ export default function AppLayout({
 }>) {
   return (
     <div className="flex flex-1 flex-col">
-      <AppNav />
+      {/* Слот дизайн-кода §6: показатель, за которым следят ежедневно,
+          не должен появляться лишь тогда, когда уже поздно */}
+      <AppNav summary={<HfBadgeLive />} />
       <main className="page-shell flex flex-1 flex-col gap-4 px-4 py-6 sm:px-page">
         {children}
       </main>

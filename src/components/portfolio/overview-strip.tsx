@@ -5,7 +5,14 @@ import { HelpTip } from "@/components/dc/help-tip";
 import { DEBT_UNREAD_HINT, formatHf, formatHfThreshold } from "@/components/debt/hf";
 import { hfTone } from "@/components/debt/risk";
 import type { DebtSummaryDto, PortfolioOverviewDto } from "@/lib/api/types";
-import { NBSP, dcUsd, dcUsdSigned, tablePctSigned } from "@/lib/format";
+import {
+  NBSP,
+  dcUsd,
+  dcUsdSigned,
+  tableNumber,
+  tablePctSigned,
+  tableSigned,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,6 +34,8 @@ const NET_HINT =
   "Активы минус долг — сколько останется, если закрыть все займы.";
 const PROFIT_HINT =
   "Чистая стоимость минус внесённые собственные деньги. Заёмные средства и доход от них во «Внесено» не попадают.";
+const DEPOSITED_HINT =
+  "Сумма собственных денег, заведённых в портфель, по журналу депозитов. Заёмные сюда не попадают — иначе заём выглядел бы вложением.";
 
 /** Дельта «Активов» за период: считается там, где есть история снепшотов. */
 export interface AssetsDelta {
@@ -35,14 +44,68 @@ export interface AssetsDelta {
   label: string;
 }
 
+/**
+ * Количество монеты для строки под «Активами».
+ * `change` — изменение за окно снепшотов; null, если истории не хватает.
+ */
+export interface CoinAmount {
+  key: string;
+  unit: string;
+  amount: number;
+  change: number | null;
+}
+
+const COINS_HINT =
+  "Главная метрика стратегии — сколько монет, а не сколько долларов: на цену повлиять нельзя, на количество можно. Изменение считается за то же окно, что и дельта активов.";
+
+/**
+ * Количества BTC и ETH — строка под «Активами».
+ *
+ * Стоит здесь, а не в разрезе «Активы», намеренно: разрезов три, режим по
+ * умолчанию — «Зоны», и в нём количеств не было вовсе. Стратегия (docs/07
+ * §4) называет их главной метрикой, поэтому они не должны зависеть от
+ * выбранной проекции и не должны уезжать за сгиб экрана.
+ *
+ * Стейблы сюда не попадают: их «количество» и есть доллары, а вопрос
+ * «стало ли монет больше» к ним не относится.
+ */
+function CoinAmounts({ coins }: { coins: CoinAmount[] }) {
+  if (coins.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {coins.map((coin) => (
+        <span key={coin.key} className="flex items-baseline gap-1.5">
+          <span className="font-mono text-[15px] text-text-1">
+            {tableNumber(coin.amount, 4)}
+          </span>
+          <span className="text-[12px] text-text-3">{coin.unit}</span>
+          {coin.change !== null && coin.change !== 0 && (
+            <span
+              className={cn(
+                "font-mono text-[12px]",
+                coin.change > 0 ? "text-profit" : "text-loss",
+              )}
+            >
+              {tableSigned(coin.change, 4)}
+            </span>
+          )}
+        </span>
+      ))}
+      <HelpTip>{COINS_HINT}</HelpTip>
+    </div>
+  );
+}
+
 export function OverviewStrip({
   overview,
   debtSummary,
   delta,
+  coins,
 }: {
   overview: PortfolioOverviewDto;
   debtSummary: DebtSummaryDto | null;
   delta: AssetsDelta | null;
+  coins: CoinAmount[];
 }) {
   return (
     <div className="flex flex-wrap items-start gap-x-10 gap-y-6 px-5 pt-[22px] pb-5 sm:px-6">
@@ -62,6 +125,15 @@ export function OverviewStrip({
         >
           {overview.assetsUsd === null ? "—" : dcUsd(overview.assetsUsd)}
         </p>
+        {/* Прочерк без объяснения — это вопрос без ответа. title его давал
+            только под мышью, поэтому причина вынесена в «?» */}
+        {overview.assetsUsd === null && (
+          <p className="t-meta flex items-center gap-1.5 text-text-3">
+            величина неизвестна
+            <HelpTip>{ASSETS_UNKNOWN_HINT}</HelpTip>
+          </p>
+        )}
+        <CoinAmounts coins={coins} />
         {delta && (
           <p className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
             <span
@@ -95,7 +167,11 @@ export function OverviewStrip({
           hint={NET_HINT}
           value={overview.netUsd === null ? null : dcUsd(overview.netUsd)}
         />
-        <HeroMetric label="Внесено" value={dcUsd(overview.depositedUsd)} />
+        <HeroMetric
+          label="Внесено"
+          hint={DEPOSITED_HINT}
+          value={dcUsd(overview.depositedUsd)}
+        />
         <HeroMetric
           label="Прибыль"
           hint={PROFIT_HINT}
@@ -145,7 +221,12 @@ function HeroMetric({
         )}
         title={value === null ? DEBT_UNREAD_HINT : undefined}
       >
-        {value ?? "—"}
+        {value ?? (
+          <span className="inline-flex items-center gap-1.5">
+            —
+            <HelpTip>{DEBT_UNREAD_HINT}</HelpTip>
+          </span>
+        )}
       </dd>
     </div>
   );
@@ -162,10 +243,11 @@ function HealthFactor({ summary }: { summary: DebtSummaryDto | null }) {
       <div className="flex flex-col gap-1.5">
         <span className="t-label">Health Factor</span>
         <span
-          className="flex h-[28px] items-center rounded-control bg-chip px-2.5 font-mono text-[15px] text-text-3"
+          className="flex h-[28px] items-center gap-1.5 rounded-control bg-chip px-2.5 font-mono text-[15px] text-text-3"
           title={DEBT_UNREAD_HINT}
         >
           —
+          <HelpTip>{DEBT_UNREAD_HINT}</HelpTip>
         </span>
       </div>
     );
