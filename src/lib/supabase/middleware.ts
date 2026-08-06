@@ -30,8 +30,31 @@ export function isPublicApi(pathname: string) {
   );
 }
 
+/**
+ * Метаданные оболочки приложения: манифест и иконка домашнего экрана.
+ *
+ * Их запрашивает сам браузер, а не страница: за манифестом он ходит без
+ * куки, iOS тянет apple-touch-icon в момент добавления на домашний экран.
+ * Под общей защитой они отдавали 307 на /login — то есть standalone-режим
+ * и иконка молча не работали, ровно как cron-роуты до этого.
+ *
+ * Пользовательских данных в них нет: и манифест, и иконка собираются из
+ * констант (src/app/manifest.ts, src/app/apple-icon.tsx).
+ *
+ * `/icon.svg` в списке не нужен — файлы с расширением изображения
+ * отсеивает matcher в proxy.ts, и до прокси они не доходят вовсе.
+ */
+const PUBLIC_SHELL_PATHS = ["/manifest.webmanifest", "/apple-icon"];
+
 function isPublicPath(pathname: string) {
-  return PUBLIC_PATHS.some(
+  return [...PUBLIC_PATHS, ...PUBLIC_SHELL_PATHS].some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}
+
+/** Экспорт ради теста: правило «браузер ходит сюда без куки» проверяемо. */
+export function isPublicShellPath(pathname: string) {
+  return PUBLIC_SHELL_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 }

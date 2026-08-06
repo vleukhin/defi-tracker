@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPublicApi } from "./middleware";
+import { isPublicApi, isPublicShellPath } from "./middleware";
 
 /**
  * Джобы Vercel Cron ходят без куки. Если прокси их не пропускает, они
@@ -38,5 +38,24 @@ describe("isPublicApi", () => {
     // Префикс со слэшем: /api/cronjobs — это не /api/cron/
     expect(isPublicApi("/api/cronjobs")).toBe(false);
     expect(isPublicApi("/api/healthcheck")).toBe(false);
+  });
+});
+
+describe("isPublicShellPath", () => {
+  it("манифест и иконка домашнего экрана открыты", () => {
+    // Регрессия: за ними браузер ходит без куки, и под защитой они
+    // отдавали 307 на /login — standalone и иконка молча не работали
+    expect(isPublicShellPath("/manifest.webmanifest")).toBe(true);
+    expect(isPublicShellPath("/apple-icon")).toBe(true);
+  });
+
+  it("нумерованные иконки Next.js тоже открыты", () => {
+    expect(isPublicShellPath("/apple-icon/1")).toBe(true);
+  });
+
+  it("похожие пути приложения не открываются заодно", () => {
+    expect(isPublicShellPath("/apple-iconography")).toBe(false);
+    expect(isPublicShellPath("/")).toBe(false);
+    expect(isPublicShellPath("/settings")).toBe(false);
   });
 });
