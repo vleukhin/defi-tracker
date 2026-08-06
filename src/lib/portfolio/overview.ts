@@ -59,6 +59,42 @@ export interface OverviewInput {
   freeBorrowedUsd?: number;
 }
 
+/*
+ * Три шага формулы вынесены наружу, чтобы история Прибыли (profit-series.ts)
+ * считала ее ТЕМ ЖЕ кодом, а не своей копией: разойдясь, график и число
+ * в шапке противоречили бы друг другу, и понять, кто из них врет, было бы
+ * нечем. Разница входов только в свободных заемных: здесь их отсутствие —
+ * это ноль (баланс без цены дает warning в строке категории, сеть можно
+ * перечитать сейчас), в истории — null, потому что прошлую дату перечитать
+ * нельзя.
+ */
+
+/** Активы = портфель + размещенные позиции + свободные заемные (Фазы 5 и 7). */
+export function assetsUsdOf(
+  portfolioUsd: number,
+  positionsUsd: number | null,
+  freeBorrowedUsd: number | null,
+): number | null {
+  if (positionsUsd === null || freeBorrowedUsd === null) return null;
+  return portfolioUsd + positionsUsd + freeBorrowedUsd;
+}
+
+/** Чистая = Активы − Долг. */
+export function netUsdOf(
+  assetsUsd: number | null,
+  debtUsd: number | null,
+): number | null {
+  return assetsUsd === null || debtUsd === null ? null : assetsUsd - debtUsd;
+}
+
+/** Прибыль = Чистая − Внесено. */
+export function profitUsdOf(
+  netUsd: number | null,
+  depositedUsd: number,
+): number | null {
+  return netUsd === null ? null : netUsd - depositedUsd;
+}
+
 export function computeOverview(input: OverviewInput): PortfolioOverviewDto {
   let debtUsd: number | null;
   if (!input.hasWallets) {
@@ -75,14 +111,14 @@ export function computeOverview(input: OverviewInput): PortfolioOverviewDto {
   // портфелем нельзя: заемные деньги, ушедшие в пул, из Активов выпадали бы,
   // а Долг вычитался целиком — Чистая занижалась ровно на эту сумму.
   const freeBorrowedUsd = input.freeBorrowedUsd ?? 0;
-  const assetsUsd =
-    input.positionsUsd === null
-      ? null
-      : input.portfolioUsd + input.positionsUsd + freeBorrowedUsd;
+  const assetsUsd = assetsUsdOf(
+    input.portfolioUsd,
+    input.positionsUsd,
+    freeBorrowedUsd,
+  );
 
-  const netUsd =
-    assetsUsd === null || debtUsd === null ? null : assetsUsd - debtUsd;
-  const profitUsd = netUsd === null ? null : netUsd - input.depositedUsd;
+  const netUsd = netUsdOf(assetsUsd, debtUsd);
+  const profitUsd = profitUsdOf(netUsd, input.depositedUsd);
 
   return {
     assetsUsd,

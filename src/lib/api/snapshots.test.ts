@@ -98,6 +98,15 @@ describe("mapSnapshotRow", () => {
     expect(dto.items[0].valueUsd).toBe(0);
   });
 
+  it("снепшот без колонки free_borrowed_usd отдает null, а не ноль", () => {
+    // Ноль означал бы «заемных на кошельке не было»; точка о них не знала,
+    // и Прибыль по ней посчитать нельзя — но врать про ноль нельзя тем более
+    expect(mapSnapshotRow(row).freeBorrowedUsd).toBeNull();
+    expect(mapSnapshotRow({ ...row, free_borrowed_usd: "20000" }).freeBorrowedUsd).toBe(
+      20_000,
+    );
+  });
+
   it("снепшот без состава не роняет маппинг", () => {
     expect(mapSnapshotRow({ ...row, snapshot_items: null }).items).toEqual([]);
   });

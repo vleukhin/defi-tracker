@@ -62,6 +62,16 @@ export interface SnapshotSource {
   /** Статус чтения долга/HF по сетям (source = aave_v3_debt). */
   debtChains?: ChainStatusRow[];
   /**
+   * Залог по оракулу Aave — вторая половина LTV точки. Тот же базис, что
+   * у debtUsd: делить долг оракула на залог по CoinGecko нельзя.
+   */
+  collateralUsd?: number | null;
+  /**
+   * Минимальный HF по (кошелек, сеть). null двузначен и различается по
+   * debtUsd: 0 — долга нет («∞»), null — здоровье не читалось.
+   */
+  healthFactor?: number | null;
+  /**
    * Вклад размещенных позиций в Активы на момент съема (Фаза 5).
    * Пишется по той же причине, что и debtUsd: стоимость GM-пула или LP
    * на прошлую дату задним числом не восстановить — ни оракул GMX, ни тик
@@ -72,7 +82,9 @@ export interface SnapshotSource {
   freeChains?: ChainStatusRow[];
   /**
    * Свободные ЗАЕМНЫЕ средства на момент съема. В категории не входят,
-   * поэтому в сумму items их не найти, а Активы точки без них не сходятся.
+   * поэтому в сумму items их не найти, а Активы точки без них не сходятся:
+   * Долг вычитается целиком, и Чистая занижалась бы ровно на занятую,
+   * но еще не размещенную сумму (та же ошибка, что закрывала Фаза 5).
    */
   freeBorrowedUsd?: number;
 }
@@ -125,6 +137,10 @@ export interface SnapshotBuild {
   totalUsd: number;
   /** Долг на момент съема; null = неизвестен (невосстановим задним числом). */
   debtUsd: number | null;
+  /** Залог оракула Aave; null = здоровье не читалось (не «залога нет»). */
+  collateralUsd: number | null;
+  /** Минимальный HF; null = долга нет или не читалось (различает debtUsd). */
+  healthFactor: number | null;
   /** Размещенные позиции на момент съема; null = стоимость неизвестна. */
   positionsUsd: number | null;
   /**
@@ -133,6 +149,12 @@ export interface SnapshotBuild {
    * бы «свободных не было» и сделал бы ступеньку в total_usd необъяснимой.
    */
   freeUsd: number | null;
+  /**
+   * Свободные ЗАЕМНЫЕ средства на момент съема — третье слагаемое Активов
+   * точки. Развилка та же, что у freeUsd: кошельков нет — честный ноль;
+   * кошельки есть, а балансы не читались — null.
+   */
+  freeBorrowedUsd: number | null;
   isPartial: boolean;
   /** Человекочитаемые причины частичности — в лог cron'а и в ответ API. */
   partialReasons: string[];
@@ -253,17 +275,26 @@ export function buildSnapshotRows(portfolio: SnapshotSource): SnapshotBuild {
     partialReasons.push("стоимость размещенных позиций неизвестна");
   }
 
+  // Балансы ни разу не читались — null, а не ноль (см. миграцию). Ровно
+  // та же развилка, что у долга в computeOverview: кошельков нет — свободных
+  // средств честно ноль; кошельки есть, а чтения не было — неизвестно.
+  // Условие общее на оба поля намеренно: свои и заемные читаются одним
+  // проходом, и разъехаться они могут только по ошибке
+  const freeUnread =
+    (portfolio.hasWallets ?? false) && (portfolio.freeChains ?? []).length === 0;
+
   return {
     totalUsd: portfolio.totalUsd,
     debtUsd: portfolio.debtUsd ?? null,
+    // Залог и HF частичности НЕ добавляют: их неполнота — это ровно та же
+    // неполнота чтения долга, которая уже разобрана выше по debtChains
+    collateralUsd: portfolio.collateralUsd ?? null,
+    healthFactor: portfolio.healthFactor ?? null,
     positionsUsd: portfolio.positionsUsd ?? null,
-    // Балансы ни разу не читались — null, а не ноль (см. миграцию). Ровно
-    // та же развилка, что у долга в computeOverview: кошельков нет — свободных
-    // средств честно ноль; кошельки есть, а чтения не было — неизвестно
-    freeUsd:
-      portfolio.hasWallets && (portfolio.freeChains ?? []).length === 0
-        ? null
-        : items.reduce((sum, i) => sum + i.freeUsd, 0),
+    freeUsd: freeUnread
+      ? null
+      : items.reduce((sum, i) => sum + i.freeUsd, 0),
+    freeBorrowedUsd: freeUnread ? null : (portfolio.freeBorrowedUsd ?? 0),
     isPartial: partialReasons.length > 0,
     partialReasons,
     items,
@@ -299,8 +330,11 @@ interface SnapshotRow {
   taken_at: string;
   total_usd: number | string;
   debt_usd: number | string | null;
+  collateral_usd: number | string | null;
+  health_factor: number | string | null;
   positions_usd: number | string | null;
   free_usd: number | string | null;
+  free_borrowed_usd: number | string | null;
   is_partial: boolean;
 }
 
@@ -357,6 +391,9 @@ export async function createSnapshot(
     hasWallets: portfolio.wallets.length > 0,
     // Долг из кэша aave_account_health (Aave-оракул); null = не читался
     debtUsd: portfolio.overview.debtUsd,
+    // Залог и HF из тех же строк: история LTV и HF на экране «Долг»
+    collateralUsd: portfolio.debtHealth.collateralUsd,
+    healthFactor: portfolio.debtHealth.minHealthFactor,
     // Размещенные позиции (Фаза 5) — вторая половина Активов
     positionsUsd: portfolio.overview.positionsUsd,
     // Свободные средства (Фаза 7): свой контур чтения — свой статус сетей
@@ -373,14 +410,19 @@ export async function createSnapshot(
         taken_at: takenAt,
         total_usd: build.totalUsd,
         debt_usd: build.debtUsd,
+        collateral_usd: build.collateralUsd,
+        health_factor: build.healthFactor,
         positions_usd: build.positionsUsd,
         free_usd: build.freeUsd,
+        free_borrowed_usd: build.freeBorrowedUsd,
         is_partial: build.isPartial,
       },
       { onConflict: "user_id,taken_on" },
     )
+    // Строка select'а — один литерал: разбитую конкатенацией supabase-js
+    // не разбирает и выводит тип строки как ошибку
     .select(
-      "id, taken_on, taken_at, total_usd, debt_usd, positions_usd, free_usd, is_partial",
+      "id, taken_on, taken_at, total_usd, debt_usd, collateral_usd, health_factor, positions_usd, free_usd, free_borrowed_usd, is_partial",
     )
     .single();
   if (snapshotError) throw new Error(`snapshots upsert: ${snapshotError.message}`);
@@ -422,9 +464,19 @@ export async function createSnapshot(
       takenAt: snapshot.taken_at,
       totalUsd: Number(snapshot.total_usd),
       debtUsd: snapshot.debt_usd === null ? null : Number(snapshot.debt_usd),
+      collateralUsd:
+        snapshot.collateral_usd === null
+          ? null
+          : Number(snapshot.collateral_usd),
+      healthFactor:
+        snapshot.health_factor === null ? null : Number(snapshot.health_factor),
       positionsUsd:
         snapshot.positions_usd === null ? null : Number(snapshot.positions_usd),
       freeUsd: snapshot.free_usd === null ? null : Number(snapshot.free_usd),
+      freeBorrowedUsd:
+        snapshot.free_borrowed_usd === null
+          ? null
+          : Number(snapshot.free_borrowed_usd),
       isPartial: snapshot.is_partial,
       items,
     },
