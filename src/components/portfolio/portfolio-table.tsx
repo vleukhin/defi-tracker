@@ -2,7 +2,7 @@
 
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { DcCard } from "@/components/dc/card";
 import { HelpTip } from "@/components/dc/help-tip";
 import { Dash, DcTable, Td, Th, TotalRow, Tr } from "@/components/dc/table";
@@ -95,7 +95,38 @@ export function PortfolioTable({
       : pnlRows.reduce((sum, r) => sum + (r.ledger.unrealizedPnlUsd ?? 0), 0);
 
   return (
-    <DcCard>
+    <>
+      {/* До sm таблица разваливается в карточки. Обычно горизонтальный
+          скролл здесь защищают сравнением строк между собой — но строк
+          ровно три, а за краем 980-пиксельной таблицы на телефоне прятались
+          «Отклон.» и «К ребаланс.», то есть ровно ответ на «что делать». */}
+      <div className="flex flex-col gap-3 sm:hidden">
+        {rows.map((row) => (
+          <RowCard
+            key={row.category}
+            row={row}
+            expanded={open === row.category}
+            onToggle={() => setOpen(open === row.category ? null : row.category)}
+          />
+        ))}
+        <DcCard className="bg-sunken">
+          <div className="flex items-baseline justify-between gap-3 px-card py-3">
+            <span className="t-label">Итого</span>
+            <span className="flex items-baseline gap-3">
+              {totalPnl !== null && (
+                <span className={cn("font-mono text-[13px]", pnlClass(totalPnl))}>
+                  {dcUsdSigned(totalPnl)}
+                </span>
+              )}
+              <span className="font-medium font-mono text-[15px]">
+                {dcUsd(totalUsd)}
+              </span>
+            </span>
+          </div>
+        </DcCard>
+      </div>
+
+      <DcCard className="max-sm:hidden">
       <DcTable minWidth={980}>
         <thead>
           <tr>
@@ -274,6 +305,176 @@ export function PortfolioTable({
           </TotalRow>
         </tfoot>
       </DcTable>
+      </DcCard>
+    </>
+  );
+}
+
+/** Подпись → значение внутри карточки категории. */
+function Pair({
+  label,
+  value,
+  hint,
+  tone,
+  mono = true,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1.5">
+        <span className="t-label truncate">{label}</span>
+        {hint && <HelpTip>{hint}</HelpTip>}
+      </dt>
+      <dd className={cn("mt-1 truncate text-[13.5px]", mono && "font-mono", tone)}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Категория карточкой — раскладка для телефона.
+ *
+ * Порядок сознательно не повторяет колонки таблицы: сначала количество
+ * (главная метрика стратегии, docs/07 §4), затем доля против цели, и только
+ * потом деньги. «К ребаланс.» вынесено отдельной строкой во всю ширину и
+ * подписано действием словом: в таблице знак числа объяснял только title,
+ * которого на тач-экране не существует.
+ */
+function RowCard({
+  row,
+  expanded,
+  onToggle,
+}: {
+  row: PortfolioRowDto;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const beyond =
+    row.percentDiff !== null &&
+    Math.abs(row.percentDiff) > DEVIATION_THRESHOLD_PP;
+  const pnl = row.ledger.unrealizedPnlUsd;
+  const toBalance = row.amountToBalance;
+
+  return (
+    <DcCard>
+      <div className="flex flex-col gap-3.5 px-card py-3.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-2 font-medium text-[14px]">
+            <CategoryDot category={row.category} size={7} />
+            <span className="truncate">{row.label}</span>
+          </span>
+          <span className="shrink-0 font-mono text-[15px]">
+            {dcUsd(row.amountUsd)}
+          </span>
+        </div>
+
+        <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-[13px] text-text-2">
+          {row.amount === null ? (
+            <span className="font-sans text-text-3">нет цены</span>
+          ) : (
+            <span className="text-text-1">
+              {tableNumber(row.amount, amountDecimals(row.unit))}
+              <span className="ml-1 font-sans text-[12px] text-text-3">
+                {row.unit}
+              </span>
+            </span>
+          )}
+          {row.price !== null && (
+            <span className="text-text-3">
+              × {tableUsd(row.price, usdDecimals(row.price))}
+            </span>
+          )}
+          {row.priceStale && (
+            <span className="inline-flex items-center gap-1 font-sans text-[12px] text-warn">
+              <TriangleAlert aria-hidden="true" className="size-3" />
+              {STALE_PRICE_HINT}
+            </span>
+          )}
+        </p>
+
+        <dl className="grid grid-cols-3 gap-x-3 gap-y-3">
+          <Pair label="Доля" value={tablePct(row.percent)} />
+          <Pair
+            label="Цель"
+            value={
+              row.targetPercent === null ? <Dash /> : tablePct(row.targetPercent)
+            }
+          />
+          <Pair
+            label="Отклон."
+            tone={beyond ? "font-medium text-warn" : undefined}
+            value={
+              row.percentDiff === null ? (
+                <Dash />
+              ) : (
+                tablePctSigned(row.percentDiff)
+              )
+            }
+          />
+          <Pair
+            label="Средняя"
+            value={
+              row.ledger.avgPriceUsd === null ? (
+                <Dash />
+              ) : (
+                tableUsd(
+                  row.ledger.avgPriceUsd,
+                  usdDecimals(row.ledger.avgPriceUsd),
+                )
+              )
+            }
+          />
+          <Pair
+            label="P/L"
+            tone={pnl === null ? undefined : pnlClass(pnl)}
+            value={pnl === null ? <Dash /> : dcUsdSigned(pnl)}
+          />
+          {row.ledger.unrealizedPnlPct !== null && (
+            <Pair
+              label="P/L, %"
+              tone={pnl === null ? undefined : pnlClass(pnl)}
+              value={tablePctSigned(row.ledger.unrealizedPnlPct, 1)}
+            />
+          )}
+        </dl>
+
+        {toBalance !== null && toBalance !== 0 && (
+          <p className="flex items-center gap-1.5 rounded-block bg-sunken px-3 py-2 text-[13px]">
+            <span className="text-text-2">{balanceHint(toBalance, row.unit)}</span>
+            <HelpTip>{REBALANCE_HINT}</HelpTip>
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="-mx-1 flex items-center gap-1.5 self-start rounded-control px-1 text-[12.5px] text-link outline-none pointer-coarse:min-h-11 focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span aria-hidden className="text-[11px]">
+            {expanded ? "▾" : "▸"}
+          </span>
+          Состав категории
+        </button>
+      </div>
+
+      {hasWarnings(row) && (
+        <div className="border-line border-t bg-sunken px-card py-2">
+          <RowWarnings row={row} />
+        </div>
+      )}
+
+      {expanded && (
+        <div className="border-line border-t bg-sunken px-card py-3">
+          <RowDetail row={row} />
+        </div>
+      )}
     </DcCard>
   );
 }

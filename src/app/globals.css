@@ -288,6 +288,37 @@
     max-width: var(--page-max);
     margin-inline: auto;
   }
+
+  /* Горизонтальная прокрутка таблицы с честным признаком края.
+     На телефоне полоса прокрутки скрыта, и таблица шириной 860–980px
+     при рабочих ~343px читалась как просто обрезанная.
+
+     Четыре слоя: две «крышки» цветом карточки едут вместе с содержимым
+     (attachment: local), две тени приклеены к краям контейнера
+     (attachment: scroll). Пока прокручивать некуда, крышка стоит ровно
+     на тени и гасит её — признак появляется сам и только по делу,
+     без единой строки JS. */
+  .dc-scroll-x {
+    overflow-x: auto;
+    background-color: var(--bg-surface);
+    background-image:
+      linear-gradient(to right, var(--bg-surface) 60%, transparent),
+      linear-gradient(to left, var(--bg-surface) 60%, transparent),
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--bg-canvas) 60%, transparent),
+        transparent
+      ),
+      linear-gradient(
+        to left,
+        color-mix(in srgb, var(--bg-canvas) 60%, transparent),
+        transparent
+      );
+    background-position: left center, right center, left center, right center;
+    background-size: 24px 100%, 24px 100%, 16px 100%, 16px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
 }
 
 /* ---------------------------------------------------------------------------

@@ -262,7 +262,10 @@ export function PortfolioScreen() {
         ) : undefined
       }
       action={
-        <div className="flex items-center gap-2">
+        // flex-wrap: на 320px кнопка обновления и три сегмента вместе
+        // перебирают ширину, и переключатель уходит на свою строку —
+        // иначе PageHeader уносил весь блок целиком и всё равно не помогал
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             variant="ghost"
             size="icon"
