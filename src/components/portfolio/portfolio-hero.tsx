@@ -29,6 +29,7 @@ export function PortfolioHero({
   debtSummary,
   delta,
   coins,
+  staleNote,
 }: {
   view: PortfolioView;
   portfolio: PortfolioDto;
@@ -38,6 +39,8 @@ export function PortfolioHero({
   delta: AssetsDelta | null;
   /** Количества BTC и ETH: главная метрика стратегии (docs/07 §4). */
   coins: CoinAmount[];
+  /** «цены 14 ч назад», когда цены устарели; иначе null. */
+  staleNote: string | null;
 }) {
   return (
     <DcCard>
@@ -46,6 +49,7 @@ export function PortfolioHero({
         debtSummary={debtSummary}
         delta={delta}
         coins={coins}
+        staleNote={staleNote}
       />
       {/* В режиме сигналов внизу стоит разрез по зонам: лента говорит на
           языке стратегии, и категории под ней были бы про другое */}

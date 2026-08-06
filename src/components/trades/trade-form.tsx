@@ -11,10 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type {
   PortfolioCategory,
+  PortfolioDto,
   TradeDto,
   TradeResponseDto,
 } from "@/lib/api/types";
-import { ApiError, apiFetch } from "@/lib/use-api";
+import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { CATEGORY_LABEL, CATEGORY_UNIT, TRADE_CATEGORIES } from "./categories";
 import { DeleteTradeDialog } from "./delete-trade-dialog";
@@ -65,12 +66,15 @@ function Field({
   label,
   htmlFor,
   hint,
+  action,
   children,
   className,
 }: {
   label: string;
   htmlFor?: string;
   hint?: React.ReactNode;
+  /** Действие в строке подписи: подстановка значения, сброс. */
+  action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -86,6 +90,7 @@ function Field({
           </label>
         )}
         {hint && <HelpTip>{hint}</HelpTip>}
+        {action && <span className="ml-auto">{action}</span>}
       </div>
       {children}
     </div>
@@ -149,6 +154,17 @@ export function TradeForm({
   }, []);
 
   const unit = CATEGORY_UNIT[category];
+
+  /*
+   * Текущая цена категории для чипа «по текущей» под полем цены.
+   *
+   * Приложение эту цену уже знает, а владелец набирал «60000» вручную с
+   * мобильной клавиатуры. Запрос уходит только когда форма раскрыта:
+   * Collapse не монтирует закрытую форму (см. collapse.tsx).
+   */
+  const portfolio = useApi<PortfolioDto>("/api/portfolio");
+  const marketPrice =
+    portfolio.data?.rows.find((r) => r.category === category)?.price ?? null;
   // Производное поле подписано «рассчитано»: пользователь должен видеть,
   // какое из двух чисел он ввёл, а какое посчитала форма
   const derivedTotal = priceSource === "price" && total !== "";
@@ -328,7 +344,22 @@ export function TradeForm({
             />
           </Field>
 
-          <Field label="Цена за единицу, $" htmlFor="trade-price">
+          <Field
+            label="Цена за единицу, $"
+            htmlFor="trade-price"
+            action={
+              // Ноль ценой не бывает, а стейблам подстановка не нужна
+              marketPrice !== null && marketPrice > 0 && unit !== "USD" ? (
+                <button
+                  type="button"
+                  onClick={() => syncFromPrice(toInput(marketPrice))}
+                  className="rounded-pill text-[12px] text-link underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  по текущей
+                </button>
+              ) : undefined
+            }
+          >
             <CalculatedField calculated={derivedPrice}>
               <Input
                 id="trade-price"

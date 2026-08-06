@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { StatusChip } from "@/components/dc/chip";
 import { HelpTip } from "@/components/dc/help-tip";
 import { DEBT_UNREAD_HINT, formatHf, formatHfThreshold } from "@/components/debt/hf";
 import { hfTone } from "@/components/debt/risk";
@@ -101,18 +102,28 @@ export function OverviewStrip({
   debtSummary,
   delta,
   coins,
+  staleNote,
 }: {
   overview: PortfolioOverviewDto;
   debtSummary: DebtSummaryDto | null;
   delta: AssetsDelta | null;
   coins: CoinAmount[];
+  /** «цены 14 ч назад» — если цены устарели; null, когда всё свежо. */
+  staleNote: string | null;
 }) {
   return (
     <div className="flex flex-wrap items-start gap-x-10 gap-y-6 px-5 pt-[22px] pb-5 sm:px-6">
       <div className="flex min-w-[230px] flex-col gap-1.5">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="t-label">Активы</span>
           <HelpTip>{ASSETS_HINT}</HelpTip>
+          {/* Устаревшие цены объявлены рядом с самим числом, а не только
+              точкой в мета-строке заголовка: там это 12,5px самым бледным
+              цветом экрана, и решение принималось по числам, которые уже
+              не описывают рынок (docs/07 §7) */}
+          {staleNote !== null && (
+            <StatusChip tone="warn">{staleNote}</StatusChip>
+          )}
         </div>
         {/* До sm число набирается ролью 34px: 42px Mono на 360px съедают
             288px доступной ширины, и семизначная сумма упирается в край */}

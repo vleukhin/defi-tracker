@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DcCard } from "@/components/dc/card";
 import { FreshnessDot, MetaDot, PageHeader } from "@/components/dc/page-header";
+import { PullToRefresh } from "@/components/dc/pull-to-refresh";
 import {
   periodChange,
   quantitySeries,
@@ -298,6 +299,7 @@ export function PortfolioScreen() {
 
   return (
     <TooltipProvider delayDuration={120}>
+      <PullToRefresh onRefresh={() => void doRefresh()} refreshing={refreshing}>
       <div className="flex flex-col gap-4">
         {header}
 
@@ -341,6 +343,11 @@ export function PortfolioScreen() {
               debtSummary={debtSummary}
               delta={assetsDelta(snapshots.data?.snapshots ?? [])}
               coins={coinAmounts(data.rows, snapshots.data?.snapshots ?? [])}
+              staleNote={
+                data.freshness.anyPriceStale
+                  ? `цены ${formatRelativeTime(data.freshness.oldestPriceAt) ?? "не читались"}`
+                  : null
+              }
             />
 
             {view === "signals" ? (
@@ -375,6 +382,7 @@ export function PortfolioScreen() {
           </>
         )}
       </div>
+      </PullToRefresh>
     </TooltipProvider>
   );
 }

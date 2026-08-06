@@ -8,11 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HelpTip } from "@/components/dc/help-tip";
 import { Label } from "@/components/ui/label";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { SheetPopover } from "@/components/dc/sheet-popover";
 import type { PositionDto, StrategyZone } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import {
@@ -46,8 +42,16 @@ export function MarkPopover({
   const [open, setOpen] = useState(false);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    /* Содержимое размонтируется при закрытии — черновик каждый раз
+       начинается с сохранённых значений, а не с прошлой правки.
+       На телефоне это нижний лист: форма из четырёх полей у верхнего
+       края спорила с экранной клавиатурой (см. dc/sheet-popover). */
+    <SheetPopover
+      open={open}
+      onOpenChange={setOpen}
+      title="Разметка позиции"
+      className="w-80"
+      trigger={
         <button
           type="button"
           disabled={busy}
@@ -59,18 +63,15 @@ export function MarkPopover({
         >
           <SlidersHorizontal className="size-3.5" />
         </button>
-      </PopoverTrigger>
-      {/* Содержимое размонтируется при закрытии — черновик каждый раз
-          начинается с сохранённых значений, а не с прошлой правки */}
-      <PopoverContent align="end" className="w-80">
-        <MarkForm
-          position={position}
-          busy={busy}
-          onMark={onMark}
-          onDone={() => setOpen(false)}
-        />
-      </PopoverContent>
-    </Popover>
+      }
+    >
+      <MarkForm
+        position={position}
+        busy={busy}
+        onMark={onMark}
+        onDone={() => setOpen(false)}
+      />
+    </SheetPopover>
   );
 }
 
@@ -148,7 +149,8 @@ function MarkForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
       <div>
-        <p className="t-h3">Разметка позиции</p>
+        {/* В нижнем листе заголовок уже стоит в его шапке */}
+        <p className="t-h3 max-sm:hidden">Разметка позиции</p>
         <p className="t-meta truncate text-text-3">{position.title}</p>
       </div>
 
