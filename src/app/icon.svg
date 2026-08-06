@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Знак продукта (см. src/components/logo.tsx): три полосы возрастающей
+       высоты цветами зон Growth / Yield / Stability. -->
+  <rect width="24" height="24" rx="7" fill="#151a20" stroke="#2c333e" stroke-width="1" />
+  <rect x="5" y="13" width="3" height="6" rx="1" fill="#d6a159" />
+  <rect x="10.5" y="9" width="3" height="10" rx="1" fill="#8a7bf0" />
+  <rect x="16" y="5" width="3" height="14" rx="1" fill="#38a9c4" />
+</svg>

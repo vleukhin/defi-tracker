@@ -256,9 +256,18 @@
 @layer base {
   * { border-color: var(--line-card); }
 
+  html {
+    /* Шапка sticky на 60px: без этого якорные переходы и scrollIntoView
+       (например, раскрытие формы сделки) прячут заголовок под ней */
+    scroll-padding-top: var(--header-h);
+  }
+
   body {
     font-family: var(--font-sans);
     background-color: var(--bg-canvas);
+    /* viewport-fit=cover (layout.tsx) пускает контент под вырез: в портрете
+       эти отступы нулевые, в ландшафте — отводят текст от «чёлки» */
+    padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
     color: var(--text-1);
     font-size: 14px;
     line-height: 1.5;
