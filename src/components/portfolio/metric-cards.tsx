@@ -5,9 +5,9 @@ import type { PortfolioRowDto } from "@/lib/api/types";
 import {
   DEVIATION_THRESHOLD_PP,
   dcPp,
-  dcTokens,
   dcUsd,
   dcUsdSigned,
+  tableNumber,
   tablePct,
   tablePctSigned,
 } from "@/lib/format";
@@ -30,6 +30,15 @@ import { CATEGORY_VAR, CategoryDot } from "./category";
  * позиций, и их сумма не совпадает с тем, сколько денег в позиции внесли —
  * это и сбивает с толку.
  */
+/*
+ * Единица отклонения объяснена словами: величина — процентные пункты,
+ * но пишется процентом (решение владельца, см. dcPp). Без пояснения
+ * «+3,13%» рядом с долей «53,13%» читается как «на 3,13% больше».
+ */
+const DEVIATION_HINT =
+  "Насколько доля отличается от цели, в процентных пунктах: «+3,13%» значит «на 3,13 пункта выше цели», а не «на 3,13% больше».";
+const PNL_HINT =
+  "Нереализованная прибыль: текущая стоимость минус средняя цена покупки по журналу сделок. Продажи сюда не входят.";
 const STABLE_HINT =
   "Залог в стейблах, ручные записи, собственные доли позиций и свободные стейблы на кошельках — всё по текущей стоимости, а не по вложенному. Просадка и доход позиции делятся между своими и заёмными пропорционально вложенному, поэтому своя доля движется вместе с позицией. Заёмные свободные средства сюда не входят: они в «Активах» и в зоне Yield.";
 export function MetricCards({ rows }: { rows: PortfolioRowDto[] }) {
@@ -61,27 +70,38 @@ function CategoryCard({ row }: { row: PortfolioRowDto }) {
         </span>
       </div>
 
-      <p className="mt-3.5 t-metric-lg">
-        {dcUsd(row.amountUsd)}
-      </p>
+      {/* Иерархия следует стратегии (docs/07 §4): главная метрика — сколько
+          монет, а не сколько долларов, «на цену повлиять нельзя, на
+          количество можно». Поэтому крупным набрано количество, а
+          долларовая стоимость — строкой ниже. Раньше было наоборот: 27px
+          на доллары против 13px приглушённым на количество.
 
-      {/* Главная метрика стратегии — количество базового актива (§1),
-          поэтому оно стоит вплотную к сумме, а не в ряду мелких подписей
-          ниже. У стейблов количество совпадает с долларами, поэтому вместо
-          него пустая строка той же высоты: три карточки стоят в одном ряду,
-          и «цель» с «P/L» обязаны читаться по общей линии. */}
-      <p
-        className="mt-1.5 font-mono text-[13px] text-text-2"
-        aria-hidden={row.unit === "USD"}
-      >
-        {row.unit === "USD"
-          ? // Неразрывный пробел, а не обычный: обычный схлопнулся бы,
-            // и строка получила бы нулевую высоту — отступа бы не было.
-            "\u00A0"
-          : row.amount === null
-            ? `— ${row.unit}`
-            : dcTokens(row.amount, row.unit)}
-      </p>
+          У стейблов количество и есть доллары, поэтому там крупной остаётся
+          сумма, а вторая строка держит высоту неразрывным пробелом: три
+          карточки стоят в одном ряду, и «цель» с «P/L» обязаны читаться
+          по общей линии. */}
+      {row.unit === "USD" ? (
+        <>
+          <p className="mt-3.5 t-metric-lg">{dcUsd(row.amountUsd)}</p>
+          {/* Неразрывный пробел, а не обычный: обычный схлопнулся бы,
+              и строка получила бы нулевую высоту — отступа бы не было. */}
+          <p className="mt-1.5 font-mono text-[13px] text-text-2" aria-hidden>
+            {"\u00A0"}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="mt-3.5 t-metric-lg">
+            {row.amount === null ? "—" : tableNumber(row.amount, 4)}
+            <span className="ml-1.5 font-sans text-[13px] text-text-3">
+              {row.unit}
+            </span>
+          </p>
+          <p className="mt-1.5 font-mono text-[13px] text-text-2">
+            {dcUsd(row.amountUsd)}
+          </p>
+        </>
+      )}
 
       <p className="mt-2 flex flex-wrap items-center gap-x-[7px] text-[12.5px] text-text-3">
         <span>
@@ -97,12 +117,14 @@ function CategoryCard({ row }: { row: PortfolioRowDto }) {
             <span className={cn(beyond && "text-warn")}>
               {dcPp(row.percentDiff)}
             </span>
+            <HelpTip>{DEVIATION_HINT}</HelpTip>
           </>
         )}
       </p>
 
       <p className="mt-2 flex flex-wrap items-center gap-x-[7px] text-[12.5px]">
         <span className="text-text-3">P/L</span>
+        <HelpTip>{PNL_HINT}</HelpTip>
         {pnl === null ? (
           <span className="text-text-3">—</span>
         ) : (

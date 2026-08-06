@@ -176,7 +176,7 @@ export function DepositsJournal({
             onChange={(e) => setAmount(e.target.value)}
             placeholder="5000"
             aria-label="Сумма в долларах"
-            className="min-w-[120px] flex-1 text-right font-mono text-[13px]"
+            className="min-w-[120px] flex-1 text-right font-mono text-base md:text-[13px]"
           />
           <Input
             id="deposit-date"
@@ -186,7 +186,7 @@ export function DepositsJournal({
             max={todayLocal()}
             onChange={(e) => setDate(e.target.value)}
             aria-label="Дата операции"
-            className="w-[152px] shrink-0 font-mono text-[13px]"
+            className="w-[152px] shrink-0 font-mono text-base md:text-[13px]"
           />
         </div>
 
@@ -199,7 +199,7 @@ export function DepositsJournal({
             onChange={(e) => setNote(e.target.value)}
             placeholder="Перевод с биржи"
             aria-label="Заметка (не обязательно)"
-            className="min-w-[140px] flex-1 text-[13px]"
+            className="min-w-[140px] flex-1 text-base md:text-[13px]"
           />
           <Button type="submit" variant="secondary" disabled={pending}>
             {pending ? "Сохранение…" : "Записать"}

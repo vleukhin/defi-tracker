@@ -1,5 +1,5 @@
 import type { StatusTone } from "@/components/dc/chip";
-import { HF_CRITICAL } from "@/lib/hf-zones";
+import { HF_CRITICAL, HF_URGENT, type HfZone, hfZone } from "@/lib/hf-zones";
 import { HF_OK_MARGIN } from "./hf";
 
 /**
@@ -16,9 +16,9 @@ import { HF_OK_MARGIN } from "./hf";
  * падения текущего залога от «сейчас», и общего у них только знак минус.
  */
 
-// Граница «тревожно / критично» живёт в общей шкале зон (lib/hf-zones):
-// тем же числом красится экран и решается, слать ли уведомление.
-export { HF_CRITICAL };
+// Границы зон живут в общей шкале (lib/hf-zones): теми же числами красится
+// экран и решается, слать ли уведомление.
+export { HF_CRITICAL, HF_URGENT };
 
 /** Границы зон полосы «Запас прочности» в процентах ширины (дизайн). */
 export const SAFETY_LIQUIDATION_PERCENT = 22;
@@ -28,18 +28,36 @@ export const SAFETY_DANGER_PERCENT = 42;
 export const DEFAULT_DROPS = [0.1, 0.2, 0.3];
 
 /**
- * Цвет числа HF. Порог — граница «спокойно / тревожно», 1,2 — граница
- * «тревожно / критично»: между ней и ликвидацией остаётся меньше шестой
- * части стоимости залога.
+ * Цвет числа HF — единственный источник для всех экранов.
+ *
+ * Считается через общую шкалу зон (lib/hf-zones), а не собственными
+ * сравнениями: раньше «Долг» красил по своим границам, «Зоны» и «Настройки» —
+ * по hfStatus, а hero «Портфеля» держал 1,2 хардкодом, и один и тот же
+ * HF 1,40 при пороге 1,50 был на соседних экранах то жёлтым, то красным.
+ *
+ * Экстренный уровень стратегии (HF < 1,3, docs/07 §7 — «продать часть GM и
+ * поднять HF примерно к 1.5») получает красный, а не жёлтый: он требует
+ * действия сегодня, и от «ниже порога» его надо отличать глазом.
+ *
+ * `close` остаётся зелёным намеренно. Зона называется «близко к порогу», но
+ * порог ещё не пройден, и жёлтый на HF 1,75 при пороге 1,50 обесценил бы
+ * предупреждение. Сценарии падения (scenarioStatus ниже) красят ту же зону
+ * жёлтым — там речь о будущем, где запас уже израсходован.
  */
+const ZONE_TONE: Record<HfZone, StatusTone | null> = {
+  none: null, // долга нет — красить нечего
+  calm: "profit",
+  close: "profit",
+  below: "warn",
+  urgent: "loss",
+  critical: "loss",
+};
+
 export function hfTone(
   healthFactor: number | null,
   threshold: number,
 ): StatusTone | null {
-  if (healthFactor === null) return null; // долга нет — красить нечего
-  if (healthFactor < HF_CRITICAL) return "loss";
-  if (healthFactor < threshold) return "warn";
-  return "profit";
+  return ZONE_TONE[hfZone(healthFactor, threshold)];
 }
 
 /**

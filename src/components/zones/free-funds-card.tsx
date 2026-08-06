@@ -11,6 +11,7 @@ import type { FreeBalanceDto, FundsMark } from "@/lib/api/types";
 import { chainLabel, dcUsd, tableQuantity } from "@/lib/format";
 import { categoryColor, symbolCategory } from "@/lib/symbol-category";
 import { ApiError, apiFetch } from "@/lib/use-api";
+import { cn } from "@/lib/utils";
 
 /**
  * «Свободные средства» — деньги, которые лежат на кошельке и не участвуют
@@ -124,8 +125,64 @@ export function FreeFundsCard({
         </div>
       )}
 
+      {/* До sm список раскладывается карточками. Причина не в ширине как
+          таковой: «Происхождение» — шестая колонка таблицы в 720px, то есть
+          примерно 600-я точка по горизонтали. Карточка выше зовёт пометить
+          заёмные, а сам переключатель на телефоне приходилось искать
+          горизонтальной прокруткой вслепую. */}
       {balances.length > 0 && (
-        <div className="mt-3.5">
+        <ul className="mt-3.5 flex flex-col gap-2 sm:hidden">
+          {balances.map((b) => (
+            <li
+              key={b.key}
+              className="flex flex-col gap-2.5 rounded-block bg-sunken px-3 py-3"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <span className="inline-flex items-center gap-2 font-medium text-[13.5px]">
+                  <span
+                    aria-hidden
+                    className="inline-block size-2 shrink-0 rounded-full"
+                    style={{ background: categoryColor(b.symbol) }}
+                  />
+                  {b.symbol}
+                  <span className="font-normal text-[12px] text-text-3">
+                    {chainLabel(b.chain)}
+                    {b.walletLabel ? ` · ${b.walletLabel}` : ""}
+                  </span>
+                </span>
+                <ZoneChip
+                  zone={b.funds === "borrowed" ? "yield" : zoneOf(b.symbol)}
+                />
+              </div>
+
+              <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-[13px]">
+                <span>{tableQuantity(b.quantity)}</span>
+                <span
+                  className={b.countedInCategory ? "text-text-2" : "text-text-3"}
+                >
+                  {dcUsd(b.valueUsd)}
+                </span>
+                {!b.countedInCategory && (
+                  <span className="font-sans text-[12px] text-text-3">
+                    заёмные — вне категории
+                  </span>
+                )}
+              </p>
+
+              <Segmented
+                options={FUNDS_OPTIONS}
+                value={b.funds ?? "unset"}
+                onChange={(v) => void mark(b, v)}
+                ariaLabel={`Происхождение ${b.symbol} в сети ${chainLabel(b.chain)}`}
+                className={cn("w-full", busyKey === b.key && "opacity-60")}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {balances.length > 0 && (
+        <div className="mt-3.5 max-sm:hidden">
           <DcTable minWidth={720}>
             <thead>
               <tr>

@@ -6,6 +6,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DcCard } from "@/components/dc/card";
 import { FreshnessDot, MetaDot, PageHeader } from "@/components/dc/page-header";
+import { PullToRefresh } from "@/components/dc/pull-to-refresh";
+import {
+  periodChange,
+  quantitySeries,
+} from "@/components/history/quantity-series";
 import { useNowMs } from "@/components/dc/use-now";
 import { LogoMark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -14,12 +19,17 @@ import { ZonesScreen, type ZonesData } from "@/components/zones/zones-screen";
 import type {
   DebtResponseDto,
   PortfolioDto,
+  PortfolioRowDto,
   RefreshResponseDto,
   SignalAcksResponseDto,
   SnapshotDto,
   SnapshotsResponseDto,
 } from "@/lib/api/types";
 import { formatRelativeTime } from "@/lib/format";
+import {
+  ASSETS_DELTA_LABEL,
+  periodDelta,
+} from "@/lib/portfolio/period-delta";
 import { DEFAULT_TARGET_LTV_PCT } from "@/lib/settings-defaults";
 import {
   ackedSignals,
@@ -30,7 +40,7 @@ import {
 } from "@/lib/signals/signals";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import type { AssetsDelta } from "./overview-strip";
+import type { AssetsDelta, CoinAmount } from "./overview-strip";
 import { PortfolioDashboard } from "./portfolio-dashboard";
 import { PortfolioHero } from "./portfolio-hero";
 import { PortfolioViewSwitch, usePortfolioView } from "./portfolio-tabs";
@@ -262,7 +272,10 @@ export function PortfolioScreen() {
         ) : undefined
       }
       action={
-        <div className="flex items-center gap-2">
+        // flex-wrap: на 320px кнопка обновления и три сегмента вместе
+        // перебирают ширину, и переключатель уходит на свою строку —
+        // иначе PageHeader уносил весь блок целиком и всё равно не помогал
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -286,6 +299,7 @@ export function PortfolioScreen() {
 
   return (
     <TooltipProvider delayDuration={120}>
+      <PullToRefresh onRefresh={() => void doRefresh()} refreshing={refreshing}>
       <div className="flex flex-col gap-4">
         {header}
 
@@ -328,6 +342,12 @@ export function PortfolioScreen() {
               zones={zonesData?.zones ?? null}
               debtSummary={debtSummary}
               delta={assetsDelta(snapshots.data?.snapshots ?? [])}
+              coins={coinAmounts(data.rows, snapshots.data?.snapshots ?? [])}
+              staleNote={
+                data.freshness.anyPriceStale
+                  ? `цены ${formatRelativeTime(data.freshness.oldestPriceAt) ?? "не читались"}`
+                  : null
+              }
             />
 
             {view === "signals" ? (
@@ -362,29 +382,46 @@ export function PortfolioScreen() {
           </>
         )}
       </div>
+      </PullToRefresh>
     </TooltipProvider>
   );
 }
 
 /**
- * Дельта «Активов» за окно снепшотов. Активы точки — это портфель плюс
- * размещённые позиции; если позиции на одном из концов неизвестны, сравнение
- * идёт по портфелю, иначе дельта показала бы переезд капитала как доход.
+ * Дельта «Активов» за окно снепшотов.
+ *
+ * Считает общая periodDelta (lib/portfolio/period-delta): та же величина
+ * нужна карточке «Динамика стоимости» и графику «Истории», и пока каждый
+ * считал сам, hero и карточка под ним показывали разные числа под одной
+ * подписью. Подпись здесь тоже своя — «активы», а не просто «за 30 дней»:
+ * это портфель ВМЕСТЕ с размещёнными позициями.
  */
 function assetsDelta(snapshots: SnapshotDto[]): AssetsDelta | null {
-  if (snapshots.length < 2) return null;
-  const first = snapshots[0];
-  const last = snapshots[snapshots.length - 1];
-  const withPositions =
-    first.positionsUsd !== null && last.positionsUsd !== null;
-  const from = first.totalUsd + (withPositions ? (first.positionsUsd ?? 0) : 0);
-  const to = last.totalUsd + (withPositions ? (last.positionsUsd ?? 0) : 0);
-  const absolute = to - from;
-  return {
-    absolute,
-    percent: from === 0 ? null : (absolute / from) * 100,
-    label: "за 30 дней",
-  };
+  const delta = periodDelta(snapshots, "assets");
+  if (delta === null) return null;
+  return { ...delta, label: ASSETS_DELTA_LABEL };
+}
+
+/**
+ * Количества BTC и ETH для hero — главная метрика стратегии (docs/07 §4).
+ *
+ * Стейблы отбрасываются по единице: их количество и есть доллары.
+ * Изменение берётся из готовой periodChange по тому же окну снепшотов,
+ * что и дельта активов, и остаётся null, пока истории меньше двух точек —
+ * ноль вместо «неизвестно» здесь читался бы как «ничего не изменилось».
+ */
+function coinAmounts(
+  rows: PortfolioRowDto[],
+  snapshots: SnapshotDto[],
+): CoinAmount[] {
+  return rows
+    .filter((row) => row.unit !== "USD" && row.amount !== null)
+    .map((row) => ({
+      key: row.category,
+      unit: row.unit,
+      amount: row.amount as number,
+      change: periodChange(quantitySeries(snapshots, row.category))?.abs ?? null,
+    }));
 }
 
 /** Скелетон держит места конечных элементов, крупные числа не подменяются. */

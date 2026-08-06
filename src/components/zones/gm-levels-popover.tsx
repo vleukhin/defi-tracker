@@ -3,11 +3,7 @@
 import { TrendingDown } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { Chip, StatusChip } from "@/components/dc/chip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { SheetPopover } from "@/components/dc/sheet-popover";
 import type { PositionDto } from "@/lib/api/types";
 import { dcPp, dcUsd, tablePct } from "@/lib/format";
 import { gmLevels, type GmLevelsView } from "@/lib/positions/gm-levels";
@@ -37,8 +33,13 @@ export function GmLevelsPopover({ position }: { position: PositionDto }) {
   const reached = view.reachedCount !== null && view.reachedCount > 0;
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    // На телефоне — нижний лист: шкала из семи уровней с действиями и
+    // сноской превращалась в слой почти во весь экран с собственной
+    // внутренней прокруткой (см. dc/sheet-popover)
+    <SheetPopover
+      title="Уровни падения"
+      className="w-[352px]"
+      trigger={
         <button
           type="button"
           aria-label={`Уровни падения: ${position.title}`}
@@ -46,7 +47,7 @@ export function GmLevelsPopover({ position }: { position: PositionDto }) {
           className={cn(
             // Тот же контрол, что и кнопка разметки (дизайн-код §5): в шапке
             // карточки они стоят рядом и обязаны читаться одинаково
-            "flex h-[30px] shrink-0 items-center gap-1.5 rounded-control border border-line-card px-2 outline-none transition-colors duration-120 ease-out hover:border-line-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50",
+            "flex h-[30px] shrink-0 items-center gap-1.5 rounded-control border border-line-card px-2 outline-none transition-colors duration-120 ease-out pointer-coarse:h-11 pointer-coarse:px-3 hover:border-line-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50",
             reached ? "text-warn" : "text-text-3",
           )}
         >
@@ -57,29 +58,29 @@ export function GmLevelsPopover({ position }: { position: PositionDto }) {
             </span>
           )}
         </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-[352px]">
-        <div className="flex flex-col gap-3">
-          <div>
-            <p className="t-h3">Уровни падения</p>
-            <p className="t-meta truncate text-text-3">
-              {position.title}
-              {view.marketSymbol ? ` · цена ${view.marketSymbol}` : ""}
-            </p>
-          </div>
-
-          {!set ? (
-            <NoEntryPrice />
-          ) : (
-            <>
-              <Now view={view} />
-              <Scale view={view} />
-              <Footer view={view} />
-            </>
-          )}
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <div>
+          {/* В нижнем листе заголовок уже стоит в его шапке */}
+          <p className="t-h3 max-sm:hidden">Уровни падения</p>
+          <p className="t-meta truncate text-text-3">
+            {position.title}
+            {view.marketSymbol ? ` · цена ${view.marketSymbol}` : ""}
+          </p>
         </div>
-      </PopoverContent>
-    </Popover>
+
+        {!set ? (
+          <NoEntryPrice />
+        ) : (
+          <>
+            <Now view={view} />
+            <Scale view={view} />
+            <Footer view={view} />
+          </>
+        )}
+      </div>
+    </SheetPopover>
   );
 }
 

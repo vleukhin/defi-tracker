@@ -5,6 +5,17 @@ import { toast } from "sonner";
 import { DcCard, EmptyState, SectionHead } from "@/components/dc/card";
 import { Segmented } from "@/components/dc/segmented";
 import { DcTable, Td, Th, Tr } from "@/components/dc/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type {
@@ -174,7 +185,7 @@ export function ManualCoinsCard({
             onChange={(e) => setLabel(e.target.value)}
             placeholder={PLACEHOLDER_LABEL[category]}
             aria-label="Где лежит"
-            className="min-w-[140px] flex-1 text-[13px]"
+            className="min-w-[140px] flex-1 text-base md:text-[13px]"
           />
           <Input
             type="text"
@@ -186,7 +197,7 @@ export function ManualCoinsCard({
             aria-label={
               category === "stable" ? "Сумма в долларах" : "Количество монет"
             }
-            className="w-[96px] shrink-0 text-right font-mono text-[13px]"
+            className="w-[120px] shrink-0 text-right font-mono text-base sm:w-[96px] md:text-[13px]"
           />
           <Button type="submit" variant="secondary" disabled={pending}>
             {pending ? "Добавление…" : "Добавить"}
@@ -255,15 +266,45 @@ export function ManualCoinsCard({
                   <Td numeric mono muted>
                     {value === undefined ? "—" : dcUsd(value)}
                   </Td>
+                  {/* Подтверждение — как у депозитов, кошельков и сделок:
+                      запись входит в итог категории, а тап по ней на телефоне
+                      приходился вплотную к зоне горизонтального скролла */}
                   <Td numeric className="py-1.5">
-                    <button
-                      type="button"
-                      onClick={() => void remove(e.id, e.label)}
-                      aria-label={`Удалить запись «${e.label}»`}
-                      className="-mr-1 rounded-control px-2 py-2.5 text-[12.5px] text-text-4 outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      удалить
-                    </button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Удалить запись «${e.label}»`}
+                          className="-mr-1 text-text-4 hover:text-loss"
+                        >
+                          удалить
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Удалить запись?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            «{e.label}» на{" "}
+                            <span className="font-mono">
+                              {tableQuantity(e.amount)}
+                            </span>{" "}
+                            {meta?.unit ?? ""} исчезнет из портфеля, доля
+                            категории пересчитается.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Отмена</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            onClick={() => void remove(e.id, e.label)}
+                          >
+                            Удалить
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </Td>
                 </Tr>
               );

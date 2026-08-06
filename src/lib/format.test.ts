@@ -3,12 +3,9 @@ import {
   MINUS,
   NBSP,
   chainLabel,
-  formatPct,
-  formatPp,
   formatQuantity,
   formatQuantityFull,
   formatRelativeTime,
-  formatUsd,
   tableNumber,
   tablePct,
   tablePctSigned,
@@ -20,61 +17,6 @@ import {
   truncateAddress,
   usdDecimals,
 } from "./format";
-
-describe("formatUsd", () => {
-  it("группирует тысячи неразрывным пробелом: $ 12 345.67", () => {
-    expect(formatUsd(12345.67)).toBe(`$${NBSP}12${NBSP}345.67`);
-  });
-
-  it("миллионы: две группы", () => {
-    expect(formatUsd(1234567.89)).toBe(`$${NBSP}1${NBSP}234${NBSP}567.89`);
-  });
-
-  it("малые суммы без группировки", () => {
-    expect(formatUsd(980)).toBe(`$${NBSP}980.00`);
-    expect(formatUsd(0)).toBe(`$${NBSP}0.00`);
-  });
-
-  it("decimals: 0 — целые доллары для ребалансировки", () => {
-    expect(formatUsd(980.4, 0)).toBe(`$${NBSP}980`);
-    expect(formatUsd(1240.5, 0)).toBe(`$${NBSP}1${NBSP}241`);
-  });
-
-  it("отрицательные — типографский минус перед $", () => {
-    expect(formatUsd(-1240, 0)).toBe(`${MINUS}$${NBSP}1${NBSP}240`);
-  });
-
-  it("округляет до 2 знаков", () => {
-    expect(formatUsd(0.005)).toBe(`$${NBSP}0.01`);
-  });
-
-  it("нечисло — плейсхолдер", () => {
-    expect(formatUsd(Number.NaN)).toBe(`$${NBSP}—`);
-  });
-});
-
-describe("formatPct", () => {
-  it("один знак после точки", () => {
-    expect(formatPct(42.25)).toBe("42.3%");
-    expect(formatPct(0)).toBe("0.0%");
-    expect(formatPct(100)).toBe("100.0%");
-  });
-});
-
-describe("formatPp", () => {
-  // Величина — процентные пункты, единица пишется символом процента
-  it("положительное отклонение — со знаком +", () => {
-    expect(formatPp(7.2)).toBe("+7.2%");
-  });
-
-  it("отрицательное — с минусом", () => {
-    expect(formatPp(-3.14)).toBe(`${MINUS}3.1%`);
-  });
-
-  it("ноль — без знака", () => {
-    expect(formatPp(0)).toBe("0.0%");
-  });
-});
 
 describe("formatQuantity (десятичные строки, без float)", () => {
   it("целая часть ненулевая — 4 знака дроби, усечение без округления", () => {

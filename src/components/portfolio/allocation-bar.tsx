@@ -126,12 +126,15 @@ export function ZoneAllocation({ zones }: { zones: ZonesSummaryDto }) {
       z.percent !== null && z.percent > 0,
   );
 
+  // Точность доли — по умолчанию tablePct (два знака), как в разрезе по
+  // активам. Раньше зоны показывали один знак, и переключатель «Активы ↔
+  // Зоны» менял точность в той же карточке на том же месте
   const segments: AllocationSegment[] = withShare.map((z) => ({
     key: z.zone,
     percent: z.percent,
     color: zoneColor(z.zone),
     textColor: zoneTextColor(z.zone),
-    label: tablePct(z.percent, 1),
+    label: tablePct(z.percent),
     title: `${z.label} — ${z.valueUsd === null ? "—" : dcUsd(z.valueUsd)}`,
   }));
 
@@ -145,7 +148,7 @@ export function ZoneAllocation({ zones }: { zones: ZonesSummaryDto }) {
       <AllocationSegments
         segments={segments}
         ariaLabel={`Распределение по зонам: ${withShare
-          .map((z) => `${z.label} ${tablePct(z.percent, 1)}`)
+          .map((z) => `${z.label} ${tablePct(z.percent)}`)
           .join(", ")}`}
       />
     </AllocationFrame>

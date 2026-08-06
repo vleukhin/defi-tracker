@@ -13,7 +13,7 @@ import type {
   SnapshotResponseDto,
   SnapshotsResponseDto,
 } from "@/lib/api/types";
-import { NBSP, tableDate } from "@/lib/format";
+import { NBSP, tableDate, tableTimeUtc } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { CompositionChart } from "./composition-chart";
@@ -189,7 +189,7 @@ function snapshotCount(count: number): string {
 /** «последний сегодня в 09:14 UTC» — время съёма, а не время загрузки. */
 function lastTaken(snapshot: SnapshotDto | null): string {
   if (snapshot === null) return "снепшотов нет";
-  const time = new Date(snapshot.takenAt).toISOString().slice(11, 16);
+  const time = tableTimeUtc(snapshot.takenAt);
   const today = new Date().toISOString().slice(0, 10);
   const when =
     snapshot.takenOn === today ? "сегодня" : tableDate(snapshot.takenOn);

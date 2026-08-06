@@ -97,5 +97,37 @@ export function useApi<T>(url: string): UseApiResult<T> {
     };
   }, [refetch]);
 
+  /*
+   * Возврат в приложение перечитывает данные.
+   *
+   * Экран живёт на таймере автообновления, но мобильные браузеры душат
+   * таймеры в фоновых вкладках и восстанавливают страницу из bfcache
+   * целиком, вместе со старым состоянием React. Типичный сценарий —
+   * вкладка открыта со вчера: пользователь переключается на неё утром и
+   * видит вчерашние числа без единого признака, что они несвежие.
+   * По docs/07 §7 решение принимается по цене, закрепившейся за 48 часов;
+   * принимать его по суточным данным нельзя.
+   *
+   * Это дешёвый GET из кэша сервера, а не POST /api/refresh: дорогое
+   * обновление по-прежнему решает needsRefreshOnEnter (refresh-policy).
+   *
+   * pageshow с persisted нужен отдельно от visibilitychange: при возврате
+   * из bfcache Safari не всегда меняет видимость документа.
+   */
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") void refetch();
+    }
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) void refetch();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [refetch]);
+
   return { data, error, loading, refetch };
 }

@@ -96,7 +96,7 @@ export function SignalsCard({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="t-meta w-full border-line border-t px-card py-2.5 text-left text-link underline-offset-4 hover:underline"
+          className="t-meta flex w-full items-center border-line border-t px-card py-2.5 text-left text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline"
         >
           {`Ещё ${countLabel(hidden, "сигнал", "сигнала", "сигналов")}`}
         </button>
@@ -128,7 +128,7 @@ function AckedBlock({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="t-meta w-full px-card py-2.5 text-left text-text-3 hover:text-text-2"
+        className="t-meta flex w-full items-center px-card py-2.5 text-left text-text-3 pointer-coarse:min-h-11 hover:text-text-2"
       >
         {`Отмечено выполненными · ${signals.length}`}
         <span className="ml-2 text-text-4">{open ? "скрыть" : "показать"}</span>
@@ -147,7 +147,7 @@ function AckedBlock({
               <button
                 type="button"
                 onClick={() => void onAck(signal.ackKey ?? "", null)}
-                className="t-meta shrink-0 text-link underline-offset-4 hover:underline"
+                className="t-meta inline-flex shrink-0 items-center text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline"
               >
                 вернуть
               </button>
@@ -160,10 +160,20 @@ function AckedBlock({
 }
 
 /**
- * Риск ликвидации над любым режимом. Показывает только строки уровня
- * «ликвидация» и только когда они есть: если действие требуется, узнать
- * об этом надо не заходя на вкладку.
+ * Строки, требующие действия, над любым режимом: если действие нужно,
+ * узнать об этом надо не заходя на вкладку.
+ *
+ * Кроме риска ликвидации сюда попадают пройденные уровни GM (§5, §6) и
+ * правило 48 часов по CLMM (§7) — то есть ровно те события, для которых
+ * стратегия предусматривает конкретное действие сегодня. Раньше полоса
+ * фильтровала только «ликвидацию», и «пробит −15%» жил одним счётчиком
+ * в подписи сегмента: мелким текстом в правом верхнем углу.
+ *
+ * «Плечо» и «гигиена» остаются в ленте: первое правится при следующей
+ * операции, второе говорит о данных, а не о позиции.
  */
+const ACTIONABLE: SignalSeverity[] = ["liquidation", "level", "timer"];
+
 export function RiskStrip({
   signals,
   onOpenSignals,
@@ -171,17 +181,18 @@ export function RiskStrip({
   signals: Signal[];
   onOpenSignals: () => void;
 }) {
-  const risk = signals.filter((s) => s.severity === "liquidation");
+  const risk = signals.filter((s) => ACTIONABLE.includes(s.severity));
   if (risk.length === 0) return null;
 
   return (
     <DcCard as="section">
       <ul className="grid gap-px bg-line">
         {risk.map((signal) => (
-          // Отметки здесь нет намеренно: риск ликвидации — состояние, а не
-          // задача к исполнению. Разрез «Зоны» строкам риска не нужен —
-          // они ведут на «Долг» и «Кошельки», — но подставлен на случай,
-          // если такой сигнал появится: полоса уводит в полную ленту
+          // Отметки здесь нет намеренно: полоса отвечает на вопрос «нужно ли
+          // что-то делать», а отмечают сделанное в самой ленте — иначе
+          // строка исчезала бы из-под пальца прямо на первом экране.
+          // Разрез «Зоны» нужен уровням GM; строки риска ведут на «Долг»
+          // и «Кошельки» и этот обработчик не используют
           <SignalRow
             key={signal.key}
             signal={signal}
@@ -264,7 +275,7 @@ function SignalLink({
   onOpenZones: () => void;
 }) {
   const className =
-    "t-meta shrink-0 whitespace-nowrap text-link underline-offset-4 hover:underline";
+    "t-meta inline-flex shrink-0 items-center whitespace-nowrap text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline";
 
   if (signal.target === "zones") {
     return (

@@ -1,6 +1,7 @@
 /**
  * Форматирование чисел и строк для UI (ТЗ §6.1, S1.7).
- * Денежные суммы: «$ 12 345.67» — неразрывный пробел между тысячами.
+ * Денежные суммы: «$12 345,67» — десятичная запятая, тысячи разделены
+ * неразрывным пробелом, знак валюты без отбивки.
  * Количества токенов приходят десятичными СТРОКАМИ — форматируем
  * строковыми операциями, никогда не гоняем через float (потеря точности).
  */
@@ -137,6 +138,20 @@ export function tableDate(iso: string): string {
   return `${dd}.${mm}.${d.getUTCFullYear()}`;
 }
 
+/**
+ * «09:14» — время съёма снепшота в UTC.
+ *
+ * Guard тот же, что у tableDate, и по той же причине: `new Date(x)` на
+ * нечитаемой строке даёт Invalid Date, а `.toISOString()` на нём бросает
+ * RangeError. Раньше это звали напрямую в разметке «Истории», то есть
+ * одна битая отметка времени роняла весь экран, а не одну ячейку.
+ */
+export function tableTimeUtc(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return "—";
+  return new Date(ts).toISOString().slice(11, 16);
+}
+
 /** «53,00%» — процент с запятой и двумя знаками. */
 export function tablePct(value: number, decimals = 2): string {
   return `${tableNumber(value, decimals)}%`;
@@ -147,55 +162,15 @@ export function tablePctSigned(value: number, decimals = 2): string {
   return `${tableSigned(value, decimals)}%`;
 }
 
-/**
- * «$ 12 345.67». По умолчанию 2 знака; decimals: 0 — для сумм
- * ребалансировки («Купить $ 980»). Отрицательные — с типографским минусом.
+/*
+ * Здесь жили formatUsd / formatPct / formatPp / formatAmount /
+ * formatSignedAmount — набор из ранней версии, который ни один экран не
+ * вызывал. Опасен он был не тем, что лежал, а своим форматом: «$ 12 345.67»
+ * с точкой и отбивкой после знака доллара, тогда как весь интерфейс
+ * набирает «$12 345,67» через dcUsd. Следующая правка подключила бы их и
+ * молча получила другую типографику чисел. Нужен доллар — dcUsd/tableUsd,
+ * процент — tablePct/dcRate, отклонение — dcPp, количество — tableQuantity.
  */
-export function formatUsd(value: number, decimals = 2): string {
-  if (!Number.isFinite(value)) return `$${NBSP}—`;
-  const sign = value < 0 ? MINUS : "";
-  const fixed = Math.abs(value).toFixed(decimals);
-  const [int, frac] = fixed.split(".");
-  return `${sign}$${NBSP}${groupThousands(int)}${frac ? `.${frac}` : ""}`;
-}
-
-/** «42.3%» — проценты. В таблице портфеля используется 2 знака (как в ТЗ). */
-export function formatPct(value: number, decimals = 1): string {
-  return `${value.toFixed(decimals)}%`;
-}
-
-/**
- * «+7.2%» / «−3.1%» — отклонение со знаком (знак = не только цвет).
- * Величина — процентные пункты, единица пишется процентом: см. `dcPp`.
- */
-export function formatPp(value: number, decimals = 1): string {
-  const sign = value > 0 ? "+" : value < 0 ? MINUS : "";
-  return `${sign}${Math.abs(value).toFixed(decimals)}%`;
-}
-
-/**
- * Число с группировкой тысяч и типографским минусом: «1 234.5678».
- * Для количеств категорий (BTC/ETH — 4 знака) и сумм в USD (0 знаков).
- */
-export function formatAmount(value: number, decimals: number): string {
-  if (!Number.isFinite(value)) return "—";
-  const sign = value < 0 ? MINUS : "";
-  const [int, frac] = Math.abs(value).toFixed(decimals).split(".");
-  const trimmed = frac?.replace(/0+$/, "") ?? "";
-  return `${sign}${groupThousands(int)}${trimmed ? `.${trimmed}` : ""}`;
-}
-
-/**
- * Количество к ребалансировке: со знаком, где плюс значим («купить»),
- * поэтому он показывается явно, а не только цветом.
- */
-export function formatSignedAmount(value: number, decimals: number): string {
-  if (!Number.isFinite(value)) return "—";
-  const sign = value > 0 ? "+" : value < 0 ? MINUS : "";
-  const [int, frac] = Math.abs(value).toFixed(decimals).split(".");
-  const trimmed = frac?.replace(/0+$/, "") ?? "";
-  return `${sign}${groupThousands(int)}${trimmed ? `.${trimmed}` : ""}`;
-}
 
 /**
  * Компактное количество токена из десятичной строки:

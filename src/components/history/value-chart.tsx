@@ -11,6 +11,7 @@ import {
   tableDate,
   tablePctSigned,
 } from "@/lib/format";
+import { periodDelta } from "@/lib/portfolio/period-delta";
 import { cn } from "@/lib/utils";
 import {
   bandCenter,
@@ -57,9 +58,12 @@ export function ValueChart({
   const values = snapshots.map((s) => s.totalUsd);
   const last = snapshots[snapshots.length - 1];
   const first = snapshots[0];
-  const change = last.totalUsd - first.totalUsd;
-  const changePct =
-    first.totalUsd === 0 ? null : (change / first.totalUsd) * 100;
+  // Дельта считается общей periodDelta (lib/portfolio/period-delta): та же
+  // величина показывается в карточке «Динамика стоимости» на «Портфеле»,
+  // и три собственных вычитания на трёх экранах уже расходились
+  const delta = periodDelta(snapshots, "portfolio");
+  const change = delta?.absolute ?? 0;
+  const changePct = delta?.percent ?? null;
   const single = snapshots.length < 2;
 
   const scale = timeScale(snapshots)!;

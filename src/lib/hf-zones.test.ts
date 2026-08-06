@@ -83,10 +83,39 @@ describe("согласие с экраном", () => {
     for (const hf of [3, 1.6, 1.42, 1.29, 1.15]) {
       const zone = hfZone(hf, T);
       const tone = hfTone(hf, T);
-      // Красное число — это ровно «критично»; жёлтое — всё между порогом и 1,2
-      if (zone === "critical") expect(tone, `HF ${hf}`).toBe("loss");
+      // Жёлтое — «ниже порога»; красное — экстренный уровень и критично:
+      // и то и другое требует действия сегодня (docs/07 §7)
       if (zone === "calm" || zone === "close") expect(tone, `HF ${hf}`).toBe("profit");
-      if (zone === "below" || zone === "urgent") expect(tone, `HF ${hf}`).toBe("warn");
+      if (zone === "below") expect(tone, `HF ${hf}`).toBe("warn");
+      if (zone === "urgent" || zone === "critical")
+        expect(tone, `HF ${hf}`).toBe("loss");
+    }
+  });
+
+  it("экстренный уровень стратегии отличим от «ниже порога»", () => {
+    // docs/07 §7: HF < 1,3 — «продать часть GM и поднять HF примерно к 1.5».
+    // Пока обе зоны красились жёлтым, это событие ничем не выделялось.
+    expect(hfTone(HF_URGENT - 0.01, T)).toBe("loss");
+    expect(hfTone(HF_URGENT, T)).toBe("warn");
+  });
+
+  it("цвет не зависит от того, какой экран спрашивает", () => {
+    // Раньше «Долг» считал по своим границам, «Зоны» и «Настройки» — по
+    // hfStatus, а hero «Портфеля» держал 1,2 хардкодом: HF 1,40 при пороге
+    // 1,50 был жёлтым на одном экране и красным на соседнем.
+    // Единственное правило, из которого теперь выводится цвет на любом
+    // экране: он определяется зоной, а зона — общей шкалой.
+    for (const threshold of [1.1, 1.5, 2]) {
+      for (const hf of [3, 1.85, 1.5, 1.4, 1.25, 1.1, null]) {
+        const danger = isDangerZone(hfZone(hf, threshold));
+        const tone = hfTone(hf, threshold);
+        expect(danger && tone === "profit", `HF ${hf} / ${threshold}`).toBe(
+          false,
+        );
+        expect(!danger && tone === "loss", `HF ${hf} / ${threshold}`).toBe(
+          false,
+        );
+      }
     }
   });
 });

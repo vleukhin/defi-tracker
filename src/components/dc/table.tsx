@@ -9,6 +9,12 @@ import { cn } from "@/lib/utils";
  * На 768 и ниже таблица не ломается на «label — значение», а получает
  * горизонтальный скролл: колонок много, и сравнение строк между собой —
  * то, ради чего таблица здесь и стоит.
+ *
+ * Но скролл нужно было ещё и показать. На телефоне полоса прокрутки скрыта,
+ * и таблица в 860-980px при рабочей ширине ~343px выглядела просто обрезанной:
+ * пользователь не знал, что за краем есть «Отклон.» и «К ребаланс.». Отсюда
+ * .dc-scroll-x — тень у края, которая гаснет, когда прокручивать больше
+ * некуда, — и залипающая первая колонка, чтобы числа не отрывались от актива.
  */
 export function DcTable({
   children,
@@ -20,7 +26,7 @@ export function DcTable({
   minWidth?: number;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="dc-scroll-x">
       <table
         className={cn("w-full border-collapse text-[13px]", className)}
         style={{ minWidth }}
@@ -30,6 +36,16 @@ export function DcTable({
     </div>
   );
 }
+
+/**
+ * Первая колонка остаётся на месте при горизонтальной прокрутке.
+ *
+ * Фон обязателен и непрозрачен: под залипающей ячейкой едут остальные.
+ * Строки при этом остаются прозрачными — сквозь них видна тень у края,
+ * которую рисует .dc-scroll-x. Отклонения от --bg-surface (наведение,
+ * итоговая строка) дописывают Tr и TotalRow.
+ */
+const STICKY_FIRST = "first:sticky first:left-0 first:z-10 first:bg-surface";
 
 export function Th({
   children,
@@ -42,6 +58,7 @@ export function Th({
       scope="col"
       className={cn(
         "t-label whitespace-nowrap border-line border-b px-3 py-2.5 font-semibold first:pl-card last:pr-card",
+        STICKY_FIRST,
         numeric ? "text-right" : "text-left",
         className,
       )}
@@ -60,7 +77,9 @@ export function Tr({
   return (
     <tr
       className={cn(
-        "border-line border-b transition-colors duration-120 ease-out last:border-0 hover:bg-chip",
+        // Наведение перекрашивает и залипающую ячейку: у неё собственный
+        // непрозрачный фон, и без этого правила она осталась бы прежней
+        "border-line border-b transition-colors duration-120 ease-out last:border-0 hover:bg-chip hover:[&>*:first-child]:bg-chip",
         className,
       )}
       {...props}
@@ -82,10 +101,13 @@ export function Td({
   mono?: boolean;
   muted?: boolean;
 }) {
+  // Ячейка на несколько колонок — это раскрытая строка-подробность, а не
+  // первая колонка: залипание растянуло бы её на всю ширину и заморозило
   return (
     <td
       className={cn(
         "whitespace-nowrap px-3 py-2.5 first:pl-card last:pr-card",
+        props.colSpan == null && STICKY_FIRST,
         numeric && "text-right",
         mono && "font-mono",
         muted ? "text-text-3" : "text-text-1",
@@ -106,7 +128,10 @@ export function TotalRow({
 }: React.ComponentProps<"tr">) {
   return (
     <tr
-      className={cn("border-line border-t bg-sunken font-medium", className)}
+      className={cn(
+        "border-line border-t bg-sunken font-medium [&>*:first-child]:bg-sunken",
+        className,
+      )}
       {...props}
     >
       {children}

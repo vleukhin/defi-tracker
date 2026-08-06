@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { DcCard, SectionHead } from "@/components/dc/card";
-import { formatHf, hfStatus } from "@/components/debt/hf";
+import { formatHf } from "@/components/debt/hf";
+import { hfTone } from "@/components/debt/risk";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { DebtResponseDto, SettingsDto } from "@/lib/api/types";
 import { DEVIATION_THRESHOLD_PP, NBSP, tableNumber } from "@/lib/format";
+import { HF_ZONE_LABEL, hfZone } from "@/lib/hf-zones";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { HF_MAX, HF_MIN, HfThresholdRow } from "./hf-threshold-row";
 import { SettingRow } from "./setting-row";
@@ -24,26 +26,24 @@ function formatThreshold(value: number): string {
   return tableNumber(value, 2);
 }
 
+/**
+ * Подсказка под порогом: текущий HF цветом и зоной словами.
+ *
+ * Цвет — общий hfTone, названия зон — общий HF_ZONE_LABEL: те же, что уходят
+ * в телеграм. Собственная тройка «выше / близко / ниже» здесь красила HF 1,40
+ * при пороге 1,50 в красный, тогда как «Долг» тем же числом рисовал жёлтый.
+ */
 function hfHint(debt: DebtResponseDto | null, threshold: number) {
   if (!debt) return null;
   const hf = debt.summary.minHealthFactor;
   if (hf === null) return <>долга нет — health factor не ограничен</>;
-  const status = hfStatus(hf, threshold);
-  const tone =
-    status === "below"
-      ? "text-loss"
-      : status === "warning"
-        ? "text-warn"
-        : "text-text-2";
-  const words =
-    status === "below"
-      ? "ниже порога"
-      : status === "warning"
-        ? "близко к порогу"
-        : "выше порога";
+  const tone = hfTone(hf, threshold);
+  const toneClass =
+    tone === "loss" ? "text-loss" : tone === "warn" ? "text-warn" : "text-text-2";
   return (
     <>
-      сейчас <span className={tone}>{formatHf(hf)}</span> — {words}
+      сейчас <span className={toneClass}>{formatHf(hf)}</span> —{" "}
+      {HF_ZONE_LABEL[hfZone(hf, threshold)]}
     </>
   );
 }

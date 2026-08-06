@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
@@ -31,6 +31,29 @@ export const metadata: Metadata = {
   },
   description:
     "Трекер DeFi-портфеля: балансы кошельков (read-only), целевые пропорции и отклонения.",
+};
+
+/**
+ * Приложение открывают в основном с телефона.
+ *
+ * themeColor — те же значения, что у токена --bg-canvas в globals.css для
+ * тёмной и светлой тем: без него адресная строка остаётся системно-серой
+ * поверх тёмного холста.
+ *
+ * viewportFit: "cover" — обязателен для env(safe-area-inset-*): без него
+ * отступы под home-indicator (app-nav, footer) всегда считаются нулём.
+ *
+ * Масштабирование не ограничиваем: maximum-scale/user-scalable=no ломают
+ * доступность, а зум при фокусе лечится размером поля (16px), а не запретом.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0a0c0f" },
+    { media: "(prefers-color-scheme: light)", color: "#fbfbfa" },
+  ],
 };
 
 export default function RootLayout({

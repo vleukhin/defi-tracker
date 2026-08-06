@@ -6,12 +6,9 @@ import { toast } from "sonner";
 import { zoneTextColor } from "@/components/dc/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HelpTip } from "@/components/dc/help-tip";
 import { Label } from "@/components/ui/label";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { SheetPopover } from "@/components/dc/sheet-popover";
 import type { PositionDto, StrategyZone } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import {
@@ -45,29 +42,36 @@ export function MarkPopover({
   const [open, setOpen] = useState(false);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    /* Содержимое размонтируется при закрытии — черновик каждый раз
+       начинается с сохранённых значений, а не с прошлой правки.
+       На телефоне это нижний лист: форма из четырёх полей у верхнего
+       края спорила с экранной клавиатурой (см. dc/sheet-popover). */
+    <SheetPopover
+      open={open}
+      onOpenChange={setOpen}
+      title="Разметка позиции"
+      className="w-80"
+      trigger={
         <button
           type="button"
           disabled={busy}
           aria-label={`Разметка позиции: ${position.title}`}
           title="Разметка позиции"
-          className="grid size-[30px] shrink-0 place-items-center rounded-control border border-line-card text-text-3 outline-none transition-colors duration-120 ease-out hover:border-line-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+          // На тач-ширинах 30px мало (§6): рядом стоит кнопка уровней с
+          // просветом 6px, и промах открывал не тот поповер
+          className="grid size-[30px] shrink-0 place-items-center rounded-control border border-line-card text-text-3 outline-none transition-colors duration-120 ease-out pointer-coarse:size-11 hover:border-line-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
         >
           <SlidersHorizontal className="size-3.5" />
         </button>
-      </PopoverTrigger>
-      {/* Содержимое размонтируется при закрытии — черновик каждый раз
-          начинается с сохранённых значений, а не с прошлой правки */}
-      <PopoverContent align="end" className="w-80">
-        <MarkForm
-          position={position}
-          busy={busy}
-          onMark={onMark}
-          onDone={() => setOpen(false)}
-        />
-      </PopoverContent>
-    </Popover>
+      }
+    >
+      <MarkForm
+        position={position}
+        busy={busy}
+        onMark={onMark}
+        onDone={() => setOpen(false)}
+      />
+    </SheetPopover>
   );
 }
 
@@ -145,7 +149,8 @@ function MarkForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
       <div>
-        <p className="t-h3">Разметка позиции</p>
+        {/* В нижнем листе заголовок уже стоит в его шапке */}
+        <p className="t-h3 max-sm:hidden">Разметка позиции</p>
         <p className="t-meta truncate text-text-3">{position.title}</p>
       </div>
 
@@ -177,7 +182,9 @@ function MarkForm({
                   : undefined
               }
               className={cn(
-                "flex h-8 items-center justify-center rounded-control px-2 text-[12.5px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                // Единственный способ переназначить зону позиции — 32px
+                // под палец мало (§6)
+                "flex h-8 items-center justify-center rounded-control px-2 text-[12.5px] outline-none transition-colors duration-120 ease-out pointer-coarse:h-11 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
                 zone === o.value
                   ? "font-medium"
                   : "text-text-3 hover:bg-raised hover:text-text-1",
@@ -251,9 +258,15 @@ function AmountField({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id} className="t-label" title={hint}>
-        {label}
-      </Label>
+      {/* Пояснение живёт в «?», а не в title: на тач-экране title
+          не показывается никогда, а под ним здесь лежит объяснение точки
+          отсчёта — величины, от которой стратегия считает все уровни */}
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={id} className="t-label">
+          {label}
+        </Label>
+        {hint && <HelpTip>{hint}</HelpTip>}
+      </div>
       <Input
         id={id}
         value={value}

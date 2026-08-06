@@ -27,6 +27,7 @@ import {
 } from "@/lib/format";
 import { positionSpread } from "@/lib/positions/rates";
 import { DEFAULT_TARGET_LTV_PCT } from "@/lib/settings-defaults";
+import { PullToRefresh } from "@/components/dc/pull-to-refresh";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { BorrowedWork } from "./borrowed-work";
@@ -236,6 +237,7 @@ export function DebtScreen() {
 
   return (
     <TooltipProvider>
+      <PullToRefresh onRefresh={() => void doRefresh()} refreshing={refreshing}>
       <div className="flex flex-col gap-4">
         {header}
 
@@ -287,6 +289,7 @@ export function DebtScreen() {
           />
         )}
       </div>
+      </PullToRefresh>
     </TooltipProvider>
   );
 }

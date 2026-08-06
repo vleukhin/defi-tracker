@@ -60,14 +60,19 @@ export function Metric({
   className?: string;
 }) {
   return (
-    <div className={cn("bg-surface px-card py-3.5", className)}>
+    // min-w-0: ячейка сетки иначе не даёт содержимому сжиматься, и truncate
+    // на значении не срабатывает — число всё равно уезжает за край
+    <div className={cn("min-w-0 bg-surface px-card py-3.5", className)}>
       <div className="flex items-center gap-1.5">
         <span className="t-label truncate">{label}</span>
         {hint && <HelpTip>{hint}</HelpTip>}
       </div>
       <p
         className={cn(
-          "mt-2",
+          // truncate — страховка, а не решение: карточка режет по
+          // overflow:hidden, и без него длинная сумма теряла разряды молча,
+          // без единого признака, что число неполное
+          "mt-2 truncate",
           mono ? "t-metric" : "t-metric-alt",
           tone === "profit" && "text-profit",
           tone === "loss" && "text-loss",
@@ -76,8 +81,12 @@ export function Metric({
       >
         {value ?? <span className="text-text-3">—</span>}
       </p>
+      {/* Третий уровень несёт данные («цель 50% · ликвидация при 78,4%»),
+          поэтому на телефоне он не мельче мета-текста */}
       {delta != null && (
-        <p className="mt-2 text-[12px] text-text-3">{delta}</p>
+        <p className="mt-2 text-[12px] text-text-3 max-sm:text-[12.5px]">
+          {delta}
+        </p>
       )}
     </div>
   );

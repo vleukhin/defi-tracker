@@ -55,7 +55,9 @@ export function AppNav({ summary }: { summary?: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-40 border-line border-b bg-[color-mix(in_srgb,var(--bg-canvas)_88%,transparent)] backdrop-blur-[14px]">
+    // pt под вырез: в браузере inset равен нулю, в standalone-режиме с
+    // домашнего экрана шапка иначе уезжает под статус-бар
+    <header className="sticky top-0 z-40 border-line border-b bg-[color-mix(in_srgb,var(--bg-canvas)_88%,transparent)] pt-[env(safe-area-inset-top)] backdrop-blur-[14px]">
       <div className="page-shell flex h-header items-center gap-5 px-4 sm:gap-7 sm:px-page">
         <Link
           href="/"

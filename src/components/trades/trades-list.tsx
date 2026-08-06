@@ -113,7 +113,7 @@ export function TradesList({
                   aria-label={`Изменить сделку от ${tableDate(trade.tradedAt)}`}
                   // Отрицательные поля возвращают hit-зону к высоте строки,
                   // не растягивая саму ячейку
-                  className="-my-2.5 -mr-2 rounded-pill py-2.5 pr-2 pl-3 text-[12.5px] text-text-4 outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="-my-2.5 -mr-2 inline-flex items-center justify-end rounded-pill py-2.5 pr-2 pl-3 text-[12.5px] text-text-4 outline-none transition-colors duration-120 ease-out pointer-coarse:min-h-11 hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   правка
                 </button>
