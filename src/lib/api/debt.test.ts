@@ -9,7 +9,9 @@ function input(overrides: Partial<BuildDebtInput> = {}): BuildDebtInput {
     hasWallets: true,
     healthRows: [],
     positions: [],
+    collateral: [],
     pricesUsd: new Map(),
+    basePricesUsd: { btc: null, eth: null },
     hfWarningThreshold: 1.5,
     targetLtvPct: 50,
     ...overrides,
@@ -112,6 +114,42 @@ describe("buildDebtResponse", () => {
   it("без кошельков долг ноль, а не null", () => {
     const res = buildDebtResponse(input({ hasWallets: false }));
     expect(res.summary.totalDebtUsd).toBe(0);
+  });
+
+  it("состав залога сети — в фиксированном порядке, без дублей", () => {
+    const res = buildDebtResponse(
+      input({
+        healthRows: [
+          { chain: "arbitrum", totalCollateralUsd: 50_000, totalDebtUsd: 20_000, healthFactor: 1.9, checkedAt: "t" },
+          { chain: "base", totalCollateralUsd: 10_000, totalDebtUsd: 2_000, healthFactor: 4, checkedAt: "t" },
+        ],
+        collateral: [
+          // Порядок строк кэша обратный порядку колонок — и не должен на него влиять
+          { chain: "arbitrum", category: "eth" },
+          { chain: "arbitrum", category: "btc" },
+          { chain: "arbitrum", category: "eth" },
+          { chain: "base", category: "btc" },
+        ],
+        basePricesUsd: { btc: 95_000, eth: 3_200 },
+      }),
+    );
+    const arb = res.chains.find((c) => c.chain === "arbitrum")!;
+    expect(arb.collateralCategories).toEqual(["btc", "eth"]);
+    // Сеть с одним базовым активом не получает чужую колонку
+    expect(res.chains.find((c) => c.chain === "base")!.collateralCategories).toEqual(["btc"]);
+    expect(res.basePricesUsd).toEqual({ btc: 95_000, eth: 3_200 });
+  });
+
+  it("залог не читался — пустой состав, а не выдуманные категории", () => {
+    const res = buildDebtResponse(
+      input({
+        healthRows: [
+          { chain: "arbitrum", totalCollateralUsd: 50_000, totalDebtUsd: 20_000, healthFactor: 1.9, checkedAt: "t" },
+        ],
+      }),
+    );
+    expect(res.chains[0].collateralCategories).toEqual([]);
+    expect(res.basePricesUsd).toEqual({ btc: null, eth: null });
   });
 
   it("несколько кошельков на сеть: суммы складываются, HF — минимум", () => {

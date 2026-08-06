@@ -1,4 +1,6 @@
+import { CATEGORY_LABEL } from "@/components/portfolio/category";
 import type { StatusTone } from "@/components/dc/chip";
+import type { CollateralCategory } from "@/lib/api/types";
 import { HF_CRITICAL, HF_URGENT, type HfZone, hfZone } from "@/lib/hf-zones";
 import { HF_OK_MARGIN } from "./hf";
 
@@ -141,6 +143,55 @@ export function dropScenarios({
   }
   if (liq !== null) rows.push(at(liq, true));
   return rows;
+}
+
+/** Базовый актив в таблице сценариев: подпись колонки и цена «сейчас». */
+export interface BasePriceColumn {
+  category: CollateralCategory;
+  label: string;
+  /** Текущая цена — от неё отсчитываются цены на ступенях. */
+  priceUsd: number;
+}
+
+/**
+ * Какие цены подписывать к ступеням падения.
+ *
+ * Показываются только активы, которыми залог действительно обеспечен:
+ * колонка ETH при чисто биткоиновом залоге — не информация, а шум.
+ * Пустой список категорий означает «залог ещё не читался», а не «залога
+ * нет», и тогда показываются оба базовых актива: стратегия стоит на них
+ * двоих (docs/07 §1), и это честнее, чем спрятать таблицу цен целиком.
+ *
+ * Актив без цены в кэше выпадает: прочерк во всём столбце ничего
+ * не сообщает, а место занимает.
+ */
+export function basePriceColumns(
+  categories: CollateralCategory[],
+  pricesUsd: Record<CollateralCategory, number | null>,
+): BasePriceColumn[] {
+  const wanted: CollateralCategory[] =
+    categories.length > 0 ? categories : ["btc", "eth"];
+  const columns: BasePriceColumn[] = [];
+  for (const category of wanted) {
+    const priceUsd = pricesUsd[category];
+    if (priceUsd === null || !Number.isFinite(priceUsd) || priceUsd <= 0)
+      continue;
+    columns.push({ category, label: CATEGORY_LABEL[category], priceUsd });
+  }
+  return columns;
+}
+
+/**
+ * Цена базового актива на ступени падения.
+ *
+ * Прямое «цена × (1 − d)»: строка таблицы говорит, что залог подешевел на d,
+ * а залог — это и есть BTC с ETH. Ровно это же и допущение: если BTC упадёт,
+ * а ETH нет, залог потеряет меньше d, и настоящая цена ликвидации по каждому
+ * активу окажется ниже показанной. Столбцы отвечают на вопрос «как выглядит
+ * этот рынок», а не предсказывают курс каждой монеты по отдельности.
+ */
+export function priceAtDrop(priceUsd: number, drop: number): number {
+  return priceUsd * (1 - drop);
 }
 
 /**

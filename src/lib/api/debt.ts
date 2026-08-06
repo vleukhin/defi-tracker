@@ -1,5 +1,6 @@
 import { CHAIN_IDS } from "@/lib/chains/config";
 import type {
+  CollateralCategory,
   DebtChainDto,
   DebtItemDto,
   DebtResponseDto,
@@ -36,16 +37,33 @@ export interface DebtPositionInput {
   quantity: string;
 }
 
+/** Залоговая строка кэша: из неё нужна только категория. */
+export interface CollateralInput {
+  chain: string;
+  category: CollateralCategory;
+}
+
 export interface BuildDebtInput {
   hasWallets: boolean;
   healthRows: HealthRowInput[];
   positions: DebtPositionInput[];
+  /** Залог по сетям — чем обеспечен, без количеств (см. DebtChainDto). */
+  collateral: CollateralInput[];
   /** Цены по coingecko id (только кэш). */
   pricesUsd: Map<string, number>;
+  /**
+   * Цены базовых активов — считаются вызывающим по тем же кэш-ценам:
+   * соответствие «категория → coingecko id» живёт на сервере (prices/coins),
+   * а этот модуль остаётся чистой агрегацией без импортов из server-only.
+   */
+  basePricesUsd: Record<CollateralCategory, number | null>;
   hfWarningThreshold: number;
   /** Целевой LTV, % — из тех же настроек, что и порог HF (docs/07 §8). */
   targetLtvPct: number;
 }
+
+/** Порядок колонок базовых активов — тот же, что у категорий портфеля. */
+const CATEGORY_ORDER: CollateralCategory[] = ["btc", "eth"];
 
 /** Сумма с null-пропагацией: неизвестное слагаемое — неизвестная сумма. */
 function sumOrNull(values: (number | null)[]): number | null {
@@ -73,6 +91,13 @@ export function buildDebtResponse(input: BuildDebtInput): DebtResponseDto {
     const list = itemsByChain.get(p.chain) ?? [];
     list.push(item);
     itemsByChain.set(p.chain, list);
+  }
+
+  const collateralByChain = new Map<string, Set<CollateralCategory>>();
+  for (const c of input.collateral) {
+    const set = collateralByChain.get(c.chain) ?? new Set<CollateralCategory>();
+    set.add(c.category);
+    collateralByChain.set(c.chain, set);
   }
 
   const healthByChain = new Map<string, HealthRowInput[]>();
@@ -121,6 +146,7 @@ export function buildDebtResponse(input: BuildDebtInput): DebtResponseDto {
         ? rows.map((r) => r.checkedAt).sort()[0]
         : "";
 
+    const categories = collateralByChain.get(chain);
     chains.push({
       chain,
       totalCollateralUsd,
@@ -128,6 +154,12 @@ export function buildDebtResponse(input: BuildDebtInput): DebtResponseDto {
       healthFactor,
       utilization,
       items,
+      // Порядок фиксированный, а не порядок строк кэша: колонки сценариев
+      // не должны меняться местами от того, какой залог прочитался первым
+      collateralCategories:
+        categories === undefined
+          ? []
+          : CATEGORY_ORDER.filter((cat) => categories.has(cat)),
       checkedAt,
     });
   }
@@ -151,6 +183,7 @@ export function buildDebtResponse(input: BuildDebtInput): DebtResponseDto {
 
   return {
     chains,
+    basePricesUsd: input.basePricesUsd,
     summary: {
       totalDebtUsd,
       minHealthFactor,

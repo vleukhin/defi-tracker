@@ -42,6 +42,7 @@ function chain(overrides: Partial<DebtChainDto> = {}): DebtChainDto {
     items: [
       { symbol: "USDC", chain: "arbitrum", quantity: "48000", valueUsd: 48_000 },
     ],
+    collateralCategories: ["btc", "eth"],
     checkedAt: hoursAgo(0.2),
     ...overrides,
   };
@@ -56,6 +57,7 @@ function debt(
     .filter((hf): hf is number => hf !== null);
   return {
     chains,
+    basePricesUsd: { btc: 95_000, eth: 3_200 },
     summary: {
       totalDebtUsd: 48_000,
       minHealthFactor: hfs.length > 0 ? Math.min(...hfs) : null,
