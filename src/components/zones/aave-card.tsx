@@ -3,9 +3,16 @@
 import type { ReactNode } from "react";
 import { SafetyBar } from "@/components/dc/bar";
 import { Verdict } from "@/components/dc/card";
-import { Chip, StatusChip, type StatusTone } from "@/components/dc/chip";
+import { Chip, StatusChip } from "@/components/dc/chip";
 import { Metric } from "@/components/dc/metrics";
-import { formatHf, formatHfThreshold, hfStatus } from "@/components/debt/hf";
+import { formatHf, formatHfThreshold } from "@/components/debt/hf";
+import {
+  SAFETY_DANGER_PERCENT,
+  SAFETY_LIQUIDATION_PERCENT,
+  hfTone,
+  safetyPosition,
+} from "@/components/debt/risk";
+import { hfZone, isDangerZone } from "@/lib/hf-zones";
 import type { DebtChainDto, StrategyZone } from "@/lib/api/types";
 import { chainLabel, dcRate, dcUsd, tablePct, tablePctSigned } from "@/lib/format";
 import { CardHead, MetricRow, PositionShell, VisualHead } from "./card-parts";
@@ -69,9 +76,11 @@ export function AaveCard({
   // Ликвидация приходит, когда залог обесценится в HF раз
   const dropPercent = hf === null || hf <= 0 ? null : -(1 - 1 / hf) * 100;
 
-  const status = hfStatus(hf, hfWarningThreshold);
-  const tone: StatusTone =
-    status === "below" ? "loss" : status === "warning" ? "warn" : "profit";
+  // Цвет и полоса берутся из общих функций «Долга»: раньше карточка красила
+  // по hfStatus и рисовала маркер по собственной шкале, и один и тот же HF
+  // выглядел здесь иначе, чем на экране «Долг»
+  const tone = hfTone(hf, hfWarningThreshold) ?? "profit";
+  const belowThreshold = isDangerZone(hfZone(hf, hfWarningThreshold));
 
   const debtSymbols = Array.from(new Set(chain.items.map((i) => i.symbol)));
 
@@ -135,9 +144,10 @@ export function AaveCard({
       />
       <SafetyBar
         className="pt-2.5"
-        liquidationPercent={LIQUIDATION_MARK}
-        dangerPercent={DANGER_MARK}
-        position={hfPercent(hf, hfWarningThreshold)}
+        liquidationPercent={SAFETY_LIQUIDATION_PERCENT}
+        dangerPercent={SAFETY_DANGER_PERCENT}
+        // Долга нет — запас не ограничен, маркер в самом конце полосы
+        position={hf === null ? 100 : safetyPosition(hf, hfWarningThreshold)}
         tone={tone}
         labels={
           <>
@@ -155,7 +165,7 @@ export function AaveCard({
         {verdict ??
           (dropPercent === null
             ? "Health factor не прочитан — запас до ликвидации не считается."
-            : status === "below"
+            : belowThreshold
               ? `Health factor ниже порога: до ликвидации залогу хватит падения на ${tablePct(Math.abs(dropPercent), 1)}.`
               : `До ликвидации залог может упасть на ${tablePct(Math.abs(dropPercent), 1)} — заём в этом запасе и работает.`)}
       </Verdict>
@@ -163,36 +173,14 @@ export function AaveCard({
   );
 }
 
-/**
- * Разметка полосы прочности (дизайн, «Запас прочности»): ликвидация 1,00
- * стоит на 22% ширины, порог предупреждения — на 42%, дальше спокойная
- * зона до HF = 2,00. Шкала кусочно-линейная нарочно: равномерная отдала бы
- * половину полосы значениям, которые уже ничего не решают.
+/*
+ * Собственной шкалы полосы у карточки больше нет.
+ *
+ * Здесь жила hfPercent — кусочно-линейная разметка с третьим участком до
+ * HF = 2. Ниже порога она совпадала с safetyPosition из «Долга» (обе
+ * привязаны к 22% и 42%), а выше расходилась: при HF 1,68 и пороге 1,50
+ * маркер стоял на 63% против 49%, и запас прочности «вырастал» на четверть
+ * полосы при переходе с «Долга» в «Зоны». Осталась одна функция —
+ * safetyPosition, та, что документирует своё свойство: полоса не может
+ * противоречить числу.
  */
-const LIQUIDATION_MARK = 22;
-const DANGER_MARK = 42;
-/** Дальше этого HF полоса не растёт: «безопасно» и «очень безопасно» равны. */
-const SAFE_HF = 2;
-
-export function hfPercent(
-  healthFactor: number | null,
-  threshold: number,
-): number {
-  if (healthFactor === null) return 100;
-  // Порог, вплотную придвинутый к ликвидации, схлопнул бы жёлтую зону
-  // в ноль и уронил бы шкалу в деление на ноль
-  const warn = Math.max(threshold, 1.05);
-  const safe = Math.max(warn + 0.5, SAFE_HF);
-  if (healthFactor <= 0) return 0;
-  if (healthFactor < 1) return healthFactor * LIQUIDATION_MARK;
-  if (healthFactor < warn) {
-    return (
-      LIQUIDATION_MARK +
-      ((healthFactor - 1) / (warn - 1)) * (DANGER_MARK - LIQUIDATION_MARK)
-    );
-  }
-  if (healthFactor >= safe) return 100;
-  return (
-    DANGER_MARK + ((healthFactor - warn) / (safe - warn)) * (100 - DANGER_MARK)
-  );
-}

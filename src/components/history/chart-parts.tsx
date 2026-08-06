@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { tableDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -150,8 +150,27 @@ export function HoverLayer({
   onActive: (index: number | null) => void;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const layerRef = useRef<HTMLDivElement>(null);
   // Точка в порядке обхода: последняя (самая свежая) — она интереснее всех
   const [roving, setRoving] = useState(zones.length - 1);
+
+  /*
+   * Тап мимо графика закрывает тултип.
+   *
+   * На тач-экране точка открывается по focus, а blur при касании в стороне
+   * приходит не всегда: тултип оставался висеть над графиком до следующего
+   * тапа по самому графику. Мышь сюда не попадает — там работает
+   * onMouseLeave, и перехватывать её незачем.
+   */
+  useEffect(() => {
+    function dismiss(event: PointerEvent) {
+      if (event.pointerType === "mouse") return;
+      if (layerRef.current?.contains(event.target as Node)) return;
+      onActive(null);
+    }
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [onActive]);
 
   function move(next: number) {
     const clamped = Math.max(0, Math.min(zones.length - 1, next));
@@ -180,7 +199,7 @@ export function HoverLayer({
   }
 
   return (
-    <div className="absolute inset-0">
+    <div ref={layerRef} className="absolute inset-0">
       {zones.map((zone, i) => (
         <button
           key={zone.label}

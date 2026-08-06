@@ -17,6 +17,7 @@ import {
   tableDate,
   tableNumber,
   tablePct,
+  tableTimeUtc,
   tableUsd,
   usdDecimals,
 } from "@/lib/format";
@@ -195,7 +196,7 @@ function SnapshotDetail({
         <span className="font-mono">{tableDate(snapshot.takenOn)}</span>
         {NBSP}·{NBSP}снят{" "}
         <span className="font-mono">
-          {new Date(snapshot.takenAt).toISOString().slice(11, 16)} UTC
+          {tableTimeUtc(snapshot.takenAt)} UTC
         </span>
       </p>
 

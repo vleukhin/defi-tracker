@@ -6,15 +6,18 @@ import {
   bandCenter,
   countMissingDays,
   linePath,
-  niceTicks,
-  pickTicksByX,
   splitRuns,
   timeScale,
   yPercent,
 } from "@/components/history/chart-geometry";
+import { ChartTimeAxis, valueDomain } from "@/components/history/chart-parts";
 import { DcCard } from "@/components/dc/card";
 import type { SnapshotsResponseDto } from "@/lib/api/types";
 import { dcUsd, dcUsdSigned, tableDate, tablePctSigned } from "@/lib/format";
+import {
+  PORTFOLIO_DELTA_LABEL,
+  periodDelta,
+} from "@/lib/portfolio/period-delta";
 import { cn } from "@/lib/utils";
 
 /**
@@ -71,7 +74,10 @@ export function ValueSparkline({
 
   const scale = timeScale(snapshots)!;
   const values = snapshots.map((s) => s.totalUsd);
-  const axis = niceTicks(Math.min(...values), Math.max(...values));
+  // Тот же домен, что у полноценного графика «Истории»: niceTicks округлял
+  // границы под сетку, которой здесь нет, и один и тот же ряд получал на
+  // двух экранах разную форму кривой
+  const axis = valueDomain(values);
   const plot = snapshots.map((snapshot) => ({
     takenOn: snapshot.takenOn,
     x: bandCenter(scale, snapshot.takenOn),
@@ -82,17 +88,14 @@ export function ValueSparkline({
 
   const first = snapshots[0];
   const last = snapshots[snapshots.length - 1];
-  const change = last.totalUsd - first.totalUsd;
-  const changePct =
-    first.totalUsd === 0 ? null : (change / first.totalUsd) * 100;
+  // Общая periodDelta, а не собственное вычитание: hero над этой карточкой
+  // считает по «активам», здесь — по портфелю, и раньше оба числа стояли
+  // рядом под одинаковой подписью «за 30 дней»
+  const delta = periodDelta(snapshots, "portfolio");
+  const change = delta?.absolute ?? 0;
+  const changePct = delta?.percent ?? null;
   const missing = countMissingDays(snapshots);
   const anyPartial = snapshots.some((s) => s.isPartial);
-
-  const ticks = pickTicksByX(
-    plot.map((p) => p.x),
-    5,
-    12,
-  );
 
   const ariaLabel =
     `${TITLE} за 30 дней: с ${tableDate(first.takenOn)} по ` +
@@ -176,13 +179,10 @@ export function ValueSparkline({
         })}
       </div>
 
-      <div className="flex items-center justify-between px-5 pt-2 pb-3">
-        {ticks.map((i) => (
-          <span key={plot[i].takenOn} className="t-axis">
-            {shortDate(plot[i].takenOn)}
-          </span>
-        ))}
-      </div>
+      {/* Ось строится по фактическим x точек. Раньше подписи раскладывал
+          justify-between, то есть равномерно, — и они не совпадали с точками,
+          к которым относились. */}
+      <ChartTimeAxis points={plot} className="px-5 pt-2 pb-3" />
     </ChartCard>
   );
 }
@@ -207,7 +207,8 @@ function ChartCard({
         <div>
           <h2 className="t-h3">{TITLE}</h2>
           <p className="t-meta mt-1 text-text-3">
-            за 30 дней{note ? ` · ${note}` : ""}
+            {PORTFOLIO_DELTA_LABEL}
+            {note ? ` · ${note}` : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -252,9 +253,4 @@ function Placeholder({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
-}
-
-/** «05.07» — подпись оси: год в тридцатидневном окне избыточен. */
-function shortDate(takenOn: string): string {
-  return tableDate(takenOn).slice(0, 5);
 }

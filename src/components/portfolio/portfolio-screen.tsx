@@ -20,6 +20,10 @@ import type {
   SnapshotsResponseDto,
 } from "@/lib/api/types";
 import { formatRelativeTime } from "@/lib/format";
+import {
+  ASSETS_DELTA_LABEL,
+  periodDelta,
+} from "@/lib/portfolio/period-delta";
 import { DEFAULT_TARGET_LTV_PCT } from "@/lib/settings-defaults";
 import {
   ackedSignals,
@@ -370,24 +374,18 @@ export function PortfolioScreen() {
 }
 
 /**
- * Дельта «Активов» за окно снепшотов. Активы точки — это портфель плюс
- * размещённые позиции; если позиции на одном из концов неизвестны, сравнение
- * идёт по портфелю, иначе дельта показала бы переезд капитала как доход.
+ * Дельта «Активов» за окно снепшотов.
+ *
+ * Считает общая periodDelta (lib/portfolio/period-delta): та же величина
+ * нужна карточке «Динамика стоимости» и графику «Истории», и пока каждый
+ * считал сам, hero и карточка под ним показывали разные числа под одной
+ * подписью. Подпись здесь тоже своя — «активы», а не просто «за 30 дней»:
+ * это портфель ВМЕСТЕ с размещёнными позициями.
  */
 function assetsDelta(snapshots: SnapshotDto[]): AssetsDelta | null {
-  if (snapshots.length < 2) return null;
-  const first = snapshots[0];
-  const last = snapshots[snapshots.length - 1];
-  const withPositions =
-    first.positionsUsd !== null && last.positionsUsd !== null;
-  const from = first.totalUsd + (withPositions ? (first.positionsUsd ?? 0) : 0);
-  const to = last.totalUsd + (withPositions ? (last.positionsUsd ?? 0) : 0);
-  const absolute = to - from;
-  return {
-    absolute,
-    percent: from === 0 ? null : (absolute / from) * 100,
-    label: "за 30 дней",
-  };
+  const delta = periodDelta(snapshots, "assets");
+  if (delta === null) return null;
+  return { ...delta, label: ASSETS_DELTA_LABEL };
 }
 
 /** Скелетон держит места конечных элементов, крупные числа не подменяются. */

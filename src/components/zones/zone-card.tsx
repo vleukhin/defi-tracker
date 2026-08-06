@@ -30,7 +30,7 @@ export function ZoneCard({ zone }: { zone: ZoneBreakdownDto }) {
         </h3>
         <HelpTip>{zone.purpose}</HelpTip>
         <span className="ml-auto text-[13px] font-medium text-text-2">
-          {zone.percent === null ? "—" : tablePct(zone.percent, 1)}
+          {zone.percent === null ? "—" : tablePct(zone.percent)}
         </span>
       </div>
 

@@ -7,10 +7,17 @@ import { HF_OK_MARGIN } from "@/lib/hf-zones";
  * способный принудительно прервать стратегию накопления.
  *
  * Границы (порог по умолчанию 1.5):
- *  * below   — HF ниже порога: риск ликвидации, destructive;
- *  * warning — HF в буфере [порог; порог + 0.3): близко, warning;
+ *  * below   — HF ниже порога: риск ликвидации;
+ *  * warning — HF в буфере [порог; порог + 0.3): близко;
  *  * ok      — HF ≥ порог + 0.3: спокойное состояние;
  *  * none    — долга нет (HF = uint256.max → null → «∞»).
+ *
+ * ВАЖНО: это шкала ПОДПИСЕЙ, а не цветов. Цвет числа даёт hfTone
+ * (components/debt/risk.ts) поверх общей шкалы зон, и только он: пока
+ * hfStatus красил экраны наравне с hfTone, «Зоны» и «Настройки» рисовали
+ * HF 1,40 при пороге 1,50 красным, а «Долг» — жёлтым. Здесь на три зоны
+ * меньше, чем в hfZone, и экстренный уровень стратегии (1,3) не различается
+ * вовсе — для подписи этого хватает, для цвета не хватало.
  */
 
 export type HfStatus = "ok" | "warning" | "below" | "none";
@@ -37,14 +44,6 @@ export function hfStatus(
 export function formatHf(healthFactor: number | null): string {
   return healthFactor === null ? "∞" : tableNumber(healthFactor, 2);
 }
-
-/** Цвет текста HF по статусу; знак не только цветом — рядом всегда число. */
-export const HF_TEXT_CLASS: Record<HfStatus, string> = {
-  ok: "text-success",
-  warning: "text-warning",
-  below: "text-destructive",
-  none: "text-muted-foreground",
-};
 
 /**
  * Порог — всегда два знака: «1,50», «1,75», «2,00».

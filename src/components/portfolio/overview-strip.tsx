@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { HelpTip } from "@/components/dc/help-tip";
 import { DEBT_UNREAD_HINT, formatHf, formatHfThreshold } from "@/components/debt/hf";
+import { hfTone } from "@/components/debt/risk";
 import type { DebtSummaryDto, PortfolioOverviewDto } from "@/lib/api/types";
 import { NBSP, dcUsd, dcUsdSigned, tablePctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -172,8 +173,9 @@ function HealthFactor({ summary }: { summary: DebtSummaryDto | null }) {
 
   const hf = summary.minHealthFactor;
   const threshold = summary.hfWarningThreshold;
-  const tone =
-    hf === null ? "profit" : hf < 1.2 ? "loss" : hf < threshold ? "warn" : "profit";
+  // Раньше здесь стоял хардкод «hf < 1.2» мимо HF_CRITICAL и мимо общей
+  // шкалы зон: hero расходился с «Долгом» и «Зонами» на тех же числах
+  const tone = hfTone(hf, threshold) ?? "profit";
   const color = `var(--${tone})`;
 
   return (
