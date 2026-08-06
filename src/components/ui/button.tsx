@@ -25,16 +25,22 @@ const buttonVariants = cva(
           "bg-transparent text-loss hover:bg-[color-mix(in_srgb,var(--loss)_10%,transparent)] focus-visible:ring-destructive/30",
         link: "text-link underline-offset-4 hover:underline",
       },
+      // Высоты 24–38px — плотность десктопа. На тач-ширинах каждая дорастает
+      // до 44px: дизайн-код §6 требует hit-зону не меньше 44, а мимо пальца
+      // промахивались все кнопки приложения разом. Растягиваем сам контрол,
+      // как Segmented и FilterChips; псевдоэлемент (приём HelpTip) оставлен
+      // тем случаям, где знак обязан остаться крошечным внутри строки текста.
       size: {
         default:
-          "h-control gap-1.5 px-3.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
-        xs: "h-6 gap-1 rounded-pill px-2 text-[12px] [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-[30px] gap-1.5 px-3 text-[12.5px] has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
-        lg: "h-[38px] gap-1.5 px-5 text-sm has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4",
-        icon: "size-control",
-        "icon-xs": "size-6 rounded-pill [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-[30px]",
-        "icon-lg": "size-[38px]",
+          "h-control gap-1.5 px-3.5 pointer-coarse:h-11 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
+        xs: "h-6 gap-1 rounded-pill px-2 text-[12px] pointer-coarse:h-11 pointer-coarse:px-3 [&_svg:not([class*='size-'])]:size-3 pointer-coarse:[&_svg:not([class*='size-'])]:size-4",
+        sm: "h-[30px] gap-1.5 px-3 text-[12.5px] pointer-coarse:h-11 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
+        lg: "h-[38px] gap-1.5 px-5 text-sm pointer-coarse:h-11 has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4",
+        icon: "size-control pointer-coarse:size-11",
+        "icon-xs":
+          "size-6 rounded-pill pointer-coarse:size-11 [&_svg:not([class*='size-'])]:size-3 pointer-coarse:[&_svg:not([class*='size-'])]:size-4",
+        "icon-sm": "size-[30px] pointer-coarse:size-11",
+        "icon-lg": "size-[38px] pointer-coarse:size-11",
       },
     },
     defaultVariants: {

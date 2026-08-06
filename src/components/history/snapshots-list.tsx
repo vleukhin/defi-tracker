@@ -110,7 +110,7 @@ export function SnapshotsList({ snapshots }: { snapshots: SnapshotDto[] }) {
                       onClick={() => setOpenId(open ? null : snapshot.id)}
                       aria-expanded={open}
                       title="Показать состав на дату"
-                      className="flex items-center gap-1.5 rounded-pill font-mono text-[12.5px] text-text-2 outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
+                      className="flex items-center gap-1.5 rounded-pill font-mono text-[12.5px] text-text-2 outline-none transition-colors duration-120 ease-out pointer-coarse:min-h-11 hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
                       <ChevronRight
                         aria-hidden

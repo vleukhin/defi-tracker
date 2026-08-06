@@ -309,20 +309,27 @@
   font: 500 34px/1.05 var(--font-mono);
   letter-spacing: -0.035em;
 }
+/* Роли метрик уменьшаются ниже 640px. Причина не в эстетике: ячейка
+   MetricGrid на 360px даёт ~128px полезной ширины, Mono 24px — примерно
+   8 знаков, а карточка режет лишнее по overflow:hidden. Число молча
+   теряло разряды, и это хуже мелкого шрифта. */
 @utility t-metric {
   font: 500 24px/1 var(--font-mono);
   letter-spacing: -0.03em;
+  @media (width < 40rem) { font-size: 20px; }
 }
 /* Сумма карточки зоны и категории: крупнее метрики, но это ещё не
    число экрана — между .t-metric и .t-display */
 @utility t-metric-lg {
   font: 500 27px/1 var(--font-mono);
   letter-spacing: -0.03em;
+  @media (width < 40rem) { font-size: 22px; }
 }
 /* Проценты и ставки: Mono для них избыточен — это не деньги */
 @utility t-metric-alt {
   font: 500 24px/1 var(--font-sans);
   letter-spacing: -0.02em;
+  @media (width < 40rem) { font-size: 20px; }
 }
 @utility t-metric-sm {
   font: 500 19px/1.2 var(--font-sans);
@@ -351,6 +358,9 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-3);
+  /* 10,5px в разрядку — плотность десктопа; на телефоне это подпись
+     к каждой метрике, а не украшение, и читать её приходится */
+  @media (width < 40rem) { font-size: 11px; }
 }
 /* Подпись оси графика — единственное место, где Mono мельче 24px */
 @utility t-axis {

@@ -107,7 +107,7 @@ export function LtvTarget({
             disabled={saving}
             aria-label="Целевой LTV, проценты"
             aria-invalid={invalid || undefined}
-            className="h-[30px] pr-6 text-right font-mono text-[13px]"
+            className="h-[30px] pr-6 text-right font-mono text-base md:text-[13px]"
           />
           <span
             aria-hidden

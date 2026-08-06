@@ -84,7 +84,7 @@ export function DebtChains({
                         onClick={() =>
                           setOpen(expanded ? null : chain.chain)
                         }
-                        className="-ml-1 flex items-center gap-1.5 rounded-control px-1 py-0.5 text-left outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
+                        className="-ml-1 flex items-center gap-1.5 rounded-control px-1 py-0.5 text-left outline-none transition-colors duration-120 ease-out pointer-coarse:min-h-11 hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
                       >
                         <ChevronRight
                           aria-hidden

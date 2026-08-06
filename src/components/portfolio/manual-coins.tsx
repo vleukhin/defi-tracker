@@ -174,7 +174,7 @@ export function ManualCoinsCard({
             onChange={(e) => setLabel(e.target.value)}
             placeholder={PLACEHOLDER_LABEL[category]}
             aria-label="Где лежит"
-            className="min-w-[140px] flex-1 text-[13px]"
+            className="min-w-[140px] flex-1 text-base md:text-[13px]"
           />
           <Input
             type="text"
@@ -186,7 +186,7 @@ export function ManualCoinsCard({
             aria-label={
               category === "stable" ? "Сумма в долларах" : "Количество монет"
             }
-            className="w-[96px] shrink-0 text-right font-mono text-[13px]"
+            className="w-[120px] shrink-0 text-right font-mono text-base sm:w-[96px] md:text-[13px]"
           />
           <Button type="submit" variant="secondary" disabled={pending}>
             {pending ? "Добавление…" : "Добавить"}

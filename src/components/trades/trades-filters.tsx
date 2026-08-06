@@ -55,7 +55,7 @@ const CATEGORY_OPTIONS: {
 
 /** Компактное поле даты внутри пилюли диапазона. */
 const DATE_INPUT =
-  "min-w-[92px] bg-transparent font-mono text-[12.5px] text-text-2 outline-none";
+  "min-w-[92px] bg-transparent font-mono text-base text-text-2 outline-none md:text-[12.5px]";
 
 export function TradesFilters({
   filters,
@@ -130,7 +130,7 @@ export function TradesFilters({
           maxLength={100}
           onChange={(e) => onChange({ ...filters, q: e.target.value })}
           placeholder="Поиск по заметке"
-          className="h-[30px] w-full pl-8 text-[12.5px] md:text-[12.5px]"
+          className="h-[30px] w-full pl-8 text-base md:text-[12.5px]"
         />
       </div>
     </div>

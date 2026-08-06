@@ -50,8 +50,13 @@ export function OverviewStrip({
           <span className="t-label">Активы</span>
           <HelpTip>{ASSETS_HINT}</HelpTip>
         </div>
+        {/* До sm число набирается ролью 34px: 42px Mono на 360px съедают
+            288px доступной ширины, и семизначная сумма упирается в край */}
         <p
-          className={cn("t-display", overview.assetsUsd === null && "text-text-3")}
+          className={cn(
+            "t-display-sm sm:t-display",
+            overview.assetsUsd === null && "text-text-3",
+          )}
           title={overview.assetsUsd === null ? ASSETS_UNKNOWN_HINT : undefined}
         >
           {overview.assetsUsd === null ? "—" : dcUsd(overview.assetsUsd)}

@@ -96,7 +96,7 @@ export function SignalsCard({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="t-meta w-full border-line border-t px-card py-2.5 text-left text-link underline-offset-4 hover:underline"
+          className="t-meta flex w-full items-center border-line border-t px-card py-2.5 text-left text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline"
         >
           {`Ещё ${countLabel(hidden, "сигнал", "сигнала", "сигналов")}`}
         </button>
@@ -128,7 +128,7 @@ function AckedBlock({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="t-meta w-full px-card py-2.5 text-left text-text-3 hover:text-text-2"
+        className="t-meta flex w-full items-center px-card py-2.5 text-left text-text-3 pointer-coarse:min-h-11 hover:text-text-2"
       >
         {`Отмечено выполненными · ${signals.length}`}
         <span className="ml-2 text-text-4">{open ? "скрыть" : "показать"}</span>
@@ -147,7 +147,7 @@ function AckedBlock({
               <button
                 type="button"
                 onClick={() => void onAck(signal.ackKey ?? "", null)}
-                className="t-meta shrink-0 text-link underline-offset-4 hover:underline"
+                className="t-meta inline-flex shrink-0 items-center text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline"
               >
                 вернуть
               </button>
@@ -264,7 +264,7 @@ function SignalLink({
   onOpenZones: () => void;
 }) {
   const className =
-    "t-meta shrink-0 whitespace-nowrap text-link underline-offset-4 hover:underline";
+    "t-meta inline-flex shrink-0 items-center whitespace-nowrap text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline";
 
   if (signal.target === "zones") {
     return (

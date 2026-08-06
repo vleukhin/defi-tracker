@@ -221,7 +221,7 @@ function TargetsCard({
                         }
                         placeholder="—"
                         aria-label={`Цель ${c.label}, проценты`}
-                        className="pr-6 text-right font-mono text-[13px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        className="pr-6 text-right font-mono text-base md:text-[13px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       />
                       <span
                         aria-hidden

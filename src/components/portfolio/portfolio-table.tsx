@@ -132,7 +132,7 @@ export function PortfolioTable({
                       type="button"
                       onClick={() => setOpen(expanded ? null : row.category)}
                       aria-expanded={expanded}
-                      className="flex items-center gap-2 rounded-pill text-[13.5px] outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
+                      className="flex items-center gap-2 rounded-pill text-[13.5px] outline-none transition-colors duration-120 ease-out pointer-coarse:min-h-11 hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
                       <span
                         aria-hidden
