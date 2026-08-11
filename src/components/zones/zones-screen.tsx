@@ -10,6 +10,7 @@ import { FilterChips } from "@/components/dc/segmented";
 import { countLabel } from "@/components/portfolio/plural";
 import type {
   DebtResponseDto,
+  GmJournalDto,
   FreeBalanceDto,
   PositionDto,
   PositionsSummaryDto,
@@ -53,6 +54,7 @@ interface ZonesData {
   /** Свободные средства кошельков — плоским списком, без пыли и «прочего». */
   free: FreeBalanceDto[];
   freeSummary: FreeSummary;
+  journals: GmJournalDto[];
 }
 
 export type { ZonesData };
@@ -75,11 +77,13 @@ export function ZonesScreen({
   data,
   debt,
   onRefetch,
+  onJournalRefetch,
 }: {
   data: ZonesData;
   /** Займы: в /api/zones их нет, они приходят отдельным ответом. */
   debt: DebtResponseDto | null;
   onRefetch: () => Promise<void>;
+  onJournalRefetch: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<ZoneFilter>("all");
@@ -96,12 +100,17 @@ export function ZonesScreen({
     stableCategoryUsd,
     free,
     freeSummary,
+    journals,
   } = data;
 
   const visible = useMemo(
     () =>
       filter === "all" ? positions : positions.filter((p) => p.zone === filter),
     [positions, filter],
+  );
+  const journalByKey = useMemo(
+    () => new Map(journals.map((journal) => [journal.zoneKey, journal])),
+    [journals],
   );
 
   /**
@@ -245,6 +254,8 @@ export function ZonesScreen({
               onMark={mark}
               stableBorrow={stableBorrow}
               nowMs={nowMs}
+              journal={journalByKey.get(p.zoneKey) ?? null}
+              onJournalRefetch={onJournalRefetch}
             />
           ))}
         </ul>

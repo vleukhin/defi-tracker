@@ -154,8 +154,21 @@ export interface SignalsInput {
   targetLtvPct: number;
   /** Отметки «выполнено»; null = ещё не прочитаны. */
   acks: SignalAck[] | null;
+  /** Уровни, где есть хотя бы одна запись текущего цикла, по zoneKey. */
+  actedGmLevels?: ReadonlyMap<string, ReadonlySet<number>>;
   /** Источники в пути: молчание при загрузке — не «всё спокойно». */
-  pending: { portfolio: boolean; debt: boolean; zones: boolean; acks: boolean };
+  pending: {
+    portfolio: boolean;
+    debt: boolean;
+    zones: boolean;
+    acks: boolean;
+    /**
+     * Журнал уровней ещё читается. Пока он не пришёл, отработанные уровни
+     * неизвестны и подавить сигнал нечем — лента показала бы уровень,
+     * по которому владелец уже действовал, и тут же его убрала.
+     */
+    journals: boolean;
+  };
   /** Состояние экрана: этого нет ни в одном DTO. */
   runtime: {
     debtError: string | null;
@@ -252,7 +265,8 @@ export function hasPendingSources(input: SignalsInput): boolean {
     input.pending.portfolio ||
     input.pending.debt ||
     input.pending.zones ||
-    input.pending.acks
+    input.pending.acks ||
+    input.pending.journals
   );
 }
 
@@ -413,18 +427,30 @@ function positionSignals(input: SignalsInput, nowMs: number): SignalDraft[] {
 
   const out: SignalDraft[] = [];
   for (const position of positions) {
-    if (position.protocol === "gmx_v2") out.push(...gmSignals(position));
+    // Пока журнал не прочитан, отработанность уровня неизвестна. Показать
+    // сигнал сейчас и убрать через секунду — хуже, чем промолчать: лента
+    // и так помечена загружающейся через hasPendingSources
+    if (position.protocol === "gmx_v2" && !input.pending.journals) {
+      out.push(...gmSignals(position, input.actedGmLevels?.get(position.zoneKey)));
+    }
     if (position.protocol === "uni_v3") out.push(...clmmSignals(position, nowMs));
   }
   return out;
 }
 
-function gmSignals(position: PositionDto): SignalDraft[] {
-  const levels = gmLevels(position);
+function gmSignals(
+  position: PositionDto,
+  actedLevels: ReadonlySet<number> | undefined,
+): SignalDraft[] {
+  const levels = gmLevels(position, actedLevels);
   const name = gmName(position, levels.marketSymbol);
   const out: SignalDraft[] = [];
 
-  const reached = levels.lastReached;
+  // Цена и действие — два разных факта. Самая глубокая цена без операции
+  // остаётся сигналом; отмеченный уровень лента больше не показывает.
+  const reached = [...levels.levels].reverse().find(
+    (level) => level.reached === true && !level.acted,
+  ) ?? null;
   if (reached !== null) {
     // Только самый глубокий уровень: пять строк на один пул описывали бы
     // одно и то же событие пятью голосами
@@ -436,27 +462,21 @@ function gmSignals(position: PositionDto): SignalDraft[] {
       key: `gm-level:${position.id}`,
       kind: "gm-level",
       severity: "level",
-      // Ключ по уровню: отметка на −7% про −15% ничего не говорит,
-      // а отпечаток по точке отсчёта — она подвижна (§7)
-      ackKey: `gm-level:${position.zoneKey}:${reached.dropPercent}`,
-      ackFingerprint: fingerprint(levels.entryPriceUsd),
       weight: reached.dropPercent,
       tone: "warn",
       chip: dcPp(-reached.dropPercent, 0),
       title: `${name} ниже уровня ${dcPp(-reached.dropPercent, 0)} от точки отсчёта`,
       detail: `По стратегии на этом уровне ${reached.action}${stability}.`,
-      hint: "Уровень считается по цене базового актива от точки отсчёта в разметке позиции. Приложение видит только текущую цену: уровень держится, пока цена не выше него, а касание с отскоком между чтениями не сохраняется.",
+      hint: "Цена сейчас ниже уровня. Отработанность берётся из журнала операций владельца: приложение не выводит её из изменения стоимости пула.",
       target: "zones",
     });
   }
 
-  if (levels.growth?.reached === true) {
+  if (levels.growth?.reached === true && !levels.growth.acted) {
     out.push({
       key: `gm-growth:${position.id}`,
       kind: "gm-growth",
       severity: "level",
-      ackKey: `gm-growth:${position.zoneKey}`,
-      ackFingerprint: fingerprint(levels.entryPriceUsd),
       weight: 1,
       tone: "neutral",
       chip: dcPp(levels.growth.percent, 0),
@@ -469,16 +489,6 @@ function gmSignals(position: PositionDto): SignalDraft[] {
   }
 
   return out;
-}
-
-/**
- * Отпечаток обстановки из числа. Точка отсчёта — единственное, что делает
- * отметку на уровне GM недействительной, и сравнивается она как строка:
- * в базе отпечаток текстовый, и «100000» из БД обязано совпасть с тем,
- * что посчитано здесь.
- */
-function fingerprint(value: number | null): string {
-  return value === null ? "—" : String(value);
 }
 
 /** «GM WBTC» — имя пула по базовому активу; без него остаётся заголовок. */

@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BLOCK_TOLERANCE_SEC,
   MAX_BLOCK_PROBES,
+  MAX_TIMESTAMP_READS,
   blockAtTimestamp,
+  blockTimestamps,
   interpolateBlock,
+  timestampFromSamples,
+  type BlockRpcClient,
+  type BlockWindow,
 } from "./blocks";
 
 /**
@@ -141,5 +146,139 @@ describe("blockAtTimestamp", () => {
       },
     };
     await expect(blockAtTimestamp(failing, 1n)).rejects.toThrow();
+  });
+});
+
+/**
+ * Обратное преобразование «номер блока → время» (Фаза 8, S8.5).
+ *
+ * Нужно поиску операций с GM: номер блока приходит в логе, а на экране
+ * должна стоять дата. Спросить заголовок у узла точнее, но дороже, и бюджет
+ * запросов на это один на весь поиск.
+ */
+describe("timestampFromSamples", () => {
+  const from = { block: 1_000n, timestamp: 12_000n };
+  const latest = { block: 2_000n, timestamp: 24_000n };
+
+  it("секущая через две пробы даёт время блока между ними", () => {
+    expect(timestampFromSamples(latest, from, 1_500n)).toBe(18_000n);
+  });
+
+  it("на самих пробах совпадает с их временем", () => {
+    expect(timestampFromSamples(latest, from, 1_000n)).toBe(12_000n);
+    expect(timestampFromSamples(latest, from, 2_000n)).toBe(24_000n);
+  });
+
+  it("совпавшее время проб не делит на ноль", () => {
+    expect(
+      timestampFromSamples({ block: 2_000n, timestamp: 12_000n }, from, 1_500n),
+    ).toBeNull();
+  });
+
+  it("совпавший номер блока тоже не делит на ноль", () => {
+    expect(
+      timestampFromSamples({ block: 1_000n, timestamp: 24_000n }, from, 1_500n),
+    ).toBeNull();
+  });
+
+  it("обратно к interpolateBlock: одна и та же секущая в обе стороны", () => {
+    const block = interpolateBlock(latest, from, 20_400n, latest.block);
+    expect(block).toBe(1_700n);
+    expect(timestampFromSamples(latest, from, block!)).toBe(20_400n);
+  });
+});
+
+describe("blockTimestamps", () => {
+  const samples: BlockWindow = {
+    from: { block: 1_000n, timestamp: 12_000n },
+    latest: { block: 2_000n, timestamp: 24_000n },
+  };
+  /** Настоящее время блока намеренно отличается от секущей: видно, что читалось. */
+  const trueTime = (block: bigint) => 12_000n + (block - 1_000n) * 12n + 7n;
+
+  function client(): BlockRpcClient & { getBlock: ReturnType<typeof vi.fn> } {
+    const getBlock = vi.fn(async ({ blockNumber }: { blockNumber?: bigint } = {}) => ({
+      number: blockNumber ?? 2_000n,
+      timestamp: trueTime(blockNumber ?? 2_000n),
+    }));
+    return { getBlock };
+  }
+
+  it("время читается у узла и помечается точным", async () => {
+    const rpc = client();
+    const times = await blockTimestamps(rpc, [1_500n, 1_600n], samples);
+
+    expect(times.get("1500")).toEqual({ sec: trueTime(1_500n), exact: true });
+    expect(times.get("1600")).toEqual({ sec: trueTime(1_600n), exact: true });
+    expect(rpc.getBlock).toHaveBeenCalledTimes(2);
+  });
+
+  it("повторяющиеся блоки читаются один раз", async () => {
+    const rpc = client();
+    // Продажа и покупка на одном уровне попадают в один блок — обычное дело
+    const times = await blockTimestamps(rpc, [1_500n, 1_500n, 1_500n], samples);
+
+    expect(rpc.getBlock).toHaveBeenCalledTimes(1);
+    expect(times.size).toBe(1);
+    expect(times.get("1500")?.exact).toBe(true);
+  });
+
+  it("сверх бюджета чтений — интерполяция и честное «время приблизительное»", async () => {
+    const rpc = client();
+    const blocks = Array.from(
+      { length: MAX_TIMESTAMP_READS + 3 },
+      (_, i) => 1_100n + BigInt(i),
+    );
+
+    const times = await blockTimestamps(rpc, blocks, samples);
+
+    // Бюджет соблюдён: тысяча найденных трансферов не превращается
+    // в тысячу запросов заголовков
+    expect(rpc.getBlock).toHaveBeenCalledTimes(MAX_TIMESTAMP_READS);
+    expect(times.size).toBe(blocks.length);
+
+    for (const block of blocks.slice(0, MAX_TIMESTAMP_READS)) {
+      expect(times.get(block.toString())).toEqual({
+        sec: trueTime(block),
+        exact: true,
+      });
+    }
+    for (const block of blocks.slice(MAX_TIMESTAMP_READS)) {
+      expect(times.get(block.toString())).toEqual({
+        sec: timestampFromSamples(samples.latest, samples.from, block),
+        exact: false,
+      });
+    }
+  });
+
+  it("отказ узла по одному блоку не теряет строку: остаётся приблизительное время", async () => {
+    const rpc = client();
+    rpc.getBlock.mockImplementation(async ({ blockNumber }: { blockNumber?: bigint } = {}) => {
+      if (blockNumber === 1_500n) throw new Error("missing trie node");
+      return { number: blockNumber!, timestamp: trueTime(blockNumber!) };
+    });
+
+    const times = await blockTimestamps(rpc, [1_500n, 1_600n], samples);
+
+    expect(times.get("1500")).toEqual({ sec: 18_000n, exact: false });
+    expect(times.get("1600")).toEqual({ sec: trueTime(1_600n), exact: true });
+  });
+
+  it("вырожденные пробы: блока в ответе нет — «время неизвестно», а не выдуманное", async () => {
+    const rpc = client();
+    rpc.getBlock.mockRejectedValue(new Error("RPC down"));
+    const flat: BlockWindow = {
+      from: { block: 1_000n, timestamp: 24_000n },
+      latest: { block: 2_000n, timestamp: 24_000n },
+    };
+
+    const times = await blockTimestamps(rpc, [1_500n], flat);
+    expect(times.has("1500")).toBe(false);
+  });
+
+  it("пустой список блоков не ходит в сеть", async () => {
+    const rpc = client();
+    expect((await blockTimestamps(rpc, [], samples)).size).toBe(0);
+    expect(rpc.getBlock).not.toHaveBeenCalled();
   });
 });

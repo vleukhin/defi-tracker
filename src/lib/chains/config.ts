@@ -63,13 +63,34 @@ const RPC_CONFIG: Record<ChainId, ChainRpcConfig> = {
   },
 };
 
+/**
+ * URL Alchemy для сети; null — ключа нет.
+ *
+ * Нужен не только транспорту viem: у Alchemy есть методы вне JSON-RPC
+ * (`alchemy_getAssetTransfers`, Фаза 8), которые ходят обычным fetch'ем мимо
+ * клиента, и адрес им нужен тот же самый.
+ *
+ * Ключ читается ВНУТРИ функции, а не на уровне модуля. Разница видна в тестах:
+ * значение уровня модуля замерзает на импорте, то есть до того, как тест
+ * выставил переменную окружения, и проверка «без ключа падаем на запасной
+ * путь» начала бы зависеть от порядка импортов.
+ *
+ * Сам `RPC_CONFIG` наружу не выдаётся: список fallback-узлов — деталь
+ * транспорта, и читать его помимо клиента незачем.
+ */
+export function alchemyRpcUrl(chainId: ChainId): string | null {
+  const key = process.env.ALCHEMY_API_KEY;
+  if (!key) return null;
+  return `https://${RPC_CONFIG[chainId].alchemyHost}/v2/${key}`;
+}
+
 function buildClient(chainId: ChainId): PublicClient {
-  const { viemChain, alchemyHost, fallbackUrls } = RPC_CONFIG[chainId];
-  const alchemyKey = process.env.ALCHEMY_API_KEY;
+  const { viemChain, fallbackUrls } = RPC_CONFIG[chainId];
+  const alchemyUrl = alchemyRpcUrl(chainId);
 
   const transports = [
     // Ключевой провайдер первым в цепочке (ТЗ §7); без ключа — сразу fallback.
-    ...(alchemyKey ? [http(`https://${alchemyHost}/v2/${alchemyKey}`)] : []),
+    ...(alchemyUrl ? [http(alchemyUrl)] : []),
     ...fallbackUrls.map((url) => http(url)),
   ];
 

@@ -18,6 +18,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ZonesScreen, type ZonesData } from "@/components/zones/zones-screen";
 import type {
   DebtResponseDto,
+  GmJournalsResponseDto,
   PortfolioDto,
   PortfolioRowDto,
   RefreshResponseDto,
@@ -68,6 +69,7 @@ export function PortfolioScreen() {
   const debt = useApi<DebtResponseDto>("/api/debt");
   const snapshots = useApi<SnapshotsResponseDto>("/api/snapshots?period=30d");
   const acks = useApi<SignalAcksResponseDto>("/api/signals/ack");
+  const journals = useApi<GmJournalsResponseDto>("/api/positions/gm-journal");
 
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -166,8 +168,20 @@ export function PortfolioScreen() {
         data.rows.find((r) => r.category === "stable")?.amountUsd ?? 0,
       free: data.rows.flatMap((r) => r.freeBalances),
       freeSummary: data.freeSummary,
+      journals: journals.data?.journals ?? [],
     };
-  }, [data]);
+  }, [data, journals.data]);
+
+  const actedGmLevels = useMemo(() => {
+    const result = new Map<string, ReadonlySet<number>>();
+    for (const journal of journals.data?.journals ?? []) {
+      result.set(
+        journal.zoneKey,
+        new Set(journal.points[0]?.actions.map((action) => action.dropPercent) ?? []),
+      );
+    }
+    return result;
+  }, [journals.data]);
 
   // Лента считается из уже загруженных ответов — своих запросов у неё нет.
   // chainIssues и refreshError приходят из POST /api/refresh, а не из DTO,
@@ -182,7 +196,12 @@ export function PortfolioScreen() {
       stableBorrowRatePercent: zonesData?.stableBorrow.ratePercent ?? null,
       targetLtvPct: debt.data?.summary.targetLtvPct ?? DEFAULT_TARGET_LTV_PCT,
       acks: acks.data?.acks ?? null,
+      actedGmLevels,
       pending: {
+        // Тот же довод, что у acks ниже: пока журнал едет, отработанность
+        // уровня неизвестна. Здесь он весомее — сигнал уровня подавляется
+        // именно журналом, и без него лента показала бы уже сделанное
+        journals: journals.loading && journals.data === null,
         portfolio: portfolio.loading && data === null,
         debt: debt.loading && debt.data === null,
         // Зоны едут в том же ответе, что и портфель, — и ждут вместе с ним
@@ -214,6 +233,9 @@ export function PortfolioScreen() {
       portfolio.loading,
       acks.data,
       acks.loading,
+      actedGmLevels,
+      journals.data,
+      journals.loading,
       refreshError,
       chainIssues,
     ],
@@ -367,6 +389,7 @@ export function PortfolioScreen() {
                   // (собственные доли позиций её и образуют), поэтому
                   // перечитывается портфель целиком, а не один разрез
                   onRefetch={refetchPortfolio}
+                  onJournalRefetch={journals.refetch}
                 />
               ) : (
                 <ZonesSkeleton error={portfolio.error} />

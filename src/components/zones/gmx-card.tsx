@@ -4,7 +4,7 @@ import { BarBlock } from "@/components/dc/bar";
 import { Verdict } from "@/components/dc/card";
 import { Chip, StatusChip } from "@/components/dc/chip";
 import { Metric } from "@/components/dc/metrics";
-import type { PositionDto } from "@/lib/api/types";
+import type { GmJournalDto, PositionDto } from "@/lib/api/types";
 import { chainLabel, dcPp, dcUsd, tablePct, tableSigned } from "@/lib/format";
 import { gmLevels } from "@/lib/positions/gm-levels";
 import { GM_SHARE_TOLERANCE_PP, gmShare } from "@/lib/positions/gm-split";
@@ -51,18 +51,25 @@ export function GmxCard({
   positions,
   busy,
   onMark,
+  journal,
+  onJournalRefetch,
 }: {
   position: PositionDto;
   /** Все позиции экрана — из них считается доля пула среди GM. */
   positions: PositionDto[];
   busy: boolean;
   onMark: MarkFn;
+  journal: GmJournalDto | null;
+  onJournalRefetch: () => Promise<void>;
 }) {
   const principal = principalOf(position);
   // null трактуется как ноль: отсутствие выводов — обычное состояние
   const withdrawn = position.withdrawnUsd ?? 0;
   const share = gmShare(position, positions);
-  const levels = gmLevels(position);
+  const levels = gmLevels(
+    position,
+    journal?.points[0]?.actions.map((action) => action.dropPercent),
+  );
   const offTarget =
     share.deviationPp !== null &&
     Math.abs(share.deviationPp) > GM_SHARE_TOLERANCE_PP;
@@ -98,7 +105,12 @@ export function GmxCard({
         }
         menu={
           <>
-            <GmLevelsPopover position={position} />
+            <GmLevelsPopover
+              position={position}
+              journal={journal}
+              busy={busy}
+              onJournalRefetch={onJournalRefetch}
+            />
             <MarkPopover position={position} busy={busy} onMark={onMark} />
           </>
         }

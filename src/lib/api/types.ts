@@ -657,6 +657,8 @@ export interface PositionDto {
    * Осмысленна у GM-пулов; null = не задана, уровни не считаются.
    */
   entryPriceUsd: number | null;
+  /** Когда была установлена текущая точка; null = момент старой точки неизвестен. */
+  entryPriceSetAt?: string | null;
   /**
    * Текущая собственная доля стоимости позиции: доход и убыток относятся
    * на свое и заемное пропорционально вложенному. Из этих величин
@@ -883,4 +885,147 @@ export interface SignalAckDto {
 /** GET /api/signals/ack — все отметки пользователя. */
 export interface SignalAcksResponseDto {
   acks: SignalAckDto[];
+}
+
+// --- Фаза 8: журнал уровней и точки отсчёта GM ---
+
+export type GmActionKind = "sell" | "buy";
+export type GmFundsSource = "proceeds" | "stability" | "yield_reserve";
+export type GmReferenceSource = "manual" | "chain" | "current_price";
+
+/** Одна подтверждённая владельцем операция на уровне GM. */
+export interface GmLevelActionDto {
+  id: string;
+  referencePointId: string;
+  dropPercent: number;
+  kind: GmActionKind;
+  /** Строка сохраняет точность numeric из БД. */
+  gmAmount: string;
+  fundsSource: GmFundsSource | null;
+  assetAmount: string | null;
+  usdAmount: string | null;
+  assetPriceUsd: number | null;
+  happenedAt: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** Одна граница цикла: последняя точка — текущая. */
+export interface GmReferencePointDto {
+  id: string;
+  priceUsd: number;
+  setAt: string | null;
+  source: GmReferenceSource;
+  note: string | null;
+  createdAt: string;
+  actions: GmLevelActionDto[];
+}
+
+/** Журнал одного GM-пула, адресованный тем же натуральным ключом, что и mark. */
+export interface GmJournalDto {
+  zoneKey: string;
+  points: GmReferencePointDto[];
+}
+
+export interface GmJournalsResponseDto {
+  journals: GmJournalDto[];
+}
+
+// --- Фаза 8: операции с GM из блокчейна ---
+
+/**
+ * Кто ответил на вопрос об операциях.
+ *
+ * Показывается не ради технической прозрачности: у двух путей разная
+ * точность времени (`alchemy` отдаёт время блока сам, `logs` местами
+ * интерполирует), и подпись под списком от этого зависит.
+ */
+export type GmTransferSource = "alchemy" | "logs" | "none";
+
+/**
+ * Чем кончился поиск. Пять значений, а не «нашли / не нашли»:
+ *
+ * - `found` — операции есть, окно просмотрено целиком;
+ * - `empty` — окно просмотрено целиком, операций за 14 суток НЕ БЫЛО;
+ * - `partial` — время или бюджет запросов кончились раньше окна; строки могут
+ *   быть, но «за две недели ничего» сказать нельзя — две недели не смотрели;
+ * - `unsupported` — провайдер не умеет отвечать на такой диапазон;
+ * - `unavailable` — спросить не удалось вовсе (нет ключа и узел отказал).
+ *
+ * Разница между `empty` и тремя последними — требование S8.5: «не нашли»
+ * и «не смогли спросить» не должны выглядеть одинаково.
+ */
+export type GmTransferSearchStatus =
+  | "found"
+  | "empty"
+  | "partial"
+  | "unsupported"
+  | "unavailable";
+
+/**
+ * Почему поиск не дал полного ответа. Код, а не фраза: тексты собираются
+ * на экране (см. шапку файла и Fees24hReason).
+ */
+export type GmTransferReason =
+  | "no_provider"
+  | "provider_error"
+  | "range_unsupported"
+  | "deadline"
+  | "request_budget"
+  | "no_window";
+
+/** Одна операция с GM-токеном пула. */
+export interface GmTransferRowDto {
+  /** `${txHash}:${logIndex}` — устойчивый ключ строки для React и выбора. */
+  key: string;
+  txHash: string;
+  blockNumber: number;
+  /** `buy` = mint (deposit), `sell` = burn (withdrawal). */
+  kind: "buy" | "sell";
+  /**
+   * Количество GM десятичной строкой, 18 знаков. Строка, а не число:
+   * значение уходит в `gm_level_actions.gm_amount`, и float по дороге
+   * потерял бы младшие знаки.
+   */
+  gmAmount: string;
+  /** ISO-время операции; null — время блока получить не удалось. */
+  happenedAt: string | null;
+  /** true — время получено интерполяцией, а не у узла. */
+  timeApproximate: boolean;
+  /** Цена базового актива по CoinGecko, НЕ оракул GMX. null = цены нет. */
+  assetPriceUsd: number | null;
+  /** Момент, к которому относится цена: он отличается от happenedAt. */
+  priceAtIso: string | null;
+  /** Шаг ряда цен в секундах — им и измеряется погрешность подстановки. */
+  priceStepSec: number | null;
+}
+
+/** Границы просмотренного окна. При `partial` — фактические, а не номинальные. */
+export interface GmTransferWindowDto {
+  fromIso: string;
+  toIso: string;
+  fromBlock: number;
+  toBlock: number;
+}
+
+/**
+ * GET /api/positions/gm-transfers — фактические операции с GM (S8.5).
+ *
+ * Все пять статусов приходят с HTTP 200: это ответы о мире, а не отказы
+ * запроса. Не-2xx превратился бы в брошенный ApiError и стёр бы разницу
+ * между «операций не было» и «спросить не смогли».
+ */
+export interface GmTransfersResponseDto {
+  status: GmTransferSearchStatus;
+  rows: GmTransferRowDto[];
+  /** Символ базового (long) актива пула — тот, чью цену и подставляем. */
+  assetSymbol: string | null;
+  /** null — цену этого актива взять неоткуда; количества GM это не отменяет. */
+  assetCoingeckoId: string | null;
+  /** Глубина поиска в сутках — интерфейс обязан её назвать. */
+  searchDays: number;
+  /** null — окно определить не удалось (голова цепочки не прочиталась). */
+  window: GmTransferWindowDto | null;
+  source: GmTransferSource;
+  reason: GmTransferReason | null;
 }

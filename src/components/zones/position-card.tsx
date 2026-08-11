@@ -2,7 +2,7 @@
 
 import { Verdict } from "@/components/dc/card";
 import { Metric } from "@/components/dc/metrics";
-import type { PositionDto, StableBorrowRateDto } from "@/lib/api/types";
+import type { GmJournalDto, PositionDto, StableBorrowRateDto } from "@/lib/api/types";
 import { chainLabel, dcUsd } from "@/lib/format";
 import {
   CardHead,
@@ -36,6 +36,8 @@ export function PositionCard({
   onMark,
   stableBorrow,
   nowMs,
+  journal,
+  onJournalRefetch,
 }: {
   position: PositionDto;
   /** Все позиции экрана: доля GM-пула считается относительно соседей. */
@@ -45,6 +47,8 @@ export function PositionCard({
   stableBorrow: StableBorrowRateDto;
   /** «Сейчас» для таймеров карточек — одно на весь список. */
   nowMs: number;
+  journal: GmJournalDto | null;
+  onJournalRefetch: () => Promise<void>;
 }) {
   if (position.protocol === "fluid") {
     return (
@@ -73,6 +77,8 @@ export function PositionCard({
         positions={positions}
         busy={busy}
         onMark={onMark}
+        journal={journal}
+        onJournalRefetch={onJournalRefetch}
       />
     );
   }

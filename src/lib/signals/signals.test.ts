@@ -7,7 +7,6 @@ import type {
   ZonesSummaryDto,
 } from "@/lib/api/types";
 import {
-  ackedSignals,
   activeSignals,
   buildSignals,
   hasPendingSources,
@@ -260,7 +259,7 @@ function input(overrides: Partial<SignalsInput> = {}): SignalsInput {
     stableBorrowRatePercent: 4.9,
     targetLtvPct: 50,
     acks: [],
-    pending: { portfolio: false, debt: false, zones: false, acks: false },
+    pending: { portfolio: false, debt: false, zones: false, acks: false, journals: false },
     runtime: {
       debtError: null,
       zonesError: null,
@@ -453,7 +452,7 @@ describe("риск ликвидации", () => {
   it("долг ещё грузится — не сигнал, а pending", () => {
     const inp = input({
       debt: null,
-      pending: { portfolio: false, debt: true, zones: false, acks: false },
+      pending: { portfolio: false, debt: true, zones: false, acks: false, journals: false },
     });
     expect(kinds(inp)).toEqual([]);
     expect(hasPendingSources(inp)).toBe(true);
@@ -766,7 +765,7 @@ describe("пустая лента", () => {
     const inp = input({
       positions: null,
       zones: null,
-      pending: { portfolio: false, debt: false, zones: true, acks: false },
+      pending: { portfolio: false, debt: false, zones: true, acks: false, journals: false },
     });
     expect(buildSignals(inp, NOW)).toEqual([]);
     expect(hasPendingSources(inp)).toBe(true);
@@ -792,33 +791,49 @@ describe("отметка «выполнено»", () => {
     return { signalKey: signal.ackKey, fingerprint: signal.ackFingerprint };
   }
 
-  it("отмеченный уровень уходит из активных, но не пропадает совсем", () => {
-    const base = input({ positions: [gm({ priceUsd: 84_000 })] });
-    const acked = input({
-      positions: [gm({ priceUsd: 84_000 })],
-      acks: [ackFor(base, "gm-level")],
+  it("отработанный уровень не показывается в ленте", () => {
+    const position = gm({ priceUsd: 84_000 });
+    const done = input({
+      positions: [position],
+      actedGmLevels: new Map([[position.zoneKey, new Set([7, 15])]]),
     });
-
-    const all = buildSignals(acked, NOW);
-    expect(activeSignals(all)).toEqual([]);
-    expect(ackedSignals(all).map((s) => s.kind)).toEqual(["gm-level"]);
+    expect(kinds(done)).toEqual([]);
   });
 
-  it("следующий уровень отметку не наследует: у него свой ключ", () => {
-    const base = input({ positions: [gm({ priceUsd: 84_000 })] }); // −16%
+  it("следующий уровень не наследует отметку предыдущего", () => {
+    const position = gm({ priceUsd: 68_000 });
     const deeper = input({
-      positions: [gm({ priceUsd: 68_000 })], // −32%
-      acks: [ackFor(base, "gm-level")],
+      positions: [position], // −32%
+      actedGmLevels: new Map([[position.zoneKey, new Set([7, 15])]]),
     });
     expect(kinds(deeper)).toEqual(["gm-level"]);
   });
 
-  it("перенос точки отсчёта отменяет отметку: уровни считаются заново", () => {
-    const base = input({ positions: [gm({ priceUsd: 84_000 })] });
+  it("пока журнал не прочитан, уровень молчит, а лента считается неполной", () => {
+    // Отработанность известна только из журнала. Показать уровень сейчас
+    // и убрать через секунду — хуже, чем промолчать: ложная тревога учит
+    // не доверять ленте, а её задача ровно обратная
+    const loading = input({
+      positions: [gm({ priceUsd: 84_000 })],
+      actedGmLevels: new Map(),
+      pending: { portfolio: false, debt: false, zones: false, acks: false, journals: true },
+    });
+    expect(kinds(loading)).toEqual([]);
+    expect(hasPendingSources(loading)).toBe(true);
+
+    // Тот же вход с прочитанным журналом — уровень на месте
+    const loaded = input({
+      positions: [gm({ priceUsd: 84_000 })],
+      actedGmLevels: new Map(),
+    });
+    expect(kinds(loaded)).toEqual(["gm-level"]);
+  });
+
+  it("перенос точки отсчёта очищает уровни нового цикла", () => {
     const moved = input({
       // Точку отсчёта перенесли выше — тот же уровень, другое решение
       positions: [gm({ entryPriceUsd: 120_000, priceUsd: 84_000 })],
-      acks: [ackFor(base, "gm-level")],
+      actedGmLevels: new Map(),
     });
     expect(kinds(moved)).toContain("gm-level");
   });
@@ -862,7 +877,7 @@ describe("отметка «выполнено»", () => {
   it("пока отметки не прочитаны, лента считается неполной", () => {
     const inp = input({
       acks: null,
-      pending: { portfolio: false, debt: false, zones: false, acks: true },
+      pending: { portfolio: false, debt: false, zones: false, acks: true, journals: false },
     });
     expect(hasPendingSources(inp)).toBe(true);
   });

@@ -144,6 +144,7 @@ export interface PositionMark {
    * сюда цену входа «по стоимости позиции» нельзя, это разные величины.
    */
   entryPriceUsd: number | null;
+  entryPriceSetAt?: string | null;
 }
 
 /**
@@ -285,6 +286,7 @@ function buildFluid(
     ...splitPosition(valueUsd, mark),
     // Точка отсчёта падения: разметка, а не показание читателя
     entryPriceUsd: mark?.entryPriceUsd ?? null,
+    entryPriceSetAt: mark?.entryPriceSetAt ?? null,
     title: payload.fTokenSymbol,
     subtitle: `Депозит ${payload.symbol}`,
     quantity: row.quantity,
@@ -332,6 +334,7 @@ function buildGm(
     ...splitPosition(valueUsd, mark),
     // Точка отсчёта падения: разметка, а не показание читателя
     entryPriceUsd: mark?.entryPriceUsd ?? null,
+    entryPriceSetAt: mark?.entryPriceSetAt ?? null,
     title: `GM ${payload.marketName.split(" ")[0]}`,
     subtitle: payload.marketName,
     quantity: row.quantity,
@@ -409,6 +412,7 @@ function buildLp(
     ...splitPosition(valueUsd, mark),
     // Точка отсчёта падения: разметка, а не показание читателя
     entryPriceUsd: mark?.entryPriceUsd ?? null,
+    entryPriceSetAt: mark?.entryPriceSetAt ?? null,
     title: `${payload.token0.symbol}/${payload.token1.symbol} ${feeLabel(payload.fee)}`,
     subtitle: payload.inRange
       ? `Тики ${payload.tickLower}…${payload.tickUpper}`

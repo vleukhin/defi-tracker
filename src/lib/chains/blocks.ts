@@ -76,6 +76,92 @@ export function interpolateBlock(
   return guess > maxBlock ? maxBlock : guess;
 }
 
+/**
+ * Обратное к interpolateBlock: время блока по той же секущей.
+ *
+ * Нужно там, где номер блока известен (лог трансфера), а спросить у узла
+ * заголовок каждого блока слишком дорого или уже не осталось бюджета.
+ * Те же два делителя проверяются по той же причине: на Arbitrum время
+ * соседних блоков совпадает буквально.
+ */
+export function timestampFromSamples(
+  a: BlockSample,
+  b: BlockSample,
+  block: bigint,
+): bigint | null {
+  const dt = a.timestamp - b.timestamp;
+  const db = a.block - b.block;
+  if (dt === 0n || db === 0n) return null;
+
+  return b.timestamp + ((block - b.block) * dt) / db;
+}
+
+/**
+ * Потолок точных чтений времени блока за один заход.
+ *
+ * Совпадает с порядком величины GM_ROW_LIMIT не случайно: время нужно только
+ * тем строкам, которые попадут на экран, и читать его следует ПОСЛЕ обрезки
+ * списка. Без потолка удачный скан на тысячу трансферов превратился бы
+ * в тысячу запросов заголовков.
+ */
+export const MAX_TIMESTAMP_READS = 12;
+
+/** Время блока: `exact: false` = получено интерполяцией, а не у узла. */
+export interface BlockTime {
+  sec: bigint;
+  exact: boolean;
+}
+
+/**
+ * Время указанных блоков. Ключ — `block.toString()`.
+ *
+ * Точные значения читаются у узла (Promise.all, не батч в транспорте:
+ * включить батчинг здесь значило бы поменять транспорт всем читателям
+ * приложения ради одной функции). Сверх бюджета MAX_TIMESTAMP_READS и при
+ * любой ошибке чтения — интерполяция по двум уже известным пробам и
+ * `exact: false`, чтобы экран мог сказать «время приблизительное», а не
+ * выдать выдуманную минуту за факт.
+ *
+ * Блок, которому не хватило и интерполяции (пробы вырождены), в результат
+ * не попадает: отсутствие ключа — честное «время неизвестно».
+ */
+export async function blockTimestamps(
+  client: BlockRpcClient,
+  blocks: readonly bigint[],
+  samples: BlockWindow,
+): Promise<Map<string, BlockTime>> {
+  const out = new Map<string, BlockTime>();
+  const unique = [...new Set(blocks.map((b) => b.toString()))].map(BigInt);
+
+  const exactly = unique.slice(0, MAX_TIMESTAMP_READS);
+  const guessed = unique.slice(MAX_TIMESTAMP_READS);
+
+  const read = await Promise.all(
+    exactly.map(async (block) => {
+      try {
+        const b = await client.getBlock({ blockNumber: block });
+        return { block, sec: b.timestamp };
+      } catch {
+        // Узел не отдал заголовок — не повод терять строку целиком
+        return { block, sec: null };
+      }
+    }),
+  );
+
+  const approximate = (block: bigint) => {
+    const sec = timestampFromSamples(samples.latest, samples.from, block);
+    if (sec !== null) out.set(block.toString(), { sec, exact: false });
+  };
+
+  for (const { block, sec } of read) {
+    if (sec === null) approximate(block);
+    else out.set(block.toString(), { sec, exact: true });
+  }
+  for (const block of guessed) approximate(block);
+
+  return out;
+}
+
 function distance(sample: BlockSample, targetSec: bigint): bigint {
   const d = sample.timestamp - targetSec;
   return d < 0n ? -d : d;

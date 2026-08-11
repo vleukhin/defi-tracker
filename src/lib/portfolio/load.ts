@@ -310,7 +310,7 @@ export async function loadPortfolio(
         supabase
           .from("position_marks")
           .select(
-            "user_id, protocol, chain, external_id, zone, own_principal_usd, borrowed_principal_usd, withdrawn_usd, entry_price_usd",
+            "user_id, protocol, chain, external_id, zone, own_principal_usd, borrowed_principal_usd, withdrawn_usd, entry_price_usd, entry_price_set_at",
           ),
       ),
     ),
@@ -502,6 +502,8 @@ export async function loadPortfolio(
         // Точка отсчёта уровней падения (docs/07 §5); NULL = не задана
         entryPriceUsd:
           r.entry_price_usd === null ? null : Number(r.entry_price_usd),
+        entryPriceSetAt:
+          r.entry_price_set_at === null ? null : String(r.entry_price_set_at),
       } satisfies PositionMark,
     ]),
   );
