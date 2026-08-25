@@ -24,6 +24,7 @@ import type {
   RefreshResponseDto,
   SignalAcksResponseDto,
   SnapshotDto,
+  DepositsResponseDto,
   SnapshotsResponseDto,
 } from "@/lib/api/types";
 import { formatRelativeTime } from "@/lib/format";
@@ -68,6 +69,9 @@ export function PortfolioScreen() {
   const portfolio = useApi<PortfolioDto>("/api/portfolio");
   const debt = useApi<DebtResponseDto>("/api/debt");
   const snapshots = useApi<SnapshotsResponseDto>("/api/snapshots?period=30d");
+  // «Внесено» живёт в журнале, а не в снепшоте: без него Прибыль по истории
+  // равнялась бы Чистой — кривой, завышенной ровно на все взносы
+  const journal = useApi<DepositsResponseDto>("/api/deposits");
   const acks = useApi<SignalAcksResponseDto>("/api/signals/ack");
   const journals = useApi<GmJournalsResponseDto>("/api/positions/gm-journal");
 
@@ -400,6 +404,8 @@ export function PortfolioScreen() {
                 snapshots={snapshots.data}
                 snapshotsLoading={snapshots.loading}
                 snapshotsError={snapshots.error}
+                deposits={journal.data?.deposits ?? null}
+                depositsError={journal.error}
               />
             )}
           </>

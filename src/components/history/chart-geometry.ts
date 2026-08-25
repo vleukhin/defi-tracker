@@ -151,3 +151,29 @@ export function niceTicks(min: number, max: number, target = 4): ValueAxis {
   }
   return { min: round(domainMin), max: round(domainMax), ticks };
 }
+
+/**
+ * Доля высоты, на которой лежит ноль, 0…1 сверху вниз — точка стыка цвета
+ * у знакопеременного ряда (Прибыль).
+ *
+ * Считается ПО ЗНАЧЕНИЯМ, а не по домену оси. У SVG-градиента по умолчанию
+ * gradientUnits="objectBoundingBox": 0…1 отмеряются по bbox самого пути,
+ * а не по полю графика. Домен из niceTicks шире данных — границы округлены
+ * наружу, — и offset по домену поставил бы стык мимо нуля, молча и без
+ * ошибки. Нули в min/max нужны потому, что заливка с baseValue={0} всегда
+ * дотягивается до нулевой линии, даже если сам ряд её не пересекает.
+ *
+ * Ряд целиком выше нуля даёт 1 (весь путь по одну сторону стыка), целиком
+ * ниже — 0, плоский нулевой — 0,5.
+ */
+export function signGradientOffset(
+  values: readonly (number | null)[],
+): number {
+  const finite = values.filter(
+    (v): v is number => v !== null && Number.isFinite(v),
+  );
+  const hi = Math.max(...finite, 0);
+  const lo = Math.min(...finite, 0);
+  if (hi === lo) return 0.5;
+  return hi / (hi - lo);
+}
