@@ -4,30 +4,21 @@ import { useState } from "react";
 import { DcCard } from "@/components/dc/card";
 import { HelpTip } from "@/components/dc/help-tip";
 import { Segmented } from "@/components/dc/segmented";
+import { TooltipCard } from "@/components/dc/tooltip-card";
+import { countMissingDays } from "@/components/history/chart-geometry";
+import { ChartNote } from "@/components/history/chart-parts";
 import {
-  bandCenter,
-  countMissingDays,
-  hitRegions,
-  splitRuns,
-  timeScale,
-  yPercent,
-} from "@/components/history/chart-geometry";
-import {
-  ChartArea,
-  ChartNote,
-  ChartRefLine,
-  ChartTimeAxis,
-  ChartTooltip,
-  HoverLayer,
-  PartialMarker,
-  valueDomain,
-} from "@/components/history/chart-parts";
+  type RefLine,
+  SeriesChart,
+  seriesAxis,
+  seriesRows,
+} from "@/components/history/recharts-parts";
 import {
   PeriodSwitcher,
   periodFull,
 } from "@/components/history/period-switcher";
 import type { SnapshotDto, SnapshotPeriod } from "@/lib/api/types";
-import { NBSP, tableDate, tableNumber, tablePct, tableSigned } from "@/lib/format";
+import { tableDate, tableNumber, tablePct, tableSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { formatHfThreshold } from "./hf";
 import { hfTone } from "./risk";
@@ -100,7 +91,6 @@ export function RiskChart({
   liquidationLtvPct: number | null;
 }) {
   const [metric, setMetric] = useState<RiskMetric>("hf");
-  const [active, setActive] = useState<number | null>(null);
 
   const periodLabel = periodFull(period);
   const points = snapshots === null ? [] : riskSeries(snapshots, metric);
@@ -155,25 +145,32 @@ export function RiskChart({
   const decision = metric === "hf" ? threshold : targetLtvPct;
   const liquidation = metric === "hf" ? 1 : liquidationLtvPct;
 
-  const scale = timeScale(points)!;
-  const axis = valueDomain(values, [decision]);
-  const decisionY = yPercent(axis, decision);
-  const liquidationY =
-    liquidation !== null && liquidation >= axis.min && liquidation <= axis.max
-      ? yPercent(axis, liquidation)
-      : null;
+  const axis = seriesAxis(values, [decision]);
+  const rows = seriesRows(
+    points,
+    (point) => point.value,
+    (point) => point.isPartial,
+  );
 
-  const plot = points.map((point) => ({
-    takenOn: point.takenOn,
-    x: bandCenter(scale, point.takenOn),
-    y: yPercent(axis, point.value),
-    point,
-  }));
-  const runs = splitRuns(plot).map((run) => ({
-    key: run[0].takenOn,
-    points: run,
-  }));
-  const zones = hitRegions(plot.map((p) => p.x));
+  const refLines: RefLine[] = [
+    {
+      value: decision,
+      label:
+        metric === "hf"
+          ? `порог ${formatHfThreshold(threshold)}`
+          : `цель ${tablePct(targetLtvPct, 0)}`,
+    },
+  ];
+  // Уровень ликвидации в домен не раздвигается и рисуется, только если сам
+  // в него попал: иначе кривая расплющится в прямую у края поля
+  if (liquidation !== null && liquidation >= axis.min && liquidation <= axis.max) {
+    refLines.push({
+      value: liquidation,
+      dashed: true,
+      label: `ликвидация ${metric === "hf" ? "1,00" : tablePct(liquidation, 0)}`,
+    });
+  }
+
   const missing = countMissingDays(points);
   const anyPartial = points.some((p) => p.isPartial);
 
@@ -223,85 +220,29 @@ export function RiskChart({
         </div>
       </div>
 
-      <div className="border-line border-t bg-sunken px-4 pt-1">
-        <div className="relative h-[150px] sm:h-[190px]">
-          <ChartRefLine
-            y={decisionY}
-            label={
-              metric === "hf"
-                ? `порог ${formatHfThreshold(threshold)}`
-                : `цель ${tablePct(targetLtvPct, 0)}`
-            }
-          />
-          {liquidationY !== null && (
-            <ChartRefLine
-              y={liquidationY}
-              dashed
-              label={`ликвидация ${
-                metric === "hf" ? "1,00" : tablePct(liquidation!, 0)
-              }`}
-            />
-          )}
-
-          <ChartArea
-            runs={runs}
-            color="var(--text-1)"
+      <div className="border-line border-t bg-sunken px-3 pt-2 pb-2">
+        <div className="relative h-[186px] sm:h-[226px]">
+          {/* Заливки нет: её основание лежало бы на низу домена, а не
+              на границе решения, и площадь читалась бы как величина,
+              которой нет */}
+          <SeriesChart
+            rows={rows}
+            axis={axis}
+            color="var(--accent)"
             fillOpacity={0}
             ariaLabel={ariaLabel}
-            className="absolute inset-0"
-          />
-
-          {plot.map((item, i) => {
-            const partial = item.point.isPartial;
-            const isolated = runs.some(
-              (run) => run.points.length === 1 && run.points[0] === item,
-            );
-            if (!partial && !isolated && active !== i) return null;
-            return (
-              <span
-                key={item.takenOn}
-                style={{ left: `${item.x}%`, top: `${item.y}%` }}
-                className="absolute -translate-x-1/2 -translate-y-1/2"
+            formatY={(value) => fmtAxis(value, metric)}
+            refLines={refLines}
+            renderTooltip={(row) => (
+              <TooltipCard
+                title={tableDate(row.takenOn)}
+                note={row.isPartial ? "частичные данные" : undefined}
               >
-                {partial ? (
-                  <PartialMarker className="block" />
-                ) : (
-                  <span
-                    aria-hidden
-                    className="block size-[7px] rounded-full bg-text-1"
-                  />
-                )}
-              </span>
-            );
-          })}
-
-          <HoverLayer
-            zones={zones.map((zone, i) => ({
-              ...zone,
-              label: `${tableDate(points[i].takenOn)}: ${fmt(points[i].value, metric)}${
-                points[i].isPartial ? ", частичные данные" : ""
-              }`,
-            }))}
-            onActive={setActive}
+                {fmt(row.value!, metric)}
+              </TooltipCard>
+            )}
           />
-
-          {active !== null && (
-            <ChartTooltip x={plot[active].x}>
-              <span className="font-mono text-text-2">
-                {tableDate(points[active].takenOn)}
-              </span>
-              {NBSP}·{NBSP}
-              <span className="font-mono font-medium">
-                {fmt(points[active].value, metric)}
-              </span>
-              {points[active].isPartial && (
-                <span className="block text-warn">частичные данные</span>
-              )}
-            </ChartTooltip>
-          )}
         </div>
-
-        <ChartTimeAxis points={plot} className="pt-[9px] pb-[13px]" />
       </div>
 
       <ChartNote
@@ -372,6 +313,11 @@ function Summary({
       <span className="t-metric-sm">{children}</span>
     </div>
   );
+}
+
+/** Подпись деления оси Y: «1,74» у HF, «31%» у LTV — без лишних знаков. */
+function fmtAxis(value: number, metric: RiskMetric): string {
+  return metric === "hf" ? tableNumber(value, 2) : tablePct(value, 0);
 }
 
 /** «1,74» у HF, «31,2%» у LTV. */

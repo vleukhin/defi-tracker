@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { zoneColor, zoneTextColor } from "@/components/dc/chip";
+import { DataTip } from "@/components/dc/data-tip";
 import type {
   PortfolioRowDto,
   ZoneBreakdownDto,
@@ -27,15 +28,22 @@ interface AllocationSegment {
   percent: number;
   color: string;
   textColor: string;
+  /** Доля внутри сегмента — то, что видно без наведения. */
   label: string;
-  title: string;
+  /** Что это: «BTC», «Growth». Заголовок подсказки. */
+  tipTitle: string;
+  /** Сумма и доля — то, ради чего наводят. */
+  tipValue: ReactNode;
 }
 
-/** Метка цели на кумулятивной границе: 2×42px поверх полосы. */
+/**
+ * Метка цели на кумулятивной границе: 2×42px поверх полосы. Остаётся
+ * декоративной — те же цели подписаны в легенде под полосой словами,
+ * и две лишние остановки Tab повторяли бы её текст.
+ */
 interface TargetMarker {
   key: string;
   x: number;
-  title: string;
 }
 
 function AllocationFrame({
@@ -77,40 +85,43 @@ function AllocationSegments({
 
   return (
     <div className="relative h-[34px]">
-      <div role="img" aria-label={ariaLabel} className="flex h-[34px] gap-[3px]">
+      <div className="flex h-[34px] gap-[3px]" role="img" aria-label={ariaLabel}>
         {segments.map((s) => (
-          <div
-            key={s.key}
-            title={s.title}
-            className="flex items-center overflow-hidden rounded-pill px-[11px]"
-            style={{
-              width: `${s.percent}%`,
-              // Доля меньше процента иначе схлопывается в невидимую полоску
-              minWidth: s.percent > 0 ? 10 : 0,
-              background: `linear-gradient(180deg, color-mix(in srgb, ${s.color} 20%, transparent), color-mix(in srgb, ${s.color} 8%, transparent))`,
-              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${s.color} 28%, transparent)`,
-            }}
-          >
-            {/* Узкий сегмент на 375px обрезал бы процент до «1…» —
-                на таких ширинах подпись уходит, а доля остаётся в легенде
-                и в подсказке сегмента */}
-            <span
-              className={cn(
-                "truncate text-[12.5px] font-medium",
-                s.percent < 25 && "hidden sm:inline",
-              )}
-              style={{ color: s.textColor }}
+          <DataTip key={s.key} title={s.tipTitle} value={s.tipValue}>
+            {/* Кнопка, а не div: подсказка открывается и по focus, иначе
+                сумма сегмента недостижима с клавиатуры и на тач-экране */}
+            <button
+              type="button"
+              aria-label={`${s.tipTitle}, ${s.label}`}
+              className="flex items-center overflow-hidden rounded-pill px-[11px] text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              style={{
+                width: `${s.percent}%`,
+                // Доля меньше процента иначе схлопывается в невидимую полоску
+                minWidth: s.percent > 0 ? 10 : 0,
+                background: `linear-gradient(180deg, color-mix(in srgb, ${s.color} 20%, transparent), color-mix(in srgb, ${s.color} 8%, transparent))`,
+                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${s.color} 28%, transparent)`,
+              }}
             >
-              {s.label}
-            </span>
-          </div>
+              {/* Узкий сегмент на 375px обрезал бы процент до «1…» —
+                  на таких ширинах подпись уходит, а доля остаётся в легенде
+                  и в подсказке сегмента */}
+              <span
+                className={cn(
+                  "truncate text-[12.5px] font-medium",
+                  s.percent < 25 && "hidden sm:inline",
+                )}
+                style={{ color: s.textColor }}
+              >
+                {s.label}
+              </span>
+            </button>
+          </DataTip>
         ))}
       </div>
       {markers?.map((m) => (
         <span
           key={m.key}
           aria-hidden
-          title={m.title}
           className="absolute top-[-4px] h-[42px] w-[2px] rounded-[2px] bg-text-1 opacity-75"
           style={{ left: `${m.x}%` }}
         />
@@ -135,7 +146,8 @@ export function ZoneAllocation({ zones }: { zones: ZonesSummaryDto }) {
     color: zoneColor(z.zone),
     textColor: zoneTextColor(z.zone),
     label: tablePct(z.percent),
-    title: `${z.label} — ${z.valueUsd === null ? "—" : dcUsd(z.valueUsd)}`,
+    tipTitle: z.label,
+    tipValue: `${z.valueUsd === null ? "—" : dcUsd(z.valueUsd)} · ${tablePct(z.percent)}`,
   }));
 
   const positions = zones.zones.reduce((sum, z) => sum + z.positionCount, 0);
@@ -173,7 +185,17 @@ export function CategoryAllocation({
       color: CATEGORY_VAR[r.category],
       textColor: assetTextColor(r.category),
       label: tablePct(r.percent),
-      title: `${r.label} — ${dcUsd(r.amountUsd)}`,
+      tipTitle: r.label,
+      tipValue: (
+        <>
+          {dcUsd(r.amountUsd)} · {tablePct(r.percent)}
+          {r.targetPercent !== null && (
+            <span className="mt-0.5 block text-[11.5px] font-normal text-text-3">
+              цель {tablePct(r.targetPercent)}
+            </span>
+          )}
+        </>
+      ),
     }));
 
   // Метки стоят на кумулятивных границах целей: совпадение стыка с меткой
@@ -183,11 +205,7 @@ export function CategoryAllocation({
   for (const row of rows.slice(0, -1)) {
     if (row.targetPercent === null) break;
     cumulative += row.targetPercent;
-    markers.push({
-      key: row.category,
-      x: cumulative,
-      title: `Цель ${row.label}: ${tablePct(row.targetPercent)}`,
-    });
+    markers.push({ key: row.category, x: cumulative });
   }
 
   return (

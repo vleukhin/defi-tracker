@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
-import { niceTicks, splitRuns } from "./chart-geometry";
+import { denseDays, niceTicks } from "./chart-geometry";
 import { periodChange, quantitySeries, tickDecimals } from "./quantity-series";
 
 /** Снепшот с количествами по категориям; null = цены в тот день не было. */
@@ -77,8 +77,8 @@ describe("quantitySeries", () => {
   });
 
   it("день без количества рвет линию, как пропущенный день (S3.2)", () => {
-    // Проверяем связку с геометрией: после фильтрации 01.07 и 03.07
-    // перестают быть соседями по календарю — splitRuns дает два отрезка
+    // Проверяем связку с геометрией: после фильтрации 02.07 в ряду
+    // становится дырой, и линия через него не пойдет
     const series = quantitySeries(
       [
         snapshot("2026-07-01", { btc: 1.2 }),
@@ -87,10 +87,14 @@ describe("quantitySeries", () => {
       ],
       "btc",
     );
-    expect(splitRuns(series).map((run) => run.length)).toEqual([1, 1]);
+    expect(denseDays(series).map((d) => d.point !== null)).toEqual([
+      true,
+      false,
+      true,
+    ]);
   });
 
-  it("подряд идущие дни с количеством остаются одним отрезком", () => {
+  it("подряд идущие дни с количеством остаются без разрывов", () => {
     const series = quantitySeries(
       [
         snapshot("2026-07-01", { btc: 1.2 }),
@@ -99,7 +103,7 @@ describe("quantitySeries", () => {
       ],
       "btc",
     );
-    expect(splitRuns(series).map((run) => run.length)).toEqual([3]);
+    expect(denseDays(series).every((d) => d.point !== null)).toBe(true);
   });
 
   it("категория без количеств вообще — пустая серия", () => {
