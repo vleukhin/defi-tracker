@@ -6,6 +6,7 @@ import {
   dayNumber,
   denseDays,
   niceTicks,
+  signGradientOffset,
   timeScale,
 } from "./chart-geometry";
 
@@ -141,5 +142,31 @@ describe("denseDays", () => {
 
   it("пустая серия — ноль дней", () => {
     expect(denseDays([])).toEqual([]);
+  });
+});
+
+describe("signGradientOffset", () => {
+  it("ставит стык ровно на ноль по РАЗМАХУ ЗНАЧЕНИЙ, а не по домену оси", () => {
+    // +3000 сверху, −1000 снизу: ноль на 3/4 высоты пути
+    expect(signGradientOffset([3000, -1000])).toBeCloseTo(0.75, 6);
+    expect(signGradientOffset([1000, -1000])).toBeCloseTo(0.5, 6);
+    expect(signGradientOffset([1000, -3000])).toBeCloseTo(0.25, 6);
+  });
+
+  it("ряд целиком выше нуля — один цвет: заливка всё равно висит от нуля", () => {
+    expect(signGradientOffset([500, 1500, 900])).toBe(1);
+  });
+
+  it("ряд целиком ниже нуля — один цвет", () => {
+    expect(signGradientOffset([-500, -1500, -900])).toBe(0);
+  });
+
+  it("плоский нулевой ряд не делит на ноль", () => {
+    expect(signGradientOffset([0, 0])).toBe(0.5);
+    expect(signGradientOffset([])).toBe(0.5);
+  });
+
+  it("разрывы ряда в расчёт не идут", () => {
+    expect(signGradientOffset([3000, null, -1000])).toBeCloseTo(0.75, 6);
   });
 });

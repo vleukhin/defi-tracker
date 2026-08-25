@@ -10,7 +10,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { DotItemDotProps, TooltipContentProps } from "recharts";
+import type {
+  ActiveDotProps,
+  DotItemDotProps,
+  TooltipContentProps,
+} from "recharts";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import type { ChartConfig } from "@/components/ui/chart";
 import { tableNumber } from "@/lib/format";
@@ -22,6 +26,7 @@ import {
   dayNumber,
   denseDays,
   niceTicks,
+  signGradientOffset,
 } from "./chart-geometry";
 
 /**
@@ -154,6 +159,7 @@ export function SeriesChart<T>({
   rows,
   axis,
   color,
+  signColors = false,
   fillOpacity = 0.22,
   ariaLabel,
   formatY,
@@ -165,6 +171,13 @@ export function SeriesChart<T>({
   rows: SeriesRow<T>[];
   axis: ValueAxis;
   color: string;
+  /**
+   * Знакопеременный ряд: выше нуля --profit, ниже --loss, заливка висит
+   * от нулевой линии. Единственное исключение из «зелёного и красного
+   * в графиках не бывает» (дизайн-код §5) — у Прибыли знак результата
+   * и есть содержание ряда, а не украшение поверх него.
+   */
+  signColors?: boolean;
   /** Верхняя точка градиента заливки; 0 — заливки нет. */
   fillOpacity?: number;
   ariaLabel: string;
@@ -178,10 +191,15 @@ export function SeriesChart<T>({
   className?: string;
 }) {
   // useId даёт «:r3:» — двоеточия в url(#…) читаются не везде
-  const gradientId = `series-fill-${useId().replace(/:/g, "")}`;
+  const uid = useId().replace(/:/g, "");
+  const fillId = `series-fill-${uid}`;
+  const strokeId = `series-stroke-${uid}`;
   const firstDay = rows.length > 0 ? rows[0].day : 0;
   const lastDay = rows.length > 0 ? rows[rows.length - 1].day : 1;
   const span = lastDay - firstDay + 1;
+  const zeroOffset = signColors
+    ? signGradientOffset(rows.map((r) => r.value))
+    : 1;
 
   return (
     <ChartContainer
@@ -195,10 +213,35 @@ export function SeriesChart<T>({
     >
       <AreaChart data={rows} margin={compact ? COMPACT_MARGIN : MARGIN}>
         <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={fillOpacity} />
-            <stop offset="100%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
+          {signColors ? (
+            <>
+              {/* Два стопа в одной точке — стык цвета без перехода: между
+                  прибылью и убытком нет промежуточного состояния */}
+              <linearGradient id={strokeId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset={zeroOffset} stopColor="var(--profit)" />
+                <stop offset={zeroOffset} stopColor="var(--loss)" />
+              </linearGradient>
+              <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset={0} stopColor="var(--profit)" stopOpacity={0.28} />
+                <stop
+                  offset={zeroOffset}
+                  stopColor="var(--profit)"
+                  stopOpacity={0.02}
+                />
+                <stop
+                  offset={zeroOffset}
+                  stopColor="var(--loss)"
+                  stopOpacity={0.02}
+                />
+                <stop offset={1} stopColor="var(--loss)" stopOpacity={0.28} />
+              </linearGradient>
+            </>
+          ) : (
+            <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={fillOpacity} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          )}
         </defs>
 
         {/* Сетка ТОЛЬКО горизонтальная: она привязывает кривую к делениям
@@ -280,22 +323,23 @@ export function SeriesChart<T>({
           dataKey="value"
           type={CURVE}
           connectNulls={false}
-          stroke={color}
+          stroke={signColors ? `url(#${strokeId})` : color}
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          fill={`url(#${gradientId})`}
+          fill={`url(#${fillId})`}
+          /* Основание заливки — ноль, а не низ домена: иначе площадь под
+             отрицательной ветвью читалась бы как «размер убытка», хотя она
+             всего лишь расстояние до края карточки */
+          baseValue={signColors ? 0 : undefined}
           dot={(props: DotItemDotProps) => (
-            <SeriesDot {...props} color={color} />
+            <SeriesDot {...props} color={color} signColors={signColors} />
           )}
           activeDot={
             renderTooltip
-              ? {
-                  r: 4.5,
-                  fill: "var(--text-1)",
-                  stroke: color,
-                  strokeWidth: 2.5,
-                }
+              ? (props: ActiveDotProps) => (
+                  <ActiveDot {...props} color={color} signColors={signColors} />
+                )
               : false
           }
           animationDuration={ANIMATION_MS}
@@ -317,7 +361,8 @@ function SeriesDot({
   cy,
   payload,
   color,
-}: DotItemDotProps & { color: string }) {
+  signColors,
+}: DotItemDotProps & { color: string; signColors: boolean }) {
   const row = payload as SeriesRow<unknown>;
   if (cx == null || cy == null || row?.value == null) return null;
   if (!row.isPartial && !row.isolated) return null;
@@ -332,9 +377,42 @@ function SeriesDot({
       strokeWidth={2}
     />
   ) : (
-    <circle cx={cx} cy={cy} r={3.5} fill={color} />
+    <circle cx={cx} cy={cy} r={3.5} fill={pointColor(row, color, signColors)} />
   );
 }
+
+/** Точка под курсором: заливка --text-1 в кольце цвета своей точки. */
+function ActiveDot({
+  cx,
+  cy,
+  payload,
+  color,
+  signColors,
+}: ActiveDotProps & { color: string; signColors: boolean }) {
+  const row = payload as SeriesRow<unknown>;
+  if (cx == null || cy == null) return null;
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={4.5}
+      fill="var(--text-1)"
+      stroke={pointColor(row, color, signColors)}
+      strokeWidth={2.5}
+    />
+  );
+}
+
+/** Цвет точки: в знаковом режиме — по её собственному знаку. */
+function pointColor(
+  row: SeriesRow<unknown> | undefined,
+  color: string,
+  signColors: boolean,
+): string {
+  if (!signColors) return color;
+  return (row?.value ?? 0) < 0 ? "var(--loss)" : "var(--profit)";
+}
+
 
 /* -------------------------------------------------------- подписи осей */
 
@@ -365,6 +443,9 @@ export function axisDateIso(iso: string, span: number): string {
 
 /** «158,9k», «−25,8k», «418» — подпись оси Y без валютного знака. */
 export function compactValue(value: number): string {
+  // Ноль — просто «0»: у знакопеременного ряда это деление оси, а «0,0000»
+  // и шире всех остальных подписей, и читается как точность, которой нет
+  if (value === 0) return "0";
   const abs = Math.abs(value);
   if (abs >= 1000) return `${tableNumber(value / 1000, abs >= 100_000 ? 0 : 1)}k`;
   if (abs >= 10) return tableNumber(value, 0);

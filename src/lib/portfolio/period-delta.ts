@@ -30,8 +30,6 @@ export interface PeriodDelta {
   percent: number | null;
 }
 
-/** Подпись дельты портфеля. Единица периода подставляется вызывающим. */
-export const PORTFOLIO_DELTA_LABEL = "портфель за 30 дней";
 /** Подпись дельты активов: она включает размещённые позиции. */
 export const ASSETS_DELTA_LABEL = "активы за 30 дней";
 
