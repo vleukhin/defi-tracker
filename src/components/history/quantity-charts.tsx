@@ -1,6 +1,7 @@
 "use client";
 
 import { DcCard } from "@/components/dc/card";
+import { TooltipCard } from "@/components/dc/tooltip-card";
 import { ASSET_COLOR } from "@/components/dc/protocols";
 import {
   CATEGORY_UNIT,
@@ -14,14 +15,13 @@ import {
   tablePctSigned,
   tableSigned,
 } from "@/lib/format";
+import { countMissingDays } from "./chart-geometry";
 import {
-  bandCenter,
-  countMissingDays,
-  splitRuns,
-  timeScale,
-  yPercent,
-} from "./chart-geometry";
-import { ChartArea, PartialMarker, valueDomain } from "./chart-parts";
+  SeriesChart,
+  compactValue,
+  seriesAxis,
+  seriesRows,
+} from "./recharts-parts";
 import { HISTORY_CARD_LABEL } from "./labels";
 import {
   QUANTITY_DECIMALS,
@@ -155,9 +155,9 @@ function ChangeText({
 }
 
 /**
- * Спарклайн по нижнему краю карточки: цвет актива, заливка 22% → 0
- * (дизайн-код §5). Ряд без изменений идёт по центру, а не по нижнему краю
- * карточки — плоская линия внизу читалась бы как «монет не осталось».
+ * Спарклайн по нижнему краю карточки: цвет актива, заливка 22% → 0.
+ * Сетки и осей здесь нет намеренно — на 88 пикселях им не место, а число
+ * и дельта уже стоят в шапке карточки. Значение точки показывает тултип.
  */
 function Sparkline({
   points,
@@ -179,18 +179,12 @@ function Sparkline({
     return <div style={{ height: SPARK_HEIGHT }} aria-hidden />;
   }
 
-  const scale = timeScale(points)!;
-  const axis = valueDomain(points.map((p) => p.quantity));
-  const plot = points.map((point) => ({
-    takenOn: point.takenOn,
-    x: bandCenter(scale, point.takenOn),
-    y: yPercent(axis, point.quantity),
-    point,
-  }));
-  const runs = splitRuns(plot).map((run) => ({
-    key: run[0].takenOn,
-    points: run,
-  }));
+  const axis = seriesAxis(points.map((p) => p.quantity));
+  const rows = seriesRows(
+    points,
+    (point) => point.quantity,
+    (point) => point.isPartial,
+  );
   const missing = countMissingDays(points);
   const first = points[0];
   const last = points[points.length - 1];
@@ -206,25 +200,27 @@ function Sparkline({
     (missing > 0 ? `. Дней без количества: ${missing}` : "");
 
   return (
-    <div className="relative" style={{ height: SPARK_HEIGHT }}>
-      <ChartArea
-        runs={runs}
+    <div style={{ height: SPARK_HEIGHT }}>
+      <SeriesChart
+        rows={rows}
+        axis={axis}
         color={color}
         fillOpacity={0.22}
+        compact
         ariaLabel={ariaLabel}
-        className="absolute inset-0"
-      />
-      {plot.map((item) =>
-        item.point.isPartial ? (
-          <span
-            key={item.takenOn}
-            style={{ left: `${item.x}%`, top: `${item.y}%` }}
-            className="absolute -translate-x-1/2 -translate-y-1/2"
+        formatY={compactValue}
+        renderTooltip={(row) => (
+          <TooltipCard
+            title={tableDate(row.takenOn)}
+            note={row.isPartial ? "частичные данные" : undefined}
           >
-            <PartialMarker className="block bg-surface" />
-          </span>
-        ) : null,
-      )}
+            {tableNumber(row.value!, decimals)}
+            <span className="ml-1 text-[11.5px] font-normal text-text-3">
+              {unit}
+            </span>
+          </TooltipCard>
+        )}
+      />
     </div>
   );
 }

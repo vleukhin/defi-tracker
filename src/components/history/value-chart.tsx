@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { DcCard } from "@/components/dc/card";
+import { TooltipCard } from "@/components/dc/tooltip-card";
 import { HelpTip } from "@/components/dc/help-tip";
 import type { SnapshotDto } from "@/lib/api/types";
 import {
@@ -13,32 +13,23 @@ import {
 } from "@/lib/format";
 import { periodDelta } from "@/lib/portfolio/period-delta";
 import { cn } from "@/lib/utils";
+import { countMissingDays } from "./chart-geometry";
+import { ChartNote } from "./chart-parts";
 import {
-  bandCenter,
-  countMissingDays,
-  hitRegions,
-  splitRuns,
-  timeScale,
-  yPercent,
-} from "./chart-geometry";
-import {
-  ChartArea,
-  ChartNote,
-  ChartTimeAxis,
-  ChartTooltip,
-  HoverLayer,
-  PartialMarker,
-  valueDomain,
-} from "./chart-parts";
+  SeriesChart,
+  compactValue,
+  seriesAxis,
+  seriesRows,
+} from "./recharts-parts";
 
 /**
  * Главная карточка «Истории» (README, экран 5): подпись + стоимость
  * Mono 34px + дельта за период + максимум/минимум, ниже график высотой
  * 190px на фоне --bg-sunken и ось дат.
  *
- * Линия — --text-1 с заливкой градиентом 16% → 0, сетка не рисуется
- * (дизайн-код §5). Разрывы: каждый отрезок подряд идущих дней — отдельный
- * path, через дни без снепшота линия НЕ проводится (S3.2).
+ * Линия — --accent с заливкой градиентом 22% → 0, горизонтальная сетка
+ * по делениям оси Y (дизайн-код §5). Разрывы: день без снепшота приходит
+ * в ряд значением null, и линия через него НЕ проводится (S3.2).
  */
 
 /** Методика — под «?», в потоке её быть не должно (дизайн-код §1.3). */
@@ -53,8 +44,6 @@ export function ValueChart({
   /** Развёрнутое название периода: «30 дней», «все время». */
   periodLabel: string;
 }) {
-  const [active, setActive] = useState<number | null>(null);
-
   const values = snapshots.map((s) => s.totalUsd);
   const last = snapshots[snapshots.length - 1];
   const first = snapshots[0];
@@ -66,19 +55,12 @@ export function ValueChart({
   const changePct = delta?.percent ?? null;
   const single = snapshots.length < 2;
 
-  const scale = timeScale(snapshots)!;
-  const axis = valueDomain(values);
-  const plot = snapshots.map((snapshot) => ({
-    takenOn: snapshot.takenOn,
-    x: bandCenter(scale, snapshot.takenOn),
-    y: yPercent(axis, snapshot.totalUsd),
-    snapshot,
-  }));
-  const runs = splitRuns(plot).map((points) => ({
-    key: points[0].takenOn,
-    points,
-  }));
-  const zones = hitRegions(plot.map((p) => p.x));
+  const axis = seriesAxis(values);
+  const rows = seriesRows(
+    snapshots,
+    (snapshot) => snapshot.totalUsd,
+    (snapshot) => snapshot.isPartial,
+  );
   const missing = countMissingDays(snapshots);
   const anyPartial = snapshots.some((s) => s.isPartial);
 
@@ -135,8 +117,8 @@ export function ValueChart({
         </div>
       </div>
 
-      <div className="border-line border-t bg-sunken px-4 pt-1">
-        <div className="relative h-[150px] sm:h-[190px]">
+      <div className="border-line border-t bg-sunken px-3 pt-2 pb-2">
+        <div className="relative h-[186px] sm:h-[226px]">
           {single ? (
             // Одна точка — не динамика: линия по ней была бы вымыслом
             <p className="t-meta absolute inset-0 grid place-items-center px-4 text-center text-text-3">
@@ -144,69 +126,25 @@ export function ValueChart({
               график.
             </p>
           ) : (
-            <>
-              <ChartArea
-                runs={runs}
-                color="var(--text-1)"
-                fillOpacity={0.16}
-                ariaLabel={ariaLabel}
-                className="absolute inset-0"
-              />
-
-              {/* Маркеры — HTML-слой: в растянутом viewBox круги стали бы
-                  овалами. Постоянных точек нет: рисуются только частичные,
-                  одиночные (отрезок из одной точки линии не даёт) и активная */}
-              {plot.map((point, i) => {
-                const partial = point.snapshot.isPartial;
-                const isolated = runs.some(
-                  (run) => run.points.length === 1 && run.points[0] === point,
-                );
-                if (!partial && !isolated && active !== i) return null;
-                return (
-                  <span
-                    key={point.takenOn}
-                    style={{ left: `${point.x}%`, top: `${point.y}%` }}
-                    className="absolute -translate-x-1/2 -translate-y-1/2"
-                  >
-                    {partial ? (
-                      <PartialMarker className="block" />
-                    ) : (
-                      <span
-                        aria-hidden
-                        className="block size-[7px] rounded-full bg-text-1"
-                      />
-                    )}
-                  </span>
-                );
-              })}
-
-              <HoverLayer
-                zones={zones.map((zone, i) => ({
-                  ...zone,
-                  label: pointLabel(snapshots[i]),
-                }))}
-                onActive={setActive}
-              />
-
-              {active !== null && (
-                <ChartTooltip x={plot[active].x}>
-                  <span className="font-mono text-text-2">
-                    {tableDate(snapshots[active].takenOn)}
-                  </span>
-                  {NBSP}·{NBSP}
-                  <span className="font-mono font-medium">
-                    {dcUsd(snapshots[active].totalUsd)}
-                  </span>
-                  {snapshots[active].isPartial && (
-                    <span className="block text-warn">частичные данные</span>
-                  )}
-                </ChartTooltip>
+            /* Точки обходятся стрелками и открывают тултип с клавиатуры:
+               accessibilityLayer у Recharts включён по умолчанию */
+            <SeriesChart
+              rows={rows}
+              axis={axis}
+              color="var(--accent)"
+              ariaLabel={ariaLabel}
+              formatY={compactValue}
+              renderTooltip={(row) => (
+                <TooltipCard
+                  title={tableDate(row.takenOn)}
+                  note={row.isPartial ? "частичные данные" : undefined}
+                >
+                  {dcUsd(row.value!)}
+                </TooltipCard>
               )}
-            </>
+            />
           )}
         </div>
-
-        <ChartTimeAxis points={plot} className="pt-[9px] pb-[13px]" />
       </div>
 
       <ChartNote
@@ -231,12 +169,5 @@ function Summary({
       <span className="t-label">{label}</span>
       <span className="t-metric-sm">{children}</span>
     </div>
-  );
-}
-
-function pointLabel(snapshot: SnapshotDto): string {
-  return (
-    `${tableDate(snapshot.takenOn)}: ${dcUsd(snapshot.totalUsd)}` +
-    (snapshot.isPartial ? ", частичные данные" : "")
   );
 }

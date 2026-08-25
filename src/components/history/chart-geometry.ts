@@ -1,12 +1,14 @@
 /**
- * Геометрия графиков истории (Фаза 3, S3.2). Чистые функции без DOM:
- * графики рисуются инлайновым SVG — библиотек графиков в проекте нет
- * и не появляется.
+ * Календарь графиков (Фаза 3, S3.2). Чистые функции без DOM: сами графики
+ * рисует Recharts (components/history/recharts-parts.tsx), а отсюда берётся
+ * всё, что должно совпадать у шести карточек на трёх экранах, — нумерация
+ * дней, плотный ряд с пропусками, шкала времени и деления оси значений.
  *
  * Главное правило: ось X — КАЛЕНДАРНАЯ, а не «номер точки», и серия
- * рвется на пропущенных днях. Прямая линия через две недели без снепшотов
+ * рвётся на пропущенных днях. Прямая линия через две недели без снепшотов
  * была бы ложью о данных, которых не существует (S3.2: «пропущенные дни
- * видны как разрывы, не интерполируются молча»).
+ * видны как разрывы, не интерполируются молча»). Выражен разрыв дырой
+ * в самих данных: denseDays ставит null, Recharts не соединяет через него.
  */
 
 const DAY_MS = 86_400_000;
@@ -22,28 +24,9 @@ export function dayNumber(takenOn: string): number {
   return Number.isNaN(ts) ? Number.NaN : Math.round(ts / DAY_MS);
 }
 
-/**
- * Разбиение серии на отрезки ПОДРЯД идущих дней: соседние точки попадают
- * в один отрезок, только если между ними ровно один день. Каждый отрезок
- * рисуется отдельным путем — между отрезками остается физический разрыв.
- */
-export function splitRuns<T extends DatedPoint>(points: readonly T[]): T[][] {
-  const runs: T[][] = [];
-  let current: T[] = [];
-  let prevDay = Number.NaN;
-
-  for (const point of points) {
-    const day = dayNumber(point.takenOn);
-    if (current.length > 0 && day - prevDay === 1) {
-      current.push(point);
-    } else {
-      if (current.length > 0) runs.push(current);
-      current = [point];
-    }
-    prevDay = day;
-  }
-  if (current.length > 0) runs.push(current);
-  return runs;
+/** Обратное к dayNumber: номер календарного дня UTC → «YYYY-MM-DD». */
+export function dateFromDay(day: number): string {
+  return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
 /** Сколько календарных дней между точками осталось без снепшота. */
@@ -54,6 +37,39 @@ export function countMissingDays(points: readonly DatedPoint[]): number {
     if (gap > 1) missing += gap - 1;
   }
   return missing;
+}
+
+/** Календарный день периода: point === null — снепшота в этот день не было. */
+export interface DenseDay<T> {
+  takenOn: string;
+  point: T | null;
+}
+
+/**
+ * Разрыв, выраженный ДАННЫМИ: каждый календарный день периода получает
+ * строку, дни без снепшота — point: null. Так рвут линию библиотеки
+ * графиков (connectNulls={false}) — им нужен ряд, в котором пропуск
+ * физически есть, а не подразумевается расстоянием между датами.
+ *
+ * Ряд считается по календарю, а не по индексам: три снепшота за 90 дней
+ * дадут 90 строк, из которых заполнены три, — и расстояния между точками
+ * останутся честными.
+ */
+export function denseDays<T extends DatedPoint>(
+  points: readonly T[],
+): DenseDay<T>[] {
+  const scale = timeScale(points);
+  if (scale === null) return [];
+
+  const byDay = new Map<number, T>();
+  for (const point of points) byDay.set(dayNumber(point.takenOn), point);
+
+  const days: DenseDay<T>[] = [];
+  for (let day = scale.firstDay; day <= scale.lastDay; day += 1) {
+    const point = byDay.get(day);
+    days.push({ takenOn: dateFromDay(day), point: point ?? null });
+  }
+  return days;
 }
 
 /**
@@ -84,28 +100,6 @@ export function timeScale(points: readonly DatedPoint[]): TimeScale | null {
 export function bandCenter(scale: TimeScale, takenOn: string): number {
   const offset = dayNumber(takenOn) - scale.firstDay;
   return ((offset + 0.5) / scale.span) * 100;
-}
-
-/** Левый край дневной полосы в процентах ширины графика. */
-export function bandLeft(scale: TimeScale, takenOn: string): number {
-  return ((dayNumber(takenOn) - scale.firstDay) / scale.span) * 100;
-}
-
-/**
- * Зоны наведения: каждая точка получает половину расстояния до соседей.
- * Вся ширина покрыта без нахлестов, и редкие точки (три снепшота за 90
- * дней) остаются попадаемыми мышью, а не пиксельными.
- */
-export function hitRegions(
-  xs: readonly number[],
-): { left: number; width: number }[] {
-  if (xs.length === 0) return [];
-  if (xs.length === 1) return [{ left: 0, width: 100 }];
-  return xs.map((x, i) => {
-    const left = i === 0 ? 0 : (xs[i - 1] + x) / 2;
-    const right = i === xs.length - 1 ? 100 : (x + xs[i + 1]) / 2;
-    return { left, width: Math.max(0, right - left) };
-  });
 }
 
 /** Округленная шкала Y: «круглые» подписи вместо $153 287,41. */
@@ -156,99 +150,4 @@ export function niceTicks(min: number, max: number, target = 4): ValueAxis {
     ticks.push(round(v));
   }
   return { min: round(domainMin), max: round(domainMax), ticks };
-}
-
-/** Доля значения в домене сверху вниз, 0…100 (0 — верх графика). */
-export function yPercent(axis: ValueAxis, value: number): number {
-  const range = axis.max - axis.min;
-  if (range === 0) return 50;
-  return (1 - (value - axis.min) / range) * 100;
-}
-
-/**
- * Позиция нулевой линии в процентах сверху; null — ряд знака не меняет,
- * и нуля на графике нет вовсе.
- *
- * Домен под ноль НЕ раздвигается. У ряда «+30 000 … +40 000» прибитая
- * к нулю шкала превратила бы кривую в прямую по верхнему краю — ровно то,
- * от чего отказываются niceTicks и valueDomain. Знакопеременный ряд ноль
- * в домене уже содержит: min < 0 < max ⇒ 0 внутри [min, max].
- */
-export function zeroBaseline(axis: ValueAxis): number | null {
-  return axis.min < 0 && axis.max > 0 ? yPercent(axis, 0) : null;
-}
-
-/**
- * Индексы подписей оси X по ФАКТИЧЕСКОЙ позиции точек, а не по их номеру:
- * ось календарная, и равномерный шаг по индексу ставит подписи вплотную
- * там, где точки сгущаются. Гарантируется минимальный зазор `minGap`
- * (в процентах ширины) — крайние подписи сохраняются всегда.
- */
-export function pickTicksByX(
-  xs: readonly number[],
-  count: number,
-  minGap: number,
-): number[] {
-  const n = xs.length;
-  if (n === 0) return [];
-  if (n === 1 || count <= 1) return [n - 1];
-
-  // Ближайшая точка к каждой из `count` равномерных позиций
-  const first = xs[0];
-  const last = xs[n - 1];
-  const picked = new Set<number>();
-  for (let i = 0; i < count; i += 1) {
-    const target = first + ((last - first) * i) / (count - 1);
-    let best = 0;
-    for (let j = 1; j < n; j += 1) {
-      if (Math.abs(xs[j] - target) < Math.abs(xs[best] - target)) best = j;
-    }
-    picked.add(best);
-  }
-
-  const sorted = [...picked].sort((a, b) => a - b);
-  const kept: number[] = [];
-  for (const index of sorted) {
-    if (kept.length === 0 || xs[index] - xs[kept[kept.length - 1]] >= minGap) {
-      kept.push(index);
-    }
-  }
-  // Последняя подпись обязательна; предыдущую убираем, если она вплотную
-  const lastIndex = sorted[sorted.length - 1];
-  if (kept[kept.length - 1] !== lastIndex) {
-    while (
-      kept.length > 0 &&
-      xs[lastIndex] - xs[kept[kept.length - 1]] < minGap
-    ) {
-      kept.pop();
-    }
-    kept.push(lastIndex);
-  }
-  return kept;
-}
-
-/** «12.345» — координата SVG без хвоста плавающей точки. */
-function coord(value: number): string {
-  return Number(value.toFixed(3)).toString();
-}
-
-export interface PlotPoint {
-  x: number;
-  y: number;
-}
-
-/** Ломаная по точкам отрезка; одна точка линии не дает (рисуется маркером). */
-export function linePath(points: readonly PlotPoint[]): string {
-  if (points.length < 2) return "";
-  return points
-    .map((p, i) => `${i === 0 ? "M" : "L"}${coord(p.x)} ${coord(p.y)}`)
-    .join(" ");
-}
-
-/** Заливка под ломаной до низа графика (baseline = 100). */
-export function areaPath(points: readonly PlotPoint[]): string {
-  if (points.length < 2) return "";
-  const first = points[0];
-  const last = points[points.length - 1];
-  return `${linePath(points)} L${coord(last.x)} 100 L${coord(first.x)} 100 Z`;
 }

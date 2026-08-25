@@ -1,31 +1,21 @@
 "use client";
 
-import { useState } from "react";
 import { DcCard } from "@/components/dc/card";
+import { TooltipCard } from "@/components/dc/tooltip-card";
 import { HelpTip } from "@/components/dc/help-tip";
 import type { DepositDto, SnapshotDto } from "@/lib/api/types";
 import { NBSP, dcUsd, dcUsdSigned, tableDate } from "@/lib/format";
 import { profitChange, profitSeries } from "@/lib/portfolio/profit-series";
 import { cn } from "@/lib/utils";
+import { countMissingDays } from "./chart-geometry";
+import { ChartNote } from "./chart-parts";
 import {
-  bandCenter,
-  countMissingDays,
-  hitRegions,
-  splitRuns,
-  timeScale,
-  yPercent,
-  zeroBaseline,
-} from "./chart-geometry";
-import {
-  ChartArea,
-  ChartNote,
-  ChartRefLine,
-  ChartTimeAxis,
-  ChartTooltip,
-  HoverLayer,
-  PartialMarker,
-  valueDomain,
-} from "./chart-parts";
+  type RefLine,
+  SeriesChart,
+  compactValue,
+  seriesAxis,
+  seriesRows,
+} from "./recharts-parts";
 
 /**
  * График Прибыли: Чистая (Активы − Долг) минус Внесено на каждую дату.
@@ -35,13 +25,12 @@ import {
  * не совпадают. Та же дисциплина, что у спарклайнов количеств.
  *
  * Отличия от графика стоимости — два, оба вынужденные:
- *  1. Заливки нет. areaPath кладёт основание на низ домена, а не на ноль:
+ *  1. Заливки нет. Её основание лежит на низу домена, а не на нуле:
  *     на знакопеременном ряде площадь под отрицательной ветвью читалась бы
  *     как «размер убытка», хотя она — расстояние до края карточки.
- *  2. Рисуется нулевая линия. Дизайн-код §5 запрещает сетку — повторяющиеся
- *     декоративные линии; ноль здесь единственное значение, осмысленное
- *     независимо от данных (точка безубытка), и он в цвете линий, а не
- *     зелёный/красный.
+ *  2. Ноль всегда в домене и подписан опорной линией. Сетка отвечает
+ *     на вопрос «сколько», опорная линия — на вопрос «по какую сторону
+ *     безубытка»; цвет у неё линейный, зелёного и красного в графике нет.
  */
 
 const METHOD_HINT =
@@ -66,8 +55,6 @@ export function ProfitChart({
   /** Развёрнутое название периода: «30 дней», «все время». */
   periodLabel: string;
 }) {
-  const [active, setActive] = useState<number | null>(null);
-
   // Без журнала Прибыль равнялась бы Чистой — кривая, завышенная ровно
   // на все взносы. Рисовать её нельзя ни секунды: скелетон, пока грузится,
   // и честное сообщение, если не загрузился
@@ -122,20 +109,15 @@ export function ProfitChart({
   const change = profitChange(points);
   const single = points.length < 2;
 
-  const scale = timeScale(points)!;
-  const axis = valueDomain(values);
-  const zeroY = zeroBaseline(axis);
-  const plot = points.map((point) => ({
-    takenOn: point.takenOn,
-    x: bandCenter(scale, point.takenOn),
-    y: yPercent(axis, point.profitUsd),
-    point,
-  }));
-  const runs = splitRuns(plot).map((run) => ({
-    key: run[0].takenOn,
-    points: run,
-  }));
-  const zones = hitRegions(plot.map((p) => p.x));
+  // Ноль обязан быть в поле зрения: без него не видно, по какую сторону
+  // безубытка идёт кривая — а спрашивают у этого графика именно это
+  const axis = seriesAxis(values, [0]);
+  const rows = seriesRows(
+    points,
+    (point) => point.profitUsd,
+    (point) => point.isPartial,
+  );
+  const refLines: RefLine[] = [{ value: 0, label: "0" }];
   const missing = countMissingDays(points);
   const anyPartial = points.some((p) => p.isPartial);
 
@@ -195,82 +177,44 @@ export function ProfitChart({
         </div>
       </div>
 
-      <div className="border-line border-t bg-sunken px-4 pt-1">
-        <div className="relative h-[150px] sm:h-[190px]">
+      <div className="border-line border-t bg-sunken px-3 pt-2 pb-2">
+        <div className="relative h-[186px] sm:h-[226px]">
           {single ? (
             <p className="t-meta absolute inset-0 grid place-items-center px-4 text-center text-text-3">
               Одна точка — кривой нужна вторая. Следующий снепшот достроит
               график.
             </p>
           ) : (
-            <>
-              {zeroY !== null && <ChartRefLine y={zeroY} label="0" />}
-
-              <ChartArea
-                runs={runs}
-                color="var(--text-1)"
-                fillOpacity={0}
-                ariaLabel={ariaLabel}
-                className="absolute inset-0"
-              />
-
-              {plot.map((item, i) => {
-                const partial = item.point.isPartial;
-                const isolated = runs.some(
-                  (run) => run.points.length === 1 && run.points[0] === item,
-                );
-                if (!partial && !isolated && active !== i) return null;
-                return (
-                  <span
-                    key={item.takenOn}
-                    style={{ left: `${item.x}%`, top: `${item.y}%` }}
-                    className="absolute -translate-x-1/2 -translate-y-1/2"
-                  >
-                    {partial ? (
-                      <PartialMarker className="block" />
-                    ) : (
-                      <span
-                        aria-hidden
-                        className="block size-[7px] rounded-full bg-text-1"
-                      />
-                    )}
-                  </span>
-                );
-              })}
-
-              <HoverLayer
-                zones={zones.map((zone, i) => ({
-                  ...zone,
-                  label: pointLabel(points[i]),
-                }))}
-                onActive={setActive}
-              />
-
-              {active !== null && (
-                <ChartTooltip x={plot[active].x}>
-                  <span className="font-mono text-text-2">
-                    {tableDate(points[active].takenOn)}
-                  </span>
-                  {NBSP}·{NBSP}
-                  <span className="font-mono font-medium">
-                    {dcUsdSigned(points[active].profitUsd)}
-                  </span>
+            /* Заливки нет: её основание легло бы на низ домена, а не на ноль,
+               и площадь под отрицательной ветвью читалась бы как «размер
+               убытка», хотя она — расстояние до края карточки */
+            <SeriesChart
+              rows={rows}
+              axis={axis}
+              color="var(--accent)"
+              fillOpacity={0}
+              ariaLabel={ariaLabel}
+              formatY={compactValue}
+              refLines={refLines}
+              renderTooltip={(row) => (
+                <TooltipCard
+                  title={tableDate(row.takenOn)}
+                  note={row.isPartial ? "частичные данные" : undefined}
+                >
+                  {dcUsdSigned(row.value!)}
                   {/* Знаковое число без раскладки неаудируемо: из чего
                       именно оно получилось, видно только здесь */}
-                  <span className="block text-text-2">
-                    Чистая {dcUsd(points[active].netUsd)}
-                    {NBSP}·{NBSP}Внесено {dcUsd(points[active].depositedUsd)}
-                  </span>
-                  {points[active].isPartial && (
-                    <span className="block text-warn">частичные данные</span>
+                  {row.point && (
+                    <span className="mt-1 block text-[11.5px] font-normal text-text-2">
+                      Чистая {dcUsd(row.point.netUsd)}
+                      {NBSP}·{NBSP}Внесено {dcUsd(row.point.depositedUsd)}
+                    </span>
                   )}
-                </ChartTooltip>
+                </TooltipCard>
               )}
-            </>
+            />
           )}
         </div>
-
-        <ChartTimeAxis points={plot} className="pt-[9px] pb-[13px]" />
       </div>
 
       <ChartNote
@@ -308,17 +252,6 @@ function Summary({
   );
 }
 
-function pointLabel(point: {
-  takenOn: string;
-  profitUsd: number;
-  isPartial: boolean;
-}): string {
-  return (
-    `${tableDate(point.takenOn)}: ${dcUsdSigned(point.profitUsd)}` +
-    (point.isPartial ? ", частичные данные" : "")
-  );
-}
-
 /** Место под карточку, пока грузится журнал депозитов. */
 function ProfitSkeleton() {
   return (
@@ -328,7 +261,7 @@ function ProfitSkeleton() {
         <span className="block h-8 w-44 rounded-pill bg-chip" />
       </div>
       <div className="border-line border-t bg-sunken px-4 py-4">
-        <span className="block h-[150px] w-full rounded-pill bg-chip sm:h-[190px]" />
+        <span className="block h-[186px] w-full rounded-pill bg-chip sm:h-[226px]" />
       </div>
     </DcCard>
   );

@@ -1,17 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { countMissingDays } from "@/components/history/chart-geometry";
 import {
-  areaPath,
-  bandCenter,
-  countMissingDays,
-  linePath,
-  splitRuns,
-  timeScale,
-  yPercent,
-} from "@/components/history/chart-geometry";
-import { ChartTimeAxis, valueDomain } from "@/components/history/chart-parts";
+  SeriesChart,
+  compactValue,
+  seriesAxis,
+  seriesRows,
+} from "@/components/history/recharts-parts";
 import { DcCard } from "@/components/dc/card";
+import { TooltipCard } from "@/components/dc/tooltip-card";
 import type { SnapshotsResponseDto } from "@/lib/api/types";
 import { dcUsd, dcUsdSigned, tableDate, tablePctSigned } from "@/lib/format";
 import {
@@ -24,15 +22,17 @@ import { cn } from "@/lib/utils";
  * «Динамика стоимости» за 30 дней — превью со ссылкой в историю, а не
  * полноценный график: осей значений и тултипов здесь нет.
  *
- * Линия набрана цветом текста, а не семантикой (§5): падение портфеля —
+ * Линия набрана акцентом, а не семантикой (§5): падение портфеля —
  * это данные, а не убыток по позиции, и красная линия врала бы про роль
  * цвета. Пропущенные дни остаются разрывами: прямая через две недели
  * без снепшотов — ложь о данных, которых не существует.
+ *
+ * Движок и домен — общие с графиком «Истории» (recharts-parts.tsx):
+ * один и тот же ряд обязан давать на двух экранах одну и ту же кривую.
  */
 
 const TITLE = "Динамика стоимости";
-const CHART_HEIGHT = 150;
-const GRADIENT_ID = "dc-value-area";
+const CHART_HEIGHT = 186;
 
 export function ValueSparkline({
   data,
@@ -72,19 +72,15 @@ export function ValueSparkline({
     );
   }
 
-  const scale = timeScale(snapshots)!;
   const values = snapshots.map((s) => s.totalUsd);
-  // Тот же домен, что у полноценного графика «Истории»: niceTicks округлял
-  // границы под сетку, которой здесь нет, и один и тот же ряд получал на
-  // двух экранах разную форму кривой
-  const axis = valueDomain(values);
-  const plot = snapshots.map((snapshot) => ({
-    takenOn: snapshot.takenOn,
-    x: bandCenter(scale, snapshot.takenOn),
-    y: yPercent(axis, snapshot.totalUsd),
-    snapshot,
-  }));
-  const runs = splitRuns(plot);
+  // Тот же домен и тот же движок, что у полноценного графика «Истории»:
+  // один ряд обязан давать на двух экранах одну и ту же кривую
+  const axis = seriesAxis(values);
+  const rows = seriesRows(
+    snapshots,
+    (snapshot) => snapshot.totalUsd,
+    (snapshot) => snapshot.isPartial,
+  );
 
   const first = snapshots[0];
   const last = snapshots[snapshots.length - 1];
@@ -119,70 +115,23 @@ export function ValueSparkline({
           : undefined
       }
     >
-      <div className="relative px-1" style={{ height: CHART_HEIGHT }}>
-        <svg
-          role="img"
-          aria-label={ariaLabel}
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute inset-0 h-full w-full"
-        >
-          <defs>
-            <linearGradient id={GRADIENT_ID} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--text-1)" stopOpacity={0.16} />
-              <stop offset="100%" stopColor="var(--text-1)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          {runs.map((run) => (
-            <path
-              key={`area-${run[0].takenOn}`}
-              d={areaPath(run)}
-              fill={`url(#${GRADIENT_ID})`}
-            />
-          ))}
-          {runs.map((run) => (
-            <path
-              key={`line-${run[0].takenOn}`}
-              d={linePath(run)}
-              fill="none"
-              stroke="var(--text-1)"
-              strokeWidth={1}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-        </svg>
-
-        {/* Маркеры — HTML: в растянутом viewBox круги стали бы овалами.
-            Помечаются только точки, о которых надо знать: частичные и
-            одиночные, у которых линии нет вовсе */}
-        {plot.map((point) => {
-          const partial = point.snapshot.isPartial;
-          const isolated = runs.some(
-            (run) => run.length === 1 && run[0] === point,
-          );
-          if (!partial && !isolated) return null;
-          return (
-            <span
-              key={point.takenOn}
-              aria-hidden="true"
-              style={{ left: `${point.x}%`, top: `${point.y}%` }}
-              className={cn(
-                "-translate-x-1/2 -translate-y-1/2 absolute rounded-full",
-                partial
-                  ? "size-[9px] border-2 border-warn bg-sunken"
-                  : "size-[5px] bg-text-1",
-              )}
-            />
-          );
-        })}
+      <div className="px-3 pt-2 pb-2" style={{ height: CHART_HEIGHT }}>
+        <SeriesChart
+          rows={rows}
+          axis={axis}
+          color="var(--accent)"
+          ariaLabel={ariaLabel}
+          formatY={compactValue}
+          renderTooltip={(row) => (
+            <TooltipCard
+              title={tableDate(row.takenOn)}
+              note={row.isPartial ? "частичные данные" : undefined}
+            >
+              {dcUsd(row.value!)}
+            </TooltipCard>
+          )}
+        />
       </div>
-
-      {/* Ось строится по фактическим x точек. Раньше подписи раскладывал
-          justify-between, то есть равномерно, — и они не совпадали с точками,
-          к которым относились. */}
-      <ChartTimeAxis points={plot} className="px-5 pt-2 pb-3" />
     </ChartCard>
   );
 }
