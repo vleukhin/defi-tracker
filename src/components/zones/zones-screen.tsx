@@ -159,20 +159,6 @@ export function ZonesScreen({
         ))}
       </section>
 
-      <FreeFundsCard
-        balances={free}
-        summary={freeSummary}
-        onRefetch={onRefetch}
-      />
-
-      <SanityStrip
-        zonesTotalUsd={zones.totalUsd}
-        assetsUsd={assetsUsd}
-        ownInPositionsUsd={zones.ownInPositionsUsd}
-        stableCategoryUsd={stableCategoryUsd}
-        unpricedCount={positionsSummary.unpricedCount}
-      />
-
       {zones.unmarkedPositions > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-block border border-line bg-sunken px-card py-3">
           <StatusChip tone="warn">
@@ -260,6 +246,20 @@ export function ZonesScreen({
           ))}
         </ul>
       )}
+
+      <FreeFundsCard
+        balances={free}
+        summary={freeSummary}
+        onRefetch={onRefetch}
+      />
+
+      <SanityStrip
+        zonesTotalUsd={zones.totalUsd}
+        assetsUsd={assetsUsd}
+        ownInPositionsUsd={zones.ownInPositionsUsd}
+        stableCategoryUsd={stableCategoryUsd}
+        unpricedCount={positionsSummary.unpricedCount}
+      />
     </>
   );
 }
