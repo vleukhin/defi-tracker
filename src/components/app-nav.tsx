@@ -44,10 +44,17 @@ function isActive(pathname: string, href: string) {
  * Справа дизайн просит сумму портфеля и дневную дельту; шапка их не считает
  * сама, а принимает слотом — иначе она полезла бы в данные страницы.
  *
- * Строка из семи пунктов вместе с логотипом и правым блоком требует ~865px,
- * поэтому ниже lg (1024px) она уезжает в выдвижную панель, а не в
- * горизонтальный скролл: скрытая полоса прокрутки не показывает, что за краем
- * что-то есть, и «Настройки» с «Целями» на телефоне были недостижимы вслепую.
+ * Строка из семи пунктов с иконками вместе с логотипом и правым блоком
+ * требует ~1180px (замерено на «Портфеле», где правый блок самый широкий:
+ * бейдж HF, переключатель темы, «Выйти»), поэтому ниже xl (1280px) она
+ * уезжает в выдвижную панель, а не в горизонтальный скролл: скрытая полоса
+ * прокрутки не показывает, что за краем что-то есть, и «Настройки»
+ * с «Целями» на телефоне были недостижимы вслепую.
+ *
+ * Граница поднята с lg вместе с иконками: они добавили пункту 23px, семь
+ * пунктов — 161px, и на 1024px строка наезжала на правый блок. Ужать
+ * иконку до неразличимости, чтобы удержать старую границу, — обмен
+ * читаемости на одно значение брейкпоинта.
  * Нижний таб-бар тут не подходит: семь пунктов по 53px нарушают hit-зону
  * ≥44px (§6), а подписи в них не помещаются.
  */
@@ -68,7 +75,7 @@ export function AppNav({ summary }: { summary?: React.ReactNode }) {
 
         <nav
           aria-label="Основная навигация"
-          className="hidden min-w-0 flex-1 items-center gap-0.5 lg:flex"
+          className="hidden min-w-0 flex-1 items-center gap-0.5 xl:flex"
         >
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
@@ -78,12 +85,22 @@ export function AppNav({ summary }: { summary?: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "shrink-0 rounded-control px-[13px] py-[7px] text-[13.5px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
+                  "flex shrink-0 items-center gap-[6px] rounded-control px-[9px] py-[7px] text-[13.5px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
                   active
                     ? "bg-raised font-medium text-text-1"
                     : "text-text-2 hover:bg-chip hover:text-text-1",
                 )}
               >
+                {/* Иконка приглушена относительно подписи: она метка пункта,
+                    а не вторая подпись. У активного догоняет текст по цвету —
+                    иначе строка выглядит наполовину активной */}
+                <item.icon
+                  aria-hidden
+                  className={cn(
+                    "size-[15px] shrink-0",
+                    active ? "text-text-1" : "text-text-3",
+                  )}
+                />
                 {item.label}
               </Link>
             );
@@ -93,7 +110,7 @@ export function AppNav({ summary }: { summary?: React.ReactNode }) {
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           {summary}
           <ThemeToggle />
-          <form action="/auth/signout" method="post" className="hidden lg:block">
+          <form action="/auth/signout" method="post" className="hidden xl:block">
             <button
               type="submit"
               className="rounded-control px-2.5 py-[7px] text-[13.5px] text-text-2 outline-none transition-colors duration-120 ease-out hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -125,7 +142,7 @@ function MobileNav({ pathname }: { pathname: string }) {
           variant="ghost"
           size="icon"
           aria-label="Открыть меню"
-          className="pointer-coarse:size-11 lg:hidden"
+          className="pointer-coarse:size-11 xl:hidden"
         >
           <Menu className="size-5" />
         </Button>

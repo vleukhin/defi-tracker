@@ -108,41 +108,35 @@ export function PullToRefresh({
   }, [onRefresh]);
 
   const armed = pull >= THRESHOLD;
-  const active = pull > 0 || refreshing;
+  // Индикатор объясняет только сам жест и исчезает вместе с пальцем.
+  // Ход фонового обновления уже виден на кнопке в шапке; оставлять здесь
+  // вторую плавающую плашку значило перекрывать содержимое страницы.
+  const active = pull > 0;
 
   return (
     <div className="relative">
       {/* Индикатор не двигает контент: сдвиг всей страницы на палец
           конфликтовал бы с резинкой iOS, которая едет одновременно */}
       <div
-        aria-hidden={!refreshing}
-        role="status"
+        aria-hidden
         className={cn(
           "-top-1 pointer-events-none absolute inset-x-0 z-30 flex justify-center transition-opacity duration-120",
           active ? "opacity-100" : "opacity-0",
         )}
-        style={{ transform: `translateY(${refreshing ? THRESHOLD / 2 : pull}px)` }}
+        style={{ transform: `translateY(${pull}px)` }}
       >
         <span
           className={cn(
             "flex items-center gap-2 rounded-pill border border-line-strong bg-raised px-3 py-1.5 text-[12.5px] shadow-(--shadow-pop)",
-            armed || refreshing ? "text-text-1" : "text-text-3",
+            armed ? "text-text-1" : "text-text-3",
           )}
         >
           <RefreshCw
             aria-hidden
-            className={cn("size-3.5", refreshing && "animate-spin")}
-            style={
-              refreshing
-                ? undefined
-                : { transform: `rotate(${(pull / MAX_PULL) * 270}deg)` }
-            }
+            className="size-3.5"
+            style={{ transform: `rotate(${(pull / MAX_PULL) * 270}deg)` }}
           />
-          {refreshing
-            ? "Обновление…"
-            : armed
-              ? "Отпустите — обновим"
-              : "Потяните вниз"}
+          {armed ? "Отпустите — обновим" : "Потяните вниз"}
         </span>
       </div>
       {children}

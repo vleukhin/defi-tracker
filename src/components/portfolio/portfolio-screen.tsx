@@ -275,28 +275,6 @@ export function PortfolioScreen() {
   const header = (
     <PageHeader
       title="Портфель"
-      meta={
-        data ? (
-          <>
-            <FreshnessDot stale={data.freshness.anyPriceStale} />
-            <span>
-              цены {formatRelativeTime(data.freshness.oldestPriceAt) ?? "—"}
-            </span>
-            <MetaDot />
-            <span>
-              залог{" "}
-              {formatRelativeTime(data.freshness.oldestCollateralAt) ??
-                "нет данных"}
-            </span>
-            {refreshing && (
-              <>
-                <MetaDot />
-                <span>обновляется…</span>
-              </>
-            )}
-          </>
-        ) : undefined
-      }
       action={
         // flex-wrap: на 320px кнопка обновления и три сегмента вместе
         // перебирают ширину, и переключатель уходит на свою строку —
