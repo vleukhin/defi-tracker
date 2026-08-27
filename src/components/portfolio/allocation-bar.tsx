@@ -8,7 +8,7 @@ import type {
   ZoneBreakdownDto,
   ZonesSummaryDto,
 } from "@/lib/api/types";
-import { dcUsd, tablePct } from "@/lib/format";
+import { DEVIATION_THRESHOLD_PP, dcPp, dcUsd, tablePct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CATEGORY_VAR, assetTextColor } from "./category";
 import { countLabel } from "./plural";
@@ -21,6 +21,15 @@ import { countLabel } from "./plural";
  * перевода взгляда на легенду. Цвета берутся только из роли «данные»
  * (зоны и активы), семантике полоса не отдаётся: она показывает состав,
  * а не результат.
+ *
+ * Полоса СПЛОШНАЯ: сегменты стыкуются встык, скругление только по краям.
+ * Раньше у каждого были своё скругление, зазор 3px и обводка ярче заливки —
+ * три отдельных контрола вместо разреза одного целого.
+ *
+ * Целей на полосе нет. Засечки протыкали её насквозь белыми палками без
+ * подписи, и объясняла их сноска «метки целей» в углу легенды — подпись
+ * к подписи. Вопрос «мимо ли цели» отвечается числом в легенде, тем же
+ * отклонением в пунктах и с тем же порогом, что на экране «Цели».
  */
 
 interface AllocationSegment {
@@ -34,16 +43,6 @@ interface AllocationSegment {
   tipTitle: string;
   /** Сумма и доля — то, ради чего наводят. */
   tipValue: ReactNode;
-}
-
-/**
- * Метка цели на кумулятивной границе: 2×42px поверх полосы. Остаётся
- * декоративной — те же цели подписаны в легенде под полосой словами,
- * и две лишние остановки Tab повторяли бы её текст.
- */
-interface TargetMarker {
-  key: string;
-  x: number;
 }
 
 function AllocationFrame({
@@ -68,11 +67,9 @@ function AllocationFrame({
 
 function AllocationSegments({
   segments,
-  markers,
   ariaLabel,
 }: {
   segments: AllocationSegment[];
-  markers?: TargetMarker[];
   ariaLabel: string;
 }) {
   if (segments.length === 0) {
@@ -84,47 +81,42 @@ function AllocationSegments({
   }
 
   return (
-    <div className="relative h-[34px]">
-      <div className="flex h-[34px] gap-[3px]" role="img" aria-label={ariaLabel}>
-        {segments.map((s) => (
-          <DataTip key={s.key} title={s.tipTitle} value={s.tipValue}>
-            {/* Кнопка, а не div: подсказка открывается и по focus, иначе
-                сумма сегмента недостижима с клавиатуры и на тач-экране */}
-            <button
-              type="button"
-              aria-label={`${s.tipTitle}, ${s.label}`}
-              className="flex items-center overflow-hidden rounded-pill px-[11px] text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              style={{
-                width: `${s.percent}%`,
-                // Доля меньше процента иначе схлопывается в невидимую полоску
-                minWidth: s.percent > 0 ? 10 : 0,
-                background: `linear-gradient(180deg, color-mix(in srgb, ${s.color} 20%, transparent), color-mix(in srgb, ${s.color} 8%, transparent))`,
-                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${s.color} 28%, transparent)`,
-              }}
+    // Сегменты встык и скруглены только по краям всей полосы: это разрез
+    // одного целого, а не три отдельных контрола. Щель в 2px между ними —
+    // фон карточки, он же отделяет соседние цвета друг от друга.
+    // Скругление вешается на крайние сегменты, а не overflow-hidden
+    // на контейнер: последний срезал бы кольцо фокуса.
+    <div className="flex h-[34px] gap-[2px]" role="img" aria-label={ariaLabel}>
+      {segments.map((s) => (
+        <DataTip key={s.key} title={s.tipTitle} value={s.tipValue}>
+          {/* Кнопка, а не div: подсказка открывается и по focus, иначе
+              сумма сегмента недостижима с клавиатуры и на тач-экране */}
+          <button
+            type="button"
+            aria-label={`${s.tipTitle}, ${s.label}`}
+            className="flex items-center overflow-hidden px-[11px] text-left outline-none first:rounded-l-pill last:rounded-r-pill focus-visible:ring-3 focus-visible:ring-ring/50"
+            style={{
+              width: `${s.percent}%`,
+              // Доля меньше процента иначе схлопывается в невидимую полоску
+              minWidth: s.percent > 0 ? 10 : 0,
+              // Заливка плотнее прежней и без обводки: раньше рамка была
+              // ярче заливки, и сегмент читался пустой рамкой, а не массой
+              background: `linear-gradient(180deg, color-mix(in srgb, ${s.color} 30%, transparent), color-mix(in srgb, ${s.color} 16%, transparent))`,
+            }}
+          >
+            {/* Узкий сегмент на 375px обрезал бы процент до «1…» —
+                на таких ширинах подпись уходит в легенду */}
+            <span
+              className={cn(
+                "truncate text-[12.5px] font-medium",
+                s.percent < 25 && "hidden sm:inline",
+              )}
+              style={{ color: s.textColor }}
             >
-              {/* Узкий сегмент на 375px обрезал бы процент до «1…» —
-                  на таких ширинах подпись уходит, а доля остаётся в легенде
-                  и в подсказке сегмента */}
-              <span
-                className={cn(
-                  "truncate text-[12.5px] font-medium",
-                  s.percent < 25 && "hidden sm:inline",
-                )}
-                style={{ color: s.textColor }}
-              >
-                {s.label}
-              </span>
-            </button>
-          </DataTip>
-        ))}
-      </div>
-      {markers?.map((m) => (
-        <span
-          key={m.key}
-          aria-hidden
-          className="absolute top-[-4px] h-[42px] w-[2px] rounded-[2px] bg-text-1 opacity-75"
-          style={{ left: `${m.x}%` }}
-        />
+              {s.label}
+            </span>
+          </button>
+        </DataTip>
       ))}
     </div>
   );
@@ -167,7 +159,7 @@ export function ZoneAllocation({ zones }: { zones: ZonesSummaryDto }) {
   );
 }
 
-/** Разрез по категориям активов + метки целевых долей. */
+/** Разрез по категориям активов; цели названы в легенде отклонением. */
 export function CategoryAllocation({
   rows,
   portfolioUsd,
@@ -198,16 +190,6 @@ export function CategoryAllocation({
       ),
     }));
 
-  // Метки стоят на кумулятивных границах целей: совпадение стыка с меткой
-  // и есть «портфель в балансе», расхождение видно как сдвиг
-  const markers: TargetMarker[] = [];
-  let cumulative = 0;
-  for (const row of rows.slice(0, -1)) {
-    if (row.targetPercent === null) break;
-    cumulative += row.targetPercent;
-    markers.push({ key: row.category, x: cumulative });
-  }
-
   return (
     <AllocationFrame
       title="Распределение по активам"
@@ -219,7 +201,6 @@ export function CategoryAllocation({
     >
       <AllocationSegments
         segments={segments}
-        markers={markers}
         ariaLabel={`Распределение по активам: ${rows
           .map(
             (r) =>
@@ -231,37 +212,51 @@ export function CategoryAllocation({
           .join(", ")}`}
       />
 
+      {/* Легенда отвечает на вопрос «мимо ли цели», а не повторяет полосу:
+          отклонение в пунктах названо числом, а не белой засечкой поверх
+          сегментов, к которой нужна была ещё и сноска «метки целей» */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[12.5px]">
-        {rows.map((r) => (
-          <span key={r.category} className="flex items-center gap-[7px]">
-            <span
-              aria-hidden
-              className="size-[6px] shrink-0 rounded-full"
-              style={{ background: CATEGORY_VAR[r.category] }}
-            />
-            <span className="text-text-2">{r.label}</span>
-            <span>{tablePct(r.percent)}</span>
-            {r.targetPercent !== null && (
-              <>
-                <span aria-hidden className="text-text-4">
-                  →
-                </span>
-                <span className="text-text-3">
-                  цель {tablePct(r.targetPercent)}
-                </span>
-              </>
-            )}
-          </span>
-        ))}
-        {markers.length > 0 && (
-          <span className="ml-auto flex items-center gap-[7px] text-text-3">
-            <span
-              aria-hidden
-              className="h-[11px] w-[2px] bg-text-1 opacity-75"
-            />
-            метки целей
-          </span>
-        )}
+        {rows.map((r) => {
+          const diff =
+            r.targetPercent === null ? null : r.percent - r.targetPercent;
+          return (
+            <span key={r.category} className="flex items-center gap-[7px]">
+              <span
+                aria-hidden
+                className="size-[6px] shrink-0 rounded-full"
+                style={{ background: CATEGORY_VAR[r.category] }}
+              />
+              <span className="text-text-2">{r.label}</span>
+              {/* Доля дублируется сюда ровно там, где сегмент её не показал:
+                  узкий сегмент прячет подпись до sm, и без этого число
+                  осталось бы только в подсказке */}
+              <span className={r.percent < 25 ? "sm:hidden" : "hidden"}>
+                {tablePct(r.percent)}
+              </span>
+              {diff === null ? (
+                <span className="text-text-3">цель не задана</span>
+              ) : (
+                <>
+                  <span className="text-text-3">
+                    цель {tablePct(r.targetPercent!)}
+                  </span>
+                  {/* Порог тот же, что на экране «Цели»: цвет отклонения
+                      обязан означать одно и то же в обоих местах */}
+                  <span
+                    className={cn(
+                      "font-mono",
+                      Math.abs(diff) > DEVIATION_THRESHOLD_PP
+                        ? "text-warn"
+                        : "text-text-2",
+                    )}
+                  >
+                    {dcPp(diff)}
+                  </span>
+                </>
+              )}
+            </span>
+          );
+        })}
       </div>
     </AllocationFrame>
   );
