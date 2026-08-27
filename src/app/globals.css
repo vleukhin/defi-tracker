@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ===========================================================================
-   DeFi Portfolio — design tokens 1.0 (дизайн-код, раздел 2 и tokens.css).
+   DeFi Portfolio — design tokens 1.1 (дизайн-код, раздел 2 и tokens.css).
    Тёмная тема — основная; светлая переопределяет значения, роли те же.
    Четыре роли цвета: поверхности, текст, интерактив, данные.
    Семантика (profit/loss/warn) — только числа P/L и статусы риска.
@@ -27,12 +27,15 @@
   --line-card: #1f252d;   /* обводка карточки */
   --line-strong: #2c333e; /* обводка контролов, «?» */
   --line-hover: #39424f;
+  --control-border: #596474;
+  --control-border-hover: #77818f;
 
   /* текст */
   --text-1: #e9ecf1;
   --text-2: #98a2af;
-  --text-3: #667080;
+  --text-3: #77818f;
   --text-4: #39424f;      /* точки-разделители в строке мета */
+  --text-placeholder: #77818f;
   --text-on-accent: #08111f;
 
   /* семантика — только числа P/L и статусы риска */
@@ -60,6 +63,13 @@
   --money-own: #98a2af;      /* свои средства */
   --money-borrowed: #39424f; /* заёмные средства */
 
+  /* протоколы — подпись источника, не семантика результата */
+  --protocol-uniswap: #ff3b87;
+  --protocol-aave: #b6509e;
+  --protocol-fluid: #3ba1ff;
+  --protocol-gmx: #3d8ff5;
+  --protocol-manual: #98a2af;
+
   --shadow-pop: 0 14px 38px rgb(0 0 0 / 0.6);
 }
 
@@ -76,11 +86,14 @@
   --line-card: #e4e4e1;
   --line-strong: #d6d6d2;
   --line-hover: #b9b9b4;
+  --control-border: #8c8c86;
+  --control-border-hover: #6b717b;
 
   --text-1: #1a1d22;
   --text-2: #6b7280;
-  --text-3: #8a9099;
+  --text-3: #6b717b;
   --text-4: #c2c6cb;
+  --text-placeholder: #6b717b;
   --text-on-accent: #ffffff;
 
   --profit: #1e9e68;
@@ -103,6 +116,12 @@
   --asset-stable: #158e76;
   --money-own: #6b7280;
   --money-borrowed: #c2c6cb;
+
+  --protocol-uniswap: #d91f73;
+  --protocol-aave: #94418a;
+  --protocol-fluid: #147abf;
+  --protocol-gmx: #256fc2;
+  --protocol-manual: #6b717b;
 
   --shadow-pop: 0 12px 30px rgb(20 22 26 / 0.14);
 }
@@ -128,6 +147,12 @@
   --control-h: 34px;
   --header-h: 60px;
   --hairline: 1px;
+
+  /* движение: состояния быстрые, обновление данных чуть спокойнее */
+  --motion-instant: 100ms;
+  --motion-fast: 140ms;
+  --motion-data: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* Совместимость с примитивами shadcn, считающими радиус от --radius */
   --radius: var(--radius-block);
@@ -183,12 +208,15 @@
   --color-line-card: var(--line-card);
   --color-line-strong: var(--line-strong);
   --color-line-hover: var(--line-hover);
+  --color-control-border: var(--control-border);
+  --color-control-border-hover: var(--control-border-hover);
 
   /* четыре уровня текста */
   --color-text-1: var(--text-1);
   --color-text-2: var(--text-2);
   --color-text-3: var(--text-3);
   --color-text-4: var(--text-4);
+  --color-text-placeholder: var(--text-placeholder);
 
   /* семантика и данные */
   --color-profit: var(--profit);
@@ -205,6 +233,11 @@
   --color-asset-stable: var(--asset-stable);
   --color-money-own: var(--money-own);
   --color-money-borrowed: var(--money-borrowed);
+  --color-protocol-uniswap: var(--protocol-uniswap);
+  --color-protocol-aave: var(--protocol-aave);
+  --color-protocol-fluid: var(--protocol-fluid);
+  --color-protocol-gmx: var(--protocol-gmx);
+  --color-protocol-manual: var(--protocol-manual);
 
   /* семантические имена shadcn */
   --color-background: var(--background);

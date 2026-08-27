@@ -13,16 +13,16 @@ export interface ProtocolBrand {
 }
 
 export const PROTOCOL_BRANDS: Record<string, ProtocolBrand> = {
-  uniswap: { abbr: "UNI", color: "#FF3B87", label: "Uniswap v3" },
-  aave: { abbr: "AAV", color: "#B6509E", label: "Aave v3" },
-  fluid: { abbr: "FLD", color: "#3BA1FF", label: "Fluid" },
-  gmx: { abbr: "GMX", color: "#3D8FF5", label: "GMX" },
-  manual: { abbr: "MAN", color: "#98A2AF", label: "Вручную" },
+  uniswap: { abbr: "UNI", color: "var(--protocol-uniswap)", label: "Uniswap v3" },
+  aave: { abbr: "AAV", color: "var(--protocol-aave)", label: "Aave v3" },
+  fluid: { abbr: "FLD", color: "var(--protocol-fluid)", label: "Fluid" },
+  gmx: { abbr: "GMX", color: "var(--protocol-gmx)", label: "GMX" },
+  manual: { abbr: "MAN", color: "var(--protocol-manual)", label: "Вручную" },
 };
 
 const FALLBACK: ProtocolBrand = {
   abbr: "—",
-  color: "#98A2AF",
+  color: "var(--protocol-manual)",
   label: "Протокол",
 };
 

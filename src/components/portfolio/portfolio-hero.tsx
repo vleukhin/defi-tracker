@@ -30,6 +30,7 @@ export function PortfolioHero({
   delta,
   coins,
   staleNote,
+  compact = false,
 }: {
   view: PortfolioView;
   portfolio: PortfolioDto;
@@ -41,6 +42,8 @@ export function PortfolioHero({
   coins: CoinAmount[];
   /** «цены 14 ч назад», когда цены устарели; иначе null. */
   staleNote: string | null;
+  /** В режиме сигналов оставляем только контекст решения, без второго разреза. */
+  compact?: boolean;
 }) {
   return (
     <DcCard>
@@ -51,9 +54,7 @@ export function PortfolioHero({
         coins={coins}
         staleNote={staleNote}
       />
-      {/* В режиме сигналов внизу стоит разрез по зонам: лента говорит на
-          языке стратегии, и категории под ней были бы про другое */}
-      {view === "categories" ? (
+      {!compact && (view === "categories" ? (
         <CategoryAllocation
           rows={portfolio.rows}
           portfolioUsd={portfolio.overview.portfolioUsd}
@@ -61,7 +62,7 @@ export function PortfolioHero({
         />
       ) : (
         zones && <ZoneAllocation zones={zones} />
-      )}
+      ))}
     </DcCard>
   );
 }

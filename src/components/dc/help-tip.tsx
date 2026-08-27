@@ -34,7 +34,7 @@ export function HelpTip({
           type="button"
           aria-label={label}
           className={cn(
-            "relative inline-grid shrink-0 cursor-help place-items-center rounded-full border border-line-strong font-semibold text-text-3 leading-none outline-none transition-colors duration-120 ease-out hover:border-line-hover hover:text-text-2 focus-visible:ring-3 focus-visible:ring-ring/50",
+            "relative inline-grid shrink-0 cursor-help place-items-center rounded-full border border-control-border font-semibold text-text-3 leading-none outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:border-control-border-hover hover:text-text-2 focus-visible:ring-3 focus-visible:ring-ring/50",
             // Круг остаётся 14px, а палец попадает в 44px: hit-зона
             // растягивается псевдоэлементом, чтобы не раздувать вёрстку строки
             "before:-translate-x-1/2 before:-translate-y-1/2 before:absolute before:top-1/2 before:left-1/2 before:size-[14px] before:content-[''] pointer-coarse:before:size-11",

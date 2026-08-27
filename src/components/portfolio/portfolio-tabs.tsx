@@ -30,16 +30,14 @@ import { Segmented } from "@/components/dc/segmented";
  * тут не нужен.
  *
  * `?view` в адресе остаётся, чтобы ссылку на нужный разрез можно было
- * отправить себе в заметку и чтобы он пережил перезагрузку. Приоритет
- * при открытии: явный параметр в URL → прошлый выбор из localStorage →
- * «Зоны» (главный вопрос стратегии — как капитал распределён по задачам,
- * а не в каких монетах он лежит).
+ * отправить себе в заметку и чтобы он пережил перезагрузку. Без параметра
+ * открываются «Зоны» — это одинаково на сервере и клиенте. Чтение
+ * localStorage в инициализаторе давало разные aria-checked до гидратации.
  */
 
 export type PortfolioView = "categories" | "zones" | "signals";
 
 const DEFAULT_VIEW: PortfolioView = "zones";
-const STORAGE_KEY = "portfolioView";
 
 function isView(value: string | null): value is PortfolioView {
   return value === "categories" || value === "zones" || value === "signals";
@@ -53,20 +51,12 @@ export interface PortfolioViewState {
 export function usePortfolioView(): PortfolioViewState {
   const fromUrl = useSearchParams().get("view");
 
-  /* Начальное значение считается один раз. Читать localStorage в рендере
-     безопасно: поддерево живёт под <Suspense> и useSearchParams, поэтому
-     на статической странице оно рендерится на клиенте, а не гидрируется
-     из серверной разметки. */
-  const [view, setViewState] = useState<PortfolioView>(() => {
-    if (isView(fromUrl)) return fromUrl;
-    if (typeof window === "undefined") return DEFAULT_VIEW;
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    return isView(saved) ? saved : DEFAULT_VIEW;
-  });
+  const [view, setViewState] = useState<PortfolioView>(() =>
+    isView(fromUrl) ? fromUrl : DEFAULT_VIEW,
+  );
 
   const setView = useCallback((next: PortfolioView) => {
     setViewState(next);
-    window.localStorage.setItem(STORAGE_KEY, next);
     // replaceState, а не pushState: щелчки по переключателю не должны
     // копиться в истории, «назад» обязан уводить со страницы
     window.history.replaceState(

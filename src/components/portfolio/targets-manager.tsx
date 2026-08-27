@@ -178,6 +178,68 @@ function TargetsCard({
           className="border-line border-b"
         />
 
+        <div className="sm:hidden">
+          {TARGET_CATEGORIES.map((c) => {
+            const row = rows?.find((r) => r.category === c.key) ?? null;
+            const target = parsed.find((p) => p.key === c.key)?.value ?? null;
+            const diff = deviation(row, target);
+            return (
+              <section key={c.key} className="border-line border-b px-card py-4 last:border-b-0">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2.5 font-medium">
+                    <CategoryDot category={c.key} size={7} />
+                    {c.label}
+                  </h3>
+                  <div className="relative w-[100px]">
+                    <Input
+                      id={`target-mobile-${c.key}`}
+                      type="text"
+                      inputMode="decimal"
+                      value={targets[c.key] ?? ""}
+                      onChange={(e) =>
+                        setTargets((prev) => ({ ...prev, [c.key]: e.target.value }))
+                      }
+                      placeholder="—"
+                      aria-label={`Цель ${c.label}, проценты`}
+                      className="pr-7 text-right font-mono"
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-text-3">%</span>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <ShareBar category={c.key} actual={row?.percent ?? null} target={target} />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4 border-line border-t pt-3">
+                  <div>
+                    <p className="t-label">Отклонение</p>
+                    <p
+                      className={cn(
+                        "mt-1 font-mono",
+                        diff !== null && Math.abs(diff) > DEVIATION_THRESHOLD_PP
+                          ? "text-warn"
+                          : "text-text-2",
+                      )}
+                    >
+                      {diff === null ? "—" : dcPp(diff)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="t-label">Ориентир</p>
+                    <div className="mt-1 flex justify-end">
+                      <RebalanceValue
+                        row={row}
+                        amount={rebalanceAmount(row, target, totalUsd)}
+                        diff={diff}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+
+        <div className="hidden sm:block">
         <DcTable minWidth={760}>
           <thead>
             <tr>
@@ -185,7 +247,7 @@ function TargetsCard({
               <Th numeric>Цель</Th>
               <Th>Сейчас ↔ цель</Th>
               <Th numeric>Отклонение</Th>
-              <Th numeric>К ребалансировке</Th>
+              <Th numeric>Ориентир</Th>
             </tr>
           </thead>
           <tbody>
@@ -252,6 +314,7 @@ function TargetsCard({
             })}
           </tbody>
         </DcTable>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3 border-line border-t px-card py-3.5">
           <Button type="submit" disabled={saving || !canSave}>
@@ -382,37 +445,52 @@ function Rebalance({
   amount: number | null;
   diff: number | null;
 }) {
+  return (
+    <Td numeric className="py-3">
+      <RebalanceValue row={row} amount={amount} diff={diff} />
+    </Td>
+  );
+}
+
+function RebalanceValue({
+  row,
+  amount,
+  diff,
+}: {
+  row: PortfolioRowDto | null;
+  amount: number | null;
+  diff: number | null;
+}) {
   if (row === null || amount === null) {
-    return (
-      <Td numeric mono muted>
-        —
-      </Td>
-    );
+    return <span className="font-mono text-text-3">—</span>;
   }
   const over = diff !== null && Math.abs(diff) > DEVIATION_THRESHOLD_PP;
   const isUsd = row.unit === "USD";
   const usd = row.price === null ? null : amount * row.price;
+  const protectedBaseAsset = !isUsd && amount < 0;
 
   return (
-    <Td numeric className="py-3">
-      <div className="flex flex-col items-end gap-[2px]">
+      <div className="flex flex-col items-end gap-[2px] text-right">
         <span
           className={cn(
             "font-mono text-[13px]",
             over ? "text-warn" : "text-text-1",
           )}
         >
-          {isUsd
+          {protectedBaseAsset
+            ? "не продавать"
+            : isUsd
             ? dcUsdSigned(amount)
             : `${tableSigned(amount, 4)} ${row.unit}`}
         </span>
-        {!isUsd && (
+        {!isUsd && !protectedBaseAsset && (
           <span className="text-[12px] text-text-3">
             {usd === null ? "—" : dcUsdSigned(usd)}
           </span>
         )}
+        {protectedBaseAsset && (
+          <span className="text-[12px] text-text-3">выше целевой доли</span>
+        )}
       </div>
-    </Td>
   );
 }
-

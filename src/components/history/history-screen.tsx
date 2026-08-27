@@ -162,14 +162,10 @@ export function HistoryScreen() {
 
         {data !== null && snapshots.length >= 1 && (
           <>
-            {/* Порядок: стоимость → количества → прибыль → пропорции → список.
-                Доллары отвечают на вопрос «сколько», монеты — «чего именно
-                стало больше», прибыль — «сколько из этого заработано»,
-                пропорции остаются контекстом. Монеты выше прибыли намеренно:
-                главная метрика стратегии — они (AGENTS.md), и долларовый
-                график не должен спускать их под сгиб */}
-            <ValueChart snapshots={snapshots} periodLabel={periodLabel} />
+            {/* Порядок 1.1: количества → стоимость → прибыль → пропорции.
+                Цель стратегии видна первой; доллары дают контекст цены. */}
             <QuantityCharts snapshots={snapshots} periodLabel={periodLabel} />
+            <ValueChart snapshots={snapshots} periodLabel={periodLabel} />
             <ProfitChart
               snapshots={snapshots}
               deposits={journal.data?.deposits ?? null}

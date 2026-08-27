@@ -79,7 +79,7 @@ export function Tr({
       className={cn(
         // Наведение перекрашивает и залипающую ячейку: у неё собственный
         // непрозрачный фон, и без этого правила она осталась бы прежней
-        "border-line border-b transition-colors duration-120 ease-out last:border-0 hover:bg-chip hover:[&>*:first-child]:bg-chip",
+        "border-line border-b transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] last:border-0 hover:bg-chip hover:[&>*:first-child]:bg-chip",
         className,
       )}
       {...props}

@@ -83,10 +83,11 @@ describe("согласие с экраном", () => {
     for (const hf of [3, 1.6, 1.42, 1.29, 1.15]) {
       const zone = hfZone(hf, T);
       const tone = hfTone(hf, T);
-      // Жёлтое — «ниже порога»; красное — экстренный уровень и критично:
-      // и то и другое требует действия сегодня (docs/07 §7)
-      if (zone === "calm" || zone === "close") expect(tone, `HF ${hf}`).toBe("profit");
-      if (zone === "below") expect(tone, `HF ${hf}`).toBe("warn");
+      // В 1.1 приближение к порогу уже предупреждение: зелёный означает
+      // действительно спокойную зону, а не отсутствие пересечения порога.
+      if (zone === "calm") expect(tone, `HF ${hf}`).toBe("profit");
+      if (zone === "close" || zone === "below")
+        expect(tone, `HF ${hf}`).toBe("warn");
       if (zone === "urgent" || zone === "critical")
         expect(tone, `HF ${hf}`).toBe("loss");
     }

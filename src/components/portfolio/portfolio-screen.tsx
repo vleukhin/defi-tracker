@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DcCard } from "@/components/dc/card";
-import { FreshnessDot, MetaDot, PageHeader } from "@/components/dc/page-header";
+import { PageHeader } from "@/components/dc/page-header";
 import { PullToRefresh } from "@/components/dc/pull-to-refresh";
 import {
   periodChange,
@@ -340,6 +340,16 @@ export function PortfolioScreen() {
               />
             )}
 
+            {view === "signals" && (
+              <SignalsCard
+                signals={active}
+                acked={acked}
+                pending={signalsPending}
+                onOpenZones={() => setView("zones")}
+                onAck={onAck}
+              />
+            )}
+
             <PortfolioHero
               view={view}
               portfolio={data}
@@ -352,17 +362,10 @@ export function PortfolioScreen() {
                   ? `цены ${formatRelativeTime(data.freshness.oldestPriceAt) ?? "не читались"}`
                   : null
               }
+              compact={view === "signals"}
             />
 
-            {view === "signals" ? (
-              <SignalsCard
-                signals={active}
-                acked={acked}
-                pending={signalsPending}
-                onOpenZones={() => setView("zones")}
-                onAck={onAck}
-              />
-            ) : view === "zones" ? (
+            {view === "signals" ? null : view === "zones" ? (
               zonesData ? (
                 <ZonesScreen
                   data={zonesData}

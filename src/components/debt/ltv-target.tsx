@@ -133,12 +133,19 @@ export function LtvTarget({
             >
               {plan.action === "on-target"
                 ? "на цели"
-                : `${plan.action === "borrow" ? "взять ещё" : "погасить"} ${dcUsd(Math.abs(plan.deltaUsd))}`}
+                : plan.action === "borrow"
+                  ? `после подтверждения можно взять ${dcUsd(Math.abs(plan.deltaUsd))}`
+                  : `погасить ${dcUsd(Math.abs(plan.deltaUsd))}`}
             </p>
             <p className="t-meta mt-1 text-text-3">
               долг станет {dcUsd(plan.targetDebtUsd)} при LTV{" "}
               {tablePct(effective, 2)}
             </p>
+            {plan.action === "borrow" && (
+              <p className="t-meta mt-1 max-w-md text-warn">
+                Сначала дождитесь закрепления цены около 48 часов или закрытия недели.
+              </p>
+            )}
           </>
         )}
       </div>

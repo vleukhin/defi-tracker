@@ -116,10 +116,13 @@ export function UsersManager({ selfId }: { selfId: string }) {
 
       <form
         onSubmit={handleCreate}
+        autoComplete="off"
         className="flex flex-col gap-2.5 border-line border-y bg-sunken px-card py-3.5 sm:flex-row sm:items-center"
       >
         <Input
+          name="new-user-email"
           type="email"
+          autoComplete="off"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -128,7 +131,9 @@ export function UsersManager({ selfId }: { selfId: string }) {
           className="flex-1 bg-surface"
         />
         <Input
+          name="new-user-password"
           type="password"
+          autoComplete="new-password"
           required
           minLength={8}
           value={password}

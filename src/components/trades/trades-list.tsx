@@ -15,8 +15,8 @@ import { CATEGORY_LABEL, CATEGORY_UNIT } from "./categories";
  * убыток, семантические зелёный и красный им не принадлежат (дизайн-код §2);
  * направление несёт стрелка, а не цвет.
  *
- * На узких ширинах таблица не рассыпается в карточки, а скроллится по
- * горизонтали: сравнение строк между собой — то, ради чего она здесь.
+ * На телефоне строка становится карточкой: цена, сумма и действие доступны
+ * без скрытого горизонтального жеста. На больших экранах остаётся таблица.
  */
 
 /** Числовое значение из десятичной строки; мусор → null. */
@@ -50,7 +50,73 @@ export function TradesList({
   onEdit: (trade: TradeDto) => void;
 }) {
   return (
-    <DcTable minWidth={860}>
+    <>
+      <ul className="divide-y divide-line sm:hidden">
+        {trades.map((trade) => {
+          const quantity = num(trade.quantity);
+          const price = num(trade.priceUsd);
+          const hasPrice = price !== null && price > 0;
+          const total = hasPrice && quantity !== null ? quantity * price : null;
+
+          return (
+            <li key={trade.id} className="px-card py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 font-medium">
+                    <CategoryDot category={trade.category} size={7} />
+                    {CATEGORY_LABEL[trade.category]}
+                  </p>
+                  <p className="t-meta mt-1 text-text-3">
+                    {tableDate(trade.tradedAt)}
+                  </p>
+                </div>
+                <SideChip side={trade.side} />
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 border-line border-y py-3">
+                <div>
+                  <dt className="t-label">Количество</dt>
+                  <dd className="mt-1 font-mono">
+                    {tableQuantity(trade.quantity)}{" "}
+                    <span className="font-sans text-[11.5px] text-text-3">
+                      {CATEGORY_UNIT[trade.category]}
+                    </span>
+                  </dd>
+                </div>
+                <div className="text-right">
+                  <dt className="t-label">Сумма</dt>
+                  <dd className="mt-1 font-mono">
+                    {total === null ? <Dash /> : dcUsd(total)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="t-label">Цена</dt>
+                  <dd className="mt-1 font-mono">
+                    {hasPrice ? dcUsd(price) : <Dash />}
+                  </dd>
+                </div>
+                <div className="text-right">
+                  <dt className="t-label">Заметка</dt>
+                  <dd className="mt-1 truncate text-text-2">
+                    {trade.note || <Dash />}
+                  </dd>
+                </div>
+              </dl>
+
+              <button
+                type="button"
+                onClick={() => onEdit(trade)}
+                className="mt-2.5 min-h-11 w-full rounded-control text-[13px] font-medium text-accent outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:bg-chip focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                Изменить сделку
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="hidden sm:block">
+      <DcTable minWidth={860}>
       <thead>
         <tr>
           <Th>Дата</Th>
@@ -122,6 +188,8 @@ export function TradesList({
           );
         })}
       </tbody>
-    </DcTable>
+      </DcTable>
+      </div>
+    </>
   );
 }

@@ -86,7 +86,7 @@ export function TradesFilters({
       <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line-card" />
 
       {/* Диапазон дат — одна пилюля: две даты читаются как один фильтр */}
-      <div className="flex h-[30px] w-full items-center gap-1.5 rounded-control border border-line-card px-2.5 transition-colors duration-120 ease-out pointer-coarse:h-11 focus-within:border-[var(--accent)] focus-within:ring-3 focus-within:ring-ring/50 sm:w-auto">
+      <div className="flex h-[30px] w-full items-center gap-1.5 rounded-control border border-control-border px-2.5 transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] pointer-coarse:h-11 hover:border-control-border-hover focus-within:border-[var(--accent)] focus-within:ring-3 focus-within:ring-ring/50 sm:w-auto">
         <input
           type="date"
           aria-label="Сделки с даты"
