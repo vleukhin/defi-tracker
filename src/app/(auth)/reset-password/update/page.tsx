@@ -6,7 +6,7 @@ import { useState } from "react";
 import { z } from "zod";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 
@@ -42,28 +42,33 @@ export default function UpdatePasswordPage() {
     }
 
     setPending(true);
-    const supabase = createClient();
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: parsed.data.password,
-    });
-    setPending(false);
+    try {
+      const supabase = createClient();
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: parsed.data.password,
+      });
 
-    if (updateError) {
-      setError(
-        updateError.code === "same_password"
-          ? "Новый пароль должен отличаться от старого."
-          : "Не удалось обновить пароль. Запросите сброс еще раз.",
-      );
-      return;
+      if (updateError) {
+        setError(
+          updateError.code === "same_password"
+            ? "Новый пароль должен отличаться от старого."
+            : "Не удалось обновить пароль. Запросите сброс ещё раз.",
+        );
+        return;
+      }
+
+      router.push("/");
+      router.refresh();
+    } catch {
+      setError("Не удалось связаться с сервером. Попробуйте ещё раз.");
+    } finally {
+      setPending(false);
     }
-
-    router.push("/");
-    router.refresh();
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-lg font-medium">Новый пароль</h2>
+      <h1 className="t-h2">Новый пароль</h1>
 
       {error && (
         <Alert variant="destructive" role="alert" className="py-2.5">
@@ -74,33 +79,33 @@ export default function UpdatePasswordPage() {
 
       <div className="space-y-1.5">
         <Label htmlFor="password">Пароль</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           required
           minLength={8}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="h-10"
+          disabled={pending}
+          className="h-11"
         />
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="passwordConfirm">Пароль еще раз</Label>
-        <Input
+        <PasswordInput
           id="passwordConfirm"
-          type="password"
           required
           minLength={8}
           autoComplete="new-password"
           value={passwordConfirm}
           onChange={(e) => setPasswordConfirm(e.target.value)}
-          className="h-10"
+          disabled={pending}
+          className="h-11"
         />
       </div>
 
-      <Button type="submit" disabled={pending} className="h-10 w-full">
+      <Button type="submit" disabled={pending} className="h-11 w-full">
         {pending ? "Сохранение…" : "Сохранить пароль"}
       </Button>
     </form>

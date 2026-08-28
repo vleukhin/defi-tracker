@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { DcCard, SectionHead } from "@/components/dc/card";
 import { Chip } from "@/components/dc/chip";
 import { ProtocolTile } from "@/components/dc/page-header";
@@ -64,28 +64,45 @@ export function UsersManager({ selfId }: { selfId: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    apiFetch<{ users: AdminUser[] }>("/api/admin/users")
+    return apiFetch<{ users: AdminUser[] }>("/api/admin/users")
       .then((r) => setUsers(r.users))
-      .catch(() => setUsers([]));
+      .catch((err: unknown) =>
+        setLoadError(
+          err instanceof ApiError
+            ? err.message
+            : "Не удалось загрузить пользователей",
+        ),
+      )
+      .finally(() => setLoading(false));
   }, []);
 
+  function retryLoad() {
+    setLoading(true);
+    setLoadError(null);
+    void load();
+  }
+
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setPending(true);
     setError(null);
+    setNotice(null);
     try {
       await apiFetch("/api/admin/users", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      toast.success(`Пользователь ${email} создан`);
+      setNotice(`Создан пользователь ${email}`);
       setEmail("");
       setPassword("");
       load();
@@ -98,9 +115,10 @@ export function UsersManager({ selfId }: { selfId: string }) {
 
   async function handleDelete(user: AdminUser) {
     setError(null);
+    setNotice(null);
     try {
       await apiFetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
-      toast.success(`Пользователь ${user.email} удалён`);
+      setNotice(`Пользователь ${user.email} удалён`);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось удалить");
@@ -130,9 +148,8 @@ export function UsersManager({ selfId }: { selfId: string }) {
           aria-label="Email нового пользователя"
           className="flex-1 bg-surface"
         />
-        <Input
+        <PasswordInput
           name="new-user-password"
-          type="password"
           autoComplete="new-password"
           required
           minLength={8}
@@ -147,14 +164,38 @@ export function UsersManager({ selfId }: { selfId: string }) {
         </Button>
       </form>
 
-      {error && (
+      {(error ?? loadError) && (
         <p role="alert" className="t-meta border-line border-b px-card py-2.5 text-loss">
-          {error}
+          {error ?? loadError}
+        </p>
+      )}
+
+      {loadError !== null && (
+        <div className="flex items-center gap-2 border-line border-b px-card py-2.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={retryLoad}
+          >
+            {loading ? "Загрузка…" : "Повторить"}
+          </Button>
+        </div>
+      )}
+
+      {notice !== null && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="t-meta border-line border-b px-card py-2.5 text-profit"
+        >
+          {notice}
         </p>
       )}
 
       <ul className="divide-y divide-line">
-        {users === null && (
+        {users === null && loading && (
           <li className="flex items-center gap-3 px-card py-3.5">
             <div className="size-[30px] shrink-0 rounded-[10px] bg-chip" />
             <div className="space-y-1.5">
@@ -168,7 +209,7 @@ export function UsersManager({ selfId }: { selfId: string }) {
             <ProtocolTile abbr={initials(u.email)} color="var(--text-2)" size={30} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="truncate font-mono text-[13px]">{u.email}</span>
+                <span className="truncate text-[13px]">{u.email}</span>
                 {u.role === "admin" && <Chip>админ</Chip>}
                 {u.id === selfId && (
                   <span className="text-[11.5px] text-text-3">это вы</span>
@@ -217,6 +258,11 @@ export function UsersManager({ selfId }: { selfId: string }) {
             )}
           </li>
         ))}
+        {users?.length === 0 && (
+          <li className="px-card py-5 text-center text-[13px] text-text-3">
+            Пользователей пока нет.
+          </li>
+        )}
       </ul>
     </DcCard>
   );

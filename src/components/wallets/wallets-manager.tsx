@@ -522,7 +522,7 @@ export function WalletsManager() {
         </DcCard>
       )}
 
-      <DcCard>
+      <DcCard id="sync-status" className="scroll-mt-20">
         {error && !wallets ? (
           <div className="flex flex-col items-center gap-3 px-card py-10 text-center">
             <p className="t-body text-text-2">Не удалось загрузить кошельки: {error}</p>

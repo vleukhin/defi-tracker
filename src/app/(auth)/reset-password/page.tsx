@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert } from "lucide-react";
+import { CheckCircle2, CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Alert, AlertTitle } from "@/components/ui/alert";
@@ -20,25 +20,32 @@ export default function ResetPasswordPage() {
     setError(null);
     setPending(true);
 
-    const supabase = createClient();
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-      email,
-      { redirectTo: `${window.location.origin}/reset-password/update` },
-    );
-    setPending(false);
-
-    if (resetError) {
-      setError("Не удалось отправить письмо. Попробуйте еще раз.");
-      return;
+    try {
+      const supabase = createClient();
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        email,
+        { redirectTo: `${window.location.origin}/reset-password/update` },
+      );
+      if (resetError) {
+        setError("Не удалось отправить письмо. Попробуйте ещё раз.");
+        return;
+      }
+      setDone(true);
+    } catch {
+      setError("Не удалось связаться с сервером. Попробуйте ещё раз.");
+    } finally {
+      setPending(false);
     }
-    setDone(true);
   }
 
   if (done) {
     return (
       <div className="space-y-4">
-        <h2 className="text-lg font-medium">Проверьте почту</h2>
-        <p className="text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 text-profit">
+          <CheckCircle2 className="size-5" aria-hidden />
+          <h1 className="t-h2 text-text-1">Проверьте почту</h1>
+        </div>
+        <p className="t-body text-text-2">
           Если аккаунт с адресом <span className="font-medium">{email}</span>{" "}
           существует, мы отправили ссылку для сброса пароля.
         </p>
@@ -54,8 +61,8 @@ export default function ResetPasswordPage() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-lg font-medium">Сброс пароля</h2>
-      <p className="text-sm text-muted-foreground">
+      <h1 className="t-h2">Сброс пароля</h1>
+      <p className="t-body text-text-2">
         Укажите email — мы пришлем ссылку для установки нового пароля.
       </p>
 
@@ -75,11 +82,12 @@ export default function ResetPasswordPage() {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="h-10"
+          disabled={pending}
+          className="h-11"
         />
       </div>
 
-      <Button type="submit" disabled={pending} className="h-10 w-full">
+      <Button type="submit" disabled={pending} className="h-11 w-full">
         {pending ? "Отправка…" : "Отправить ссылку"}
       </Button>
 

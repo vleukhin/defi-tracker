@@ -81,7 +81,12 @@ function LinkInstructions({
 }
 
 export function NotificationsCard() {
-  const { data, loading, refetch } = useApi<NotificationStatusDto>(ENDPOINT);
+  const {
+    data,
+    error: loadError,
+    loading,
+    refetch,
+  } = useApi<NotificationStatusDto>(ENDPOINT);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,7 +162,9 @@ export function NotificationsCard() {
   const sentAgo = formatRelativeTime(channel?.lastSentAt ?? null);
   // Без бота и без привязки в ряду не остаётся ни одной кнопки —
   // пустая полоса с рамкой выглядела бы как недогрузившийся интерфейс
-  const showActions = botConfigured || verified || error !== null;
+  const feedback = error ?? loadError;
+  const showActions =
+    (data !== null && (botConfigured || verified)) || feedback !== null;
 
   return (
     <DcCard as="section">
@@ -172,7 +179,11 @@ export function NotificationsCard() {
           label="Телеграм"
           hint="Один бот на приложение; сообщения приходят в личный чат с ним."
         >
-          {channel === null ? (
+          {loading && data === null ? (
+            <Chip>загрузка…</Chip>
+          ) : loadError !== null && data === null ? (
+            <StatusChip tone="loss">недоступно</StatusChip>
+          ) : channel === null ? (
             botConfigured ? (
               <Chip>не подключён</Chip>
             ) : (
@@ -223,7 +234,7 @@ export function NotificationsCard() {
 
       {showActions && (
         <div className="flex flex-wrap items-center gap-2.5 border-line border-t px-card py-3.5">
-          {botConfigured && (
+          {data !== null && botConfigured && (
             <Button
               type="button"
               variant="secondary"
@@ -239,7 +250,7 @@ export function NotificationsCard() {
             </Button>
           )}
 
-          {botConfigured && data?.linkCode != null && (
+          {data !== null && botConfigured && data.linkCode != null && (
             <Button
               type="button"
               variant="outline"
@@ -255,7 +266,7 @@ export function NotificationsCard() {
             </Button>
           )}
 
-          {verified && (
+          {data !== null && verified && (
             <>
               {botConfigured && (
                 <Button
@@ -275,8 +286,8 @@ export function NotificationsCard() {
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button type="button" variant="ghost" disabled={busy}>
-                    Отключить
+                  <Button type="button" variant="destructive" disabled={busy}>
+                    Отключить канал
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -290,8 +301,8 @@ export function NotificationsCard() {
                   <AlertDialogFooter>
                     <AlertDialogCancel>Отмена</AlertDialogCancel>
                     <AlertDialogAction
+                      variant="destructive"
                       onClick={disconnect}
-                      className="bg-loss text-white hover:bg-loss/90"
                     >
                       Отключить
                     </AlertDialogAction>
@@ -301,9 +312,21 @@ export function NotificationsCard() {
             </>
           )}
 
-          {error !== null && (
+          {loadError !== null && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={() => void refetch()}
+            >
+              {loading ? "Загрузка…" : "Повторить"}
+            </Button>
+          )}
+
+          {feedback !== null && (
             <p role="alert" className="t-meta text-loss">
-              {error}
+              {feedback}
             </p>
           )}
         </div>
@@ -311,9 +334,7 @@ export function NotificationsCard() {
 
       {!botConfigured ? (
         <Verdict>
-          Бот не настроен на сервере: переменные TELEGRAM_BOT_TOKEN и
-          TELEGRAM_BOT_USERNAME не заданы в этом окружении. Подключение
-          появится, когда их добавят и передеплоят приложение.
+          Телеграм недоступен в этой установке. Обратитесь к администратору.
         </Verdict>
       ) : (
         channel?.lastError != null &&

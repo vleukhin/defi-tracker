@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { Crosshair, Database, ShieldAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { DcCard, SectionHead, Verdict } from "@/components/dc/card";
 import { Chip, StatusChip, type StatusTone } from "@/components/dc/chip";
+import { Disclosure } from "@/components/dc/disclosure";
 import { HelpTip } from "@/components/dc/help-tip";
 import {
   SIGNALS_VISIBLE,
+  signalGroup,
   type Signal,
-  type SignalSeverity,
+  type SignalKind,
 } from "@/lib/signals/signals";
 import { countLabel } from "./plural";
 
@@ -35,6 +39,7 @@ export function SignalsCard({
   pending,
   onOpenZones,
   onAck,
+  onRefresh,
 }: {
   /** Требующие внимания: отмеченные выполненными сюда не входят. */
   signals: Signal[];
@@ -44,12 +49,27 @@ export function SignalsCard({
   pending: boolean;
   /** Сигналы позиций живут в разрезе «Зоны» — это смена проекции, не переход. */
   onOpenZones: () => void;
+  /** Повторное чтение для сигналов, у которых переход ничего не исправляет. */
+  onRefresh: () => void;
   /** fingerprint = null снимает отметку. */
   onAck: (signalKey: string, fingerprint: string | null) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? signals : signals.slice(0, SIGNALS_VISIBLE);
-  const hidden = signals.length - visible.length;
+  const risk = signals.filter((signal) => signalGroup(signal.kind) === "risk");
+  const strategy = signals.filter(
+    (signal) => signalGroup(signal.kind) === "strategy",
+  );
+  const hygiene = signals.filter(
+    (signal) => signalGroup(signal.kind) === "hygiene",
+  );
+  // Риск и действие стратегии не скрываются. Лимит применяется только к
+  // диагностике: именно она может быть длинной и не требует решения сейчас.
+  const hygieneLimit = Math.max(
+    0,
+    SIGNALS_VISIBLE - risk.length - strategy.length,
+  );
+  const visibleHygiene = expanded ? hygiene : hygiene.slice(0, hygieneLimit);
+  const hidden = hygiene.length - visibleHygiene.length;
 
   if (signals.length === 0) {
     return (
@@ -81,16 +101,32 @@ export function SignalsCard({
         }
       />
 
-      <ul className="grid gap-px bg-line">
-        {visible.map((signal) => (
-          <SignalRow
-            key={signal.key}
-            signal={signal}
-            onOpenZones={onOpenZones}
-            onAck={onAck}
-          />
-        ))}
-      </ul>
+      <div>
+        <SignalSection
+          title="Риск"
+          icon={<ShieldAlert />}
+          signals={risk}
+          onOpenZones={onOpenZones}
+          onAck={onAck}
+          onRefresh={onRefresh}
+        />
+        <SignalSection
+          title="Действия стратегии"
+          icon={<Crosshair />}
+          signals={strategy}
+          onOpenZones={onOpenZones}
+          onAck={onAck}
+          onRefresh={onRefresh}
+        />
+        <SignalSection
+          title="Качество данных"
+          icon={<Database />}
+          signals={visibleHygiene}
+          onOpenZones={onOpenZones}
+          onAck={onAck}
+          onRefresh={onRefresh}
+        />
+      </div>
 
       {hidden > 0 && (
         <button
@@ -98,13 +134,51 @@ export function SignalsCard({
           onClick={() => setExpanded(true)}
           className="t-meta flex w-full items-center border-line border-t px-card py-2.5 text-left text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline"
         >
-          {`Ещё ${countLabel(hidden, "сигнал", "сигнала", "сигналов")}`}
+          {`Ещё ${countLabel(hidden, "проблема данных", "проблемы данных", "проблем данных")}`}
         </button>
       )}
 
       <Verdict>{verdictFor(signals, pending)}</Verdict>
       <AckedBlock signals={acked} onAck={onAck} />
     </DcCard>
+  );
+}
+
+function SignalSection({
+  title,
+  icon,
+  signals,
+  onOpenZones,
+  onAck,
+  onRefresh,
+}: {
+  title: string;
+  icon: ReactNode;
+  signals: Signal[];
+  onOpenZones: () => void;
+  onAck: (signalKey: string, fingerprint: string | null) => Promise<void>;
+  onRefresh: () => void;
+}) {
+  if (signals.length === 0) return null;
+  return (
+    <section className="border-line border-b last:border-b-0">
+      <h3 className="t-label flex items-center gap-2 bg-sunken px-card py-2.5">
+        <span aria-hidden className="[&_svg]:size-3.5">{icon}</span>
+        {title}
+        <span className="font-mono text-[11px] text-text-3">{signals.length}</span>
+      </h3>
+      <ul className="grid gap-px bg-line">
+        {signals.map((signal) => (
+          <SignalRow
+            key={signal.key}
+            signal={signal}
+            onOpenZones={onOpenZones}
+            onAck={onAck}
+            onRefresh={onRefresh}
+          />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -120,21 +194,17 @@ function AckedBlock({
   signals: Signal[];
   onAck: (signalKey: string, fingerprint: string | null) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
   if (signals.length === 0) return null;
 
   return (
-    <div className="border-line border-t bg-sunken">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="t-meta flex w-full items-center px-card py-2.5 text-left text-text-3 pointer-coarse:min-h-11 hover:text-text-2"
-      >
-        {`Отмечено выполненными · ${signals.length}`}
-        <span className="ml-2 text-text-4">{open ? "скрыть" : "показать"}</span>
-      </button>
-
-      {open && (
+    <Disclosure
+      className="border-line border-t bg-sunken"
+      title={
+        <span className="t-meta text-text-3">
+          {`Выполнено · ${signals.length}`}
+        </span>
+      }
+    >
         <ul className="grid gap-px bg-line">
           {signals.map((signal) => (
             <li
@@ -154,8 +224,7 @@ function AckedBlock({
             </li>
           ))}
         </ul>
-      )}
-    </div>
+    </Disclosure>
   );
 }
 
@@ -172,7 +241,11 @@ function AckedBlock({
  * «Плечо» и «гигиена» остаются в ленте: первое правится при следующей
  * операции, второе говорит о данных, а не о позиции.
  */
-const ACTIONABLE: SignalSeverity[] = ["liquidation", "level", "timer"];
+const PINNED_ACTION_KINDS = new Set<SignalKind>([
+  "gm-level",
+  "gm-growth",
+  "clmm-ready",
+]);
 
 export function RiskStrip({
   signals,
@@ -181,7 +254,10 @@ export function RiskStrip({
   signals: Signal[];
   onOpenSignals: () => void;
 }) {
-  const risk = signals.filter((s) => ACTIONABLE.includes(s.severity));
+  const risk = signals.filter(
+    (signal) =>
+      signalGroup(signal.kind) === "risk" || PINNED_ACTION_KINDS.has(signal.kind),
+  );
   if (risk.length === 0) return null;
 
   return (
@@ -215,14 +291,26 @@ function SignalRow({
   signal,
   onOpenZones,
   onAck,
+  onRefresh,
 }: {
   signal: Signal;
   onOpenZones: () => void;
   /** Не передан — строка без кнопки отметки (закреплённая полоса риска). */
   onAck?: (signalKey: string, fingerprint: string | null) => Promise<void>;
+  onRefresh?: () => void;
 }) {
   return (
-    <li className="flex flex-col gap-1.5 bg-surface px-card py-3 sm:flex-row sm:items-start sm:gap-3">
+    <li className="relative flex flex-col gap-1.5 overflow-hidden bg-surface px-card py-3 pl-[22px] sm:flex-row sm:items-start sm:gap-3 sm:pl-[22px]">
+      <span
+        aria-hidden
+        className={
+          signal.tone === "loss"
+            ? "absolute inset-y-0 left-0 w-0.5 bg-loss"
+            : signal.tone === "warn"
+              ? "absolute inset-y-0 left-0 w-0.5 bg-warn"
+              : "absolute inset-y-0 left-0 w-0.5 bg-text-3"
+        }
+      />
       {/* Колонка чипов держит ширину, иначе заголовки идут рваным левым
           краем и лента перестаёт читаться сверху вниз одним движением */}
       <div className="pt-0.5 sm:min-w-[136px] sm:shrink-0">
@@ -257,7 +345,11 @@ function SignalRow({
             Выполнено
           </button>
         )}
-        <SignalLink signal={signal} onOpenZones={onOpenZones} />
+        <SignalLink
+          signal={signal}
+          onOpenZones={onOpenZones}
+          onRefresh={onRefresh}
+        />
       </div>
     </li>
   );
@@ -270,50 +362,117 @@ function SignalRow({
 function SignalLink({
   signal,
   onOpenZones,
+  onRefresh,
 }: {
   signal: Signal;
   onOpenZones: () => void;
+  onRefresh?: () => void;
 }) {
   const className =
     "t-meta inline-flex shrink-0 items-center whitespace-nowrap text-link underline-offset-4 pointer-coarse:min-h-11 hover:underline";
 
   if (signal.target === "zones") {
+    const anchor = zoneAnchor(signal.kind);
     return (
-      <button type="button" onClick={onOpenZones} className={className}>
-        Зоны →
+      <button
+        type="button"
+        onClick={() => {
+          onOpenZones();
+          window.setTimeout(() => {
+            window.history.replaceState(
+              window.history.state,
+              "",
+              `${window.location.pathname}?view=zones${anchor}`,
+            );
+            document.querySelector(anchor)?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }, 0);
+        }}
+        className={className}
+      >
+        {signalCta(signal.kind)} →
       </button>
     );
   }
   if (signal.target === "debt") {
     return (
-      <Link href="/debt" className={className}>
-        Долг →
+      <Link href={debtHref(signal.kind)} className={className}>
+        {signalCta(signal.kind)} →
       </Link>
     );
   }
   if (signal.target === "wallets") {
     return (
-      <Link href="/wallets" className={className}>
-        Кошельки →
+      <Link href="/wallets#sync-status" className={className}>
+        {signalCta(signal.kind)} →
       </Link>
+    );
+  }
+  if (
+    onRefresh &&
+    ["zones-unavailable", "refresh-failed", "prices-stale", "chains-unread"].includes(
+      signal.kind,
+    )
+  ) {
+    return (
+      <button type="button" onClick={onRefresh} className={className}>
+        Повторить обновление
+      </button>
     );
   }
   return null;
 }
 
+function zoneAnchor(kind: SignalKind): string {
+  if (kind === "free-unmarked") return "#free-funds";
+  if (kind === "zones-mismatch") return "#zone-reconciliation";
+  return "#positions";
+}
+
+function debtHref(kind: SignalKind): string {
+  if (kind === "ltv-off-target") return "/debt#ltv-target";
+  if (kind === "hf-below") return "/debt#debt-risk";
+  return "/debt#debt-overview";
+}
+
+function signalCta(kind: SignalKind): string {
+  const labels: Partial<Record<SignalKind, string>> = {
+    "hf-below": "План защиты",
+    "hf-unread": "Проверить HF",
+    "hf-stale": "Проверить чтение",
+    "debt-unread": "Проверить долг",
+    "debt-unavailable": "Проверить долг",
+    "gm-level": "Открыть уровень",
+    "gm-growth": "Открыть уровень",
+    "clmm-ready": "Открыть позицию",
+    "clmm-waiting": "Открыть позицию",
+    "clmm-unknown-since": "Проверить таймер",
+    "ltv-off-target": "Открыть LTV",
+    "rate-below-borrow": "Открыть ставку",
+    "gm-split": "Открыть сплит",
+    "zones-mismatch": "Открыть сверку",
+    "positions-unmarked": "Разметить позиции",
+    "positions-unpriced": "Проверить позиции",
+    "free-unmarked": "Разметить балансы",
+    "gm-no-entry": "Задать точку",
+    "gm-no-price": "Открыть позицию",
+    "borrow-rate-unread": "Проверить ставку",
+    "chains-unread": "Проверить сети",
+  };
+  return labels[kind] ?? "Открыть";
+}
+
 /** Строка-вывод — по самому высокому уровню в ленте (§7: утверждение). */
 function verdictFor(signals: Signal[], pending: boolean): string {
-  const present = new Set<SignalSeverity>(signals.map((s) => s.severity));
+  const risk = signals.filter((signal) => signalGroup(signal.kind) === "risk").length;
+  const strategy = signals.filter(
+    (signal) => signalGroup(signal.kind) === "strategy",
+  ).length;
+  const hygiene = signals.filter(
+    (signal) => signalGroup(signal.kind) === "hygiene",
+  ).length;
   const tail = pending ? " Часть данных при этом ещё читается." : "";
-
-  if (present.has("liquidation")) {
-    return `Ликвидация — единственный сценарий, способный принудительно прервать накопление, поэтому она стоит первой.${tail}`;
-  }
-  if (present.has("level") || present.has("timer")) {
-    return `Действие по стратегии предусмотрено верхней строкой — ниже наблюдения, которые ждут своего срока.${tail}`;
-  }
-  if (present.has("leverage")) {
-    return `Срочного нет: плечо и ставки выравнивают при следующей операции.${tail}`;
-  }
-  return `Действий по стратегии нет — расходятся только данные.${tail}`;
+  return `Риск: ${risk} · действия: ${strategy} · данные: ${hygiene}.${tail}`;
 }

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,31 +25,36 @@ export function LoginForm({ linkError }: { linkError?: boolean }) {
     setError(null);
     setPending(true);
 
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (signInError) {
-      setPending(false);
-      if (signInError.code === "email_not_confirmed") {
-        setError("Email не подтвержден. Проверьте почту и перейдите по ссылке.");
-      } else if (signInError.code === "invalid_credentials") {
-        setError("Неверный email или пароль.");
-      } else {
-        setError("Не удалось войти. Попробуйте еще раз.");
+      if (signInError) {
+        if (signInError.code === "email_not_confirmed") {
+          setError("Email не подтверждён. Проверьте почту и перейдите по ссылке.");
+        } else if (signInError.code === "invalid_credentials") {
+          setError("Неверный email или пароль.");
+        } else {
+          setError("Не удалось войти. Попробуйте ещё раз.");
+        }
+        return;
       }
-      return;
-    }
 
-    router.push("/");
-    router.refresh();
+      router.push("/");
+      router.refresh();
+    } catch {
+      setError("Не удалось связаться с сервером. Попробуйте ещё раз.");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-lg font-medium">Вход</h2>
+      <h1 className="t-h2">Вход</h1>
 
       {error && (
         <Alert variant="destructive" role="alert" className="py-2.5">
@@ -66,24 +72,25 @@ export function LoginForm({ linkError }: { linkError?: boolean }) {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="h-10"
+          disabled={pending}
+          className="h-11"
         />
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="password">Пароль</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           required
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="h-10"
+          disabled={pending}
+          className="h-11"
         />
       </div>
 
-      <Button type="submit" disabled={pending} className="h-10 w-full">
+      <Button type="submit" disabled={pending} className="h-11 w-full">
         {pending ? "Вход…" : "Войти"}
       </Button>
 

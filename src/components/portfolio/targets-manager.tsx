@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { DepositsJournal } from "@/components/deposits/deposits-journal";
 import { DcCard, Disclaimer, SectionHead } from "@/components/dc/card";
 import { StatusChip } from "@/components/dc/chip";
+import { Collapse } from "@/components/dc/disclosure";
 import { DcTable, Td, Th, Tr } from "@/components/dc/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,6 +110,8 @@ function TargetsCard({
   onSaved: () => Promise<void> | void;
 }) {
   const [targets, setTargets] = useState<Record<string, string>>({});
+  const [savedTargets, setSavedTargets] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -118,6 +121,7 @@ function TargetsCard({
         const next: Record<string, string> = {};
         for (const t of res.targets) next[t.category] = String(t.targetPct);
         setTargets(next);
+        setSavedTargets(next);
       },
       () => setTargets({}),
     );
@@ -154,6 +158,13 @@ function TargetsCard({
       });
       if (res.warning) toast.warning(`Сохранено. ${res.warning}`);
       else toast.success("Цели сохранены");
+      const persisted: Record<string, string> = {};
+      for (const target of res.targets) {
+        persisted[target.category] = String(target.targetPct);
+      }
+      setTargets(persisted);
+      setSavedTargets(persisted);
+      setEditing(false);
       await onSaved();
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : "Не удалось сохранить");
@@ -169,11 +180,28 @@ function TargetsCard({
           title="Целевые доли"
           hint="Портфель состоит из трёх частей. Пустое поле — цель не задана; сумма целей должна быть 100%."
           action={
-            <span role="status">
+            <div className="flex items-center gap-2">
+            <span role="status" className="max-sm:hidden">
               <StatusChip tone={sumIs100 ? "profit" : "loss"}>
                 {`сумма ${tablePct(sum, Number.isInteger(sum) ? 0 : 2)}`}
               </StatusChip>
             </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-expanded={editing}
+              onClick={() => {
+                if (editing) {
+                  setTargets(savedTargets);
+                  setSaveError(null);
+                }
+                setEditing((value) => !value);
+              }}
+            >
+              {editing ? "Отмена" : "Изменить цели"}
+            </Button>
+            </div>
           }
           className="border-line border-b"
         />
@@ -190,6 +218,7 @@ function TargetsCard({
                     <CategoryDot category={c.key} size={7} />
                     {c.label}
                   </h3>
+                  {editing ? (
                   <div className="relative w-[100px]">
                     <Input
                       id={`target-mobile-${c.key}`}
@@ -205,6 +234,11 @@ function TargetsCard({
                     />
                     <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-text-3">%</span>
                   </div>
+                  ) : (
+                    <span className="font-mono text-[16px]">
+                      {target === null ? "—" : tablePct(target)}
+                    </span>
+                  )}
                 </div>
                 <div className="mt-4">
                   <ShareBar category={c.key} actual={row?.percent ?? null} target={target} />
@@ -265,6 +299,7 @@ function TargetsCard({
                   </Td>
 
                   <Td numeric className="py-2">
+                    {editing ? (
                     <div className="relative ml-auto w-[92px]">
                       {/* type="text", а не "number": браузер молча съедает
                           запятую, а десятичный разделитель в приложении —
@@ -292,6 +327,11 @@ function TargetsCard({
                         %
                       </span>
                     </div>
+                    ) : (
+                      <span className="font-mono">
+                        {target === null ? "—" : tablePct(target)}
+                      </span>
+                    )}
                   </Td>
 
                   <Td className="min-w-[180px] whitespace-normal">
@@ -316,6 +356,7 @@ function TargetsCard({
         </DcTable>
         </div>
 
+        <Collapse open={editing}>
         <div className="flex flex-wrap items-center gap-3 border-line border-t px-card py-3.5">
           <Button type="submit" disabled={saving || !canSave}>
             {saving ? "Сохранение…" : "Сохранить цели"}
@@ -332,6 +373,7 @@ function TargetsCard({
             )
           )}
         </div>
+        </Collapse>
       </form>
     </DcCard>
   );

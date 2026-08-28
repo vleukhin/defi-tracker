@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
-import { Footer } from "@/components/footer";
 import { Toaster } from "@/components/ui/sonner";
 
 /**
@@ -79,7 +78,6 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="flex flex-1 flex-col">{children}</div>
-          <Footer />
           <Toaster />
         </ThemeProvider>
       </body>

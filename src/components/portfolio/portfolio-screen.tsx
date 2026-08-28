@@ -347,6 +347,7 @@ export function PortfolioScreen() {
                 pending={signalsPending}
                 onOpenZones={() => setView("zones")}
                 onAck={onAck}
+                onRefresh={() => void doRefresh()}
               />
             )}
 

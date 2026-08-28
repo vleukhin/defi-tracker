@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
 import { DcCard, SectionHead } from "@/components/dc/card";
+import { Chip } from "@/components/dc/chip";
 import { formatHf } from "@/components/debt/hf";
 import { hfTone } from "@/components/debt/risk";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { DebtResponseDto, SettingsDto } from "@/lib/api/types";
 import { DEVIATION_THRESHOLD_PP, NBSP, tableNumber } from "@/lib/format";
 import { HF_ZONE_LABEL, hfZone } from "@/lib/hf-zones";
@@ -49,7 +48,12 @@ function hfHint(debt: DebtResponseDto | null, threshold: number) {
 }
 
 export function AccountCard({ email }: { email: string | null }) {
-  const { data, loading, refetch } = useApi<SettingsDto>("/api/settings");
+  const {
+    data,
+    error: loadError,
+    loading,
+    refetch,
+  } = useApi<SettingsDto>("/api/settings");
   // Текущий HF для подсказки под порогом; только кэш, без RPC
   const { data: debt } = useApi<DebtResponseDto>("/api/debt");
 
@@ -57,6 +61,7 @@ export function AccountCard({ email }: { email: string | null }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState(false);
 
   const saved = data ? formatThreshold(data.hfWarningThreshold) : "";
   const value = draft ?? saved;
@@ -65,6 +70,7 @@ export function AccountCard({ email }: { email: string | null }) {
   function reset() {
     setDraft(null);
     setError(null);
+    setSavedNotice(false);
   }
 
   async function save(e: React.FormEvent) {
@@ -83,7 +89,7 @@ export function AccountCard({ email }: { email: string | null }) {
         method: "PUT",
         body: JSON.stringify({ hfWarningThreshold: n }),
       });
-      toast.success("Порог сохранён");
+      setSavedNotice(true);
       setDraft(null);
       await refetch();
     } catch (err) {
@@ -98,10 +104,27 @@ export function AccountCard({ email }: { email: string | null }) {
   return (
     <DcCard as="section">
       <SectionHead title="Аккаунт и вид" />
+      {loadError !== null && data === null && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 border-line border-t px-card py-3 text-[13px] text-loss"
+        >
+          <span>Не удалось загрузить настройки: {loadError}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => void refetch()}
+          >
+            {loading ? "Загрузка…" : "Повторить"}
+          </Button>
+        </div>
+      )}
       <form onSubmit={save} className="border-line border-t">
         <div className="divide-y divide-line">
           <SettingRow label="Email">
-            <span className="font-mono text-[13.5px]">{email ?? "—"}</span>
+            <span className="min-w-0 break-all text-[13.5px]">{email ?? "—"}</span>
           </SettingRow>
 
           <SettingRow label="Тема">
@@ -110,7 +133,10 @@ export function AccountCard({ email }: { email: string | null }) {
 
           <HfThresholdRow
             value={value}
-            onChange={setDraft}
+            onChange={(next) => {
+              setDraft(next);
+              setSavedNotice(false);
+            }}
             disabled={loading && !data}
             invalid={error !== null}
             hint={data ? hfHint(debt, data.hfWarningThreshold) : null}
@@ -121,21 +147,14 @@ export function AccountCard({ email }: { email: string | null }) {
             label="Порог отклонения от цели"
             hint="Отклонение доли актива от цели больше порога подсвечивается на странице «Цели». В этой версии порог фиксирован."
           >
-            <Input
-              id="deviation-threshold"
-              type="text"
-              inputMode="decimal"
-              disabled
-              value={tableNumber(DEVIATION_THRESHOLD_PP, 1)}
-              className="w-[84px] border-line-strong text-right font-mono"
-            />
-            <span className="t-meta text-text-3">%</span>
+            <Chip>{tableNumber(DEVIATION_THRESHOLD_PP, 1)}%</Chip>
+            <span className="t-meta text-text-3">фиксировано в этой версии</span>
           </SettingRow>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 border-line border-t px-card py-3.5">
           <Button type="submit" disabled={saving || !dirty}>
-            {saving ? "Сохранение…" : "Сохранить"}
+            {saving ? "Сохранение…" : "Сохранить порог"}
           </Button>
           <Button
             type="button"
@@ -143,12 +162,16 @@ export function AccountCard({ email }: { email: string | null }) {
             onClick={reset}
             disabled={saving || !dirty}
           >
-            Отмена
+            Сбросить изменение
           </Button>
           {error ? (
             <p role="alert" className="t-meta text-loss">
               {error}
             </p>
+          ) : savedNotice ? (
+            <span role="status" aria-live="polite" className="t-meta text-profit">
+              Сохранено: порог {saved}
+            </span>
           ) : (
             <span className="t-meta text-text-3">
               Тема применяется сразу, пороги{NBSP}—{NBSP}по «Сохранить».

@@ -20,7 +20,7 @@ import type {
 import { dcUsd, dcUsdSigned, tableDate } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 import { TRADE_CATEGORIES } from "./categories";
-import { Collapse } from "./collapse";
+import { Collapse } from "@/components/dc/disclosure";
 import { TradeForm } from "./trade-form";
 import {
   EMPTY_FILTERS,

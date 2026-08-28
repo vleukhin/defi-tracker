@@ -65,7 +65,7 @@ export function DebtHero({
   const belowThreshold = healthFactor !== null && healthFactor < threshold;
 
   return (
-    <DcCard as="section">
+    <DcCard id="debt-overview" as="section" className="scroll-mt-20">
       <div className="flex flex-wrap items-start justify-between gap-4 px-card py-[22px]">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
@@ -149,7 +149,7 @@ export function DebtHero({
       </MetricGrid>
 
       {healthFactor !== null && (
-        <div className="border-line border-t bg-sunken">
+        <div id="debt-risk" className="scroll-mt-20 border-line border-t bg-sunken">
           <div className="flex flex-wrap items-baseline justify-between gap-2 px-card pt-3.5">
             <span className="t-label">Запас прочности</span>
             <span className="text-[12px] text-text-3">

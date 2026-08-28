@@ -89,7 +89,7 @@ export function LtvTarget({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-line border-t bg-sunken px-card py-3.5">
+    <div id="ltv-target" className="flex scroll-mt-20 flex-wrap items-center justify-between gap-x-6 gap-y-3 border-line border-t bg-sunken px-card py-3.5">
       <div className="flex items-center gap-2.5">
         <span className="t-label">Целевой LTV</span>
         <HelpTip>{HINT}</HelpTip>

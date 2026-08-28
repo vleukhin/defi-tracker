@@ -25,9 +25,9 @@ import { SnapshotsList } from "./snapshots-list";
 import { ValueChart } from "./value-chart";
 
 /**
- * Экран «История» (README, экран 5): динамика стоимости крупным числом,
- * три компактные карточки количеств (главная метрика стратегии — монеты,
- * а не доллары) и таблица снепшотов.
+ * Экран «История» (README, экран 5): полноценная динамика количества BTC и
+ * ETH как главная метрика стратегии, компактный контекст стейблов, затем
+ * стоимость, прибыль, состав и таблица снепшотов.
  *
  * Три сценария рисуются намеренно по-разному: истории нет вовсе, история
  * из одной точки (линия по одной точке — не график, а обман) и полная серия.
@@ -216,21 +216,44 @@ function lastTaken(snapshot: SnapshotDto | null): string {
 function HistorySkeleton() {
   return (
     <div aria-hidden className="flex flex-col gap-4">
+      <div className="space-y-3">
+        <Bar className="h-5 w-56" />
+        <div className="grid gap-3 lg:grid-cols-2">
+          {["btc", "eth"].map((key) => (
+            <DcCard key={key}>
+              <div className="flex flex-col gap-3 px-card pt-4 pb-3.5">
+                <Bar className="h-4 w-36" />
+                <div className="flex items-center gap-3">
+                  <Bar className="h-7 w-28" />
+                  <Bar className="h-3 w-32" />
+                </div>
+              </div>
+              <div className="border-line border-t bg-sunken p-3">
+                <Bar className="h-[154px] w-full rounded-none sm:h-[174px]" />
+              </div>
+            </DcCard>
+          ))}
+        </div>
+        <DcCard>
+          <div className="grid md:grid-cols-[minmax(0,1fr)_240px]">
+            <div className="flex items-center justify-between gap-3 px-card py-3.5">
+              <Bar className="h-4 w-20" />
+              <Bar className="h-5 w-40" />
+            </div>
+            <Bar className="h-16 w-full rounded-none" />
+          </div>
+        </DcCard>
+      </div>
+
       <DcCard as="section">
         <div className="flex flex-wrap items-end justify-between gap-4 px-5 pt-[18px] pb-3.5">
           <div className="flex flex-col gap-2.5">
-            <Bar className="h-2.5 w-36" />
-            <Bar className="h-8 w-52" />
+            <Bar className="h-2.5 w-40" />
+            <Bar className="h-7 w-44" />
           </div>
           <div className="flex gap-7">
-            <div className="flex flex-col items-end gap-2">
-              <Bar className="h-2.5 w-20" />
-              <Bar className="h-4 w-28" />
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <Bar className="h-2.5 w-28" />
-              <Bar className="h-4 w-36" />
-            </div>
+            <Bar className="h-5 w-28" />
+            <Bar className="h-5 w-36" />
           </div>
         </div>
         <div className="border-line border-t bg-sunken px-4 py-4">
@@ -238,18 +261,6 @@ function HistorySkeleton() {
           <Bar className="mt-3 h-3 w-full" />
         </div>
       </DcCard>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        {["btc", "eth", "stable"].map((key) => (
-          <DcCard key={key}>
-            <div className="flex flex-col gap-2.5 px-card pt-4 pb-3">
-              <Bar className="h-3 w-32" />
-              <Bar className="h-5 w-24" />
-            </div>
-            <Bar className="h-[88px] w-full rounded-none" />
-          </DcCard>
-        ))}
-      </div>
 
       <DcCard as="section">
         <div className="flex flex-col gap-2.5 px-5 pt-[18px] pb-3.5">

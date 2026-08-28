@@ -1,7 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { Segmented } from "@/components/dc/segmented";
 
 /**
@@ -38,6 +37,7 @@ import { Segmented } from "@/components/dc/segmented";
 export type PortfolioView = "categories" | "zones" | "signals";
 
 const DEFAULT_VIEW: PortfolioView = "zones";
+const VIEW_CHANGE_EVENT = "portfolio-view-change";
 
 function isView(value: string | null): value is PortfolioView {
   return value === "categories" || value === "zones" || value === "signals";
@@ -48,15 +48,30 @@ export interface PortfolioViewState {
   setView: (view: PortfolioView) => void;
 }
 
-export function usePortfolioView(): PortfolioViewState {
-  const fromUrl = useSearchParams().get("view");
+function subscribeToView(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  window.addEventListener(VIEW_CHANGE_EVENT, onChange);
+  return () => {
+    window.removeEventListener("popstate", onChange);
+    window.removeEventListener(VIEW_CHANGE_EVENT, onChange);
+  };
+}
 
-  const [view, setViewState] = useState<PortfolioView>(() =>
-    isView(fromUrl) ? fromUrl : DEFAULT_VIEW,
+function clientViewSnapshot(): PortfolioView {
+  const value = new URLSearchParams(window.location.search).get("view");
+  return isView(value) ? value : DEFAULT_VIEW;
+}
+
+export function usePortfolioView(): PortfolioViewState {
+  // Сервер всегда отдаёт стабильные «Зоны». После гидратации React читает
+  // URL как внешний store и без mismatch переключается на явный ?view.
+  const view = useSyncExternalStore(
+    subscribeToView,
+    clientViewSnapshot,
+    () => DEFAULT_VIEW,
   );
 
   const setView = useCallback((next: PortfolioView) => {
-    setViewState(next);
     // replaceState, а не pushState: щелчки по переключателю не должны
     // копиться в истории, «назад» обязан уводить со страницы
     window.history.replaceState(
@@ -64,6 +79,7 @@ export function usePortfolioView(): PortfolioViewState {
       "",
       `${window.location.pathname}?view=${next}`,
     );
+    window.dispatchEvent(new Event(VIEW_CHANGE_EVENT));
   }, []);
 
   return { view, setView };
