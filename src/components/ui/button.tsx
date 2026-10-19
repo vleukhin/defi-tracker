@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 const buttonVariants = cva(
   // Дизайн-код §5: высота 34, радиус 8, переходы только по цвету и фону.
   // Одна primary-кнопка на экран, и только на создающее действие.
-  "group/button inline-flex shrink-0 items-center justify-center rounded-control border border-transparent bg-clip-padding text-[13.5px] font-medium whitespace-nowrap transition-colors duration-120 ease-out outline-none select-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-control border border-transparent bg-clip-padding text-[13.5px] font-medium whitespace-nowrap transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] outline-none select-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -15,7 +15,7 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground hover:bg-[var(--accent-hover)]",
         // Дизайн-код зовёт это ghost: обводка --line-strong, фона нет
         outline:
-          "border-line-strong bg-transparent text-text-1 hover:border-line-hover hover:bg-raised aria-expanded:bg-raised",
+          "border-control-border bg-transparent text-text-1 hover:border-control-border-hover hover:bg-raised aria-expanded:bg-raised",
         secondary:
           "bg-raised text-text-1 hover:bg-raised-hover aria-expanded:bg-raised-hover",
         ghost:

@@ -23,9 +23,8 @@ import {
 } from "./recharts-parts";
 
 /**
- * Главная карточка «Истории» (README, экран 5): подпись + стоимость
- * Mono 34px + дельта за период + максимум/минимум, ниже график высотой
- * 190px на фоне --bg-sunken и ось дат.
+ * Долларовый контекст «Истории»: стоимость + дельта за период +
+ * максимум/минимум, ниже график на фоне --bg-sunken и ось дат.
  *
  * Линия — --accent с заливкой градиентом 22% → 0, горизонтальная сетка
  * по делениям оси Y (дизайн-код §5). Разрывы: день без снепшота приходит
@@ -78,13 +77,11 @@ export function ValueChart({
       <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-4 px-5 pt-[18px] pb-3.5">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center gap-1.5">
-            <span className="t-label">Стоимость портфеля</span>
+            <h2 className="t-label">Стоимость портфеля, USD</h2>
             <HelpTip>{METHOD_HINT}</HelpTip>
           </div>
-          {/* Единственное крупное число экрана: Mono 34px (README, экран 5) */}
-          <p className="t-display-sm">
-            {dcUsd(last.totalUsd)}
-          </p>
+          {/* USD не должен быть крупнее главных количеств BTC/ETH. */}
+          <p className="t-metric-lg">{dcUsd(last.totalUsd)}</p>
         </div>
 
         <div className="flex flex-wrap items-end gap-x-7 gap-y-3">

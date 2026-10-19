@@ -1,5 +1,6 @@
 import { AppNav } from "@/components/app-nav";
 import { HfBadgeLive } from "@/components/debt/hf-badge";
+import { Footer } from "@/components/footer";
 
 /**
  * Layout авторизованной части приложения.
@@ -21,6 +22,7 @@ export default function AppLayout({
       <main className="page-shell flex flex-1 flex-col gap-4 px-4 py-6 sm:px-page">
         {children}
       </main>
+      <Footer />
     </div>
   );
 }

@@ -99,6 +99,38 @@ export type SignalKind =
   | "prices-stale"
   | "refresh-failed";
 
+/** Отображаемая группа не равна severity: непрочитанный HF остаётся риском. */
+export type SignalGroup = "risk" | "strategy" | "hygiene";
+
+const RISK_KINDS = new Set<SignalKind>([
+  "hf-below",
+  "hf-stale",
+  "hf-unread",
+  "debt-unread",
+  "debt-unavailable",
+]);
+
+const HYGIENE_KINDS = new Set<SignalKind>([
+  "clmm-unknown-since",
+  "zones-unavailable",
+  "zones-mismatch",
+  "positions-unmarked",
+  "positions-unpriced",
+  "free-unmarked",
+  "gm-no-entry",
+  "gm-no-price",
+  "borrow-rate-unread",
+  "chains-unread",
+  "prices-stale",
+  "refresh-failed",
+]);
+
+export function signalGroup(kind: SignalKind): SignalGroup {
+  if (RISK_KINDS.has(kind)) return "risk";
+  if (HYGIENE_KINDS.has(kind)) return "hygiene";
+  return "strategy";
+}
+
 export interface Signal {
   /** Ключ строки: React key и якорь тестов. */
   key: string;
@@ -912,7 +944,7 @@ function chainsUnreadSignal(input: SignalsInput): SignalDraft[] {
         .map(([chain, message]) => `${chainLabel(chain)}: ${message}`)
         .join(" · "),
       hint: null,
-      target: null,
+      target: "wallets",
     },
   ];
 }

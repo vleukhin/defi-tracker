@@ -91,8 +91,11 @@ function CategoryCard({ row }: { row: PortfolioRowDto }) {
         </>
       ) : (
         <>
+          {/* Счётчик монет, а не эквивалент по цене: число крупное, и оно
+              не должно шевелиться от одного движения рынка. Прочерка здесь
+              больше нет — счётчику цена не нужна */}
           <p className="mt-3.5 t-metric-lg">
-            {row.amount === null ? "—" : tableNumber(row.amount, 4)}
+            {tableNumber(row.amountCoins, 4)}
             <span className="ml-1.5 font-sans text-[13px] text-text-3">
               {row.unit}
             </span>

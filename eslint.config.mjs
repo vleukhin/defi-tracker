@@ -21,6 +21,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Локальные worktree Claude содержат собственные .next/node_modules и
+    // не являются частью текущей проверки проекта.
+    ".claude/worktrees/**",
+    "coverage/**",
     // Сгенерированные файлы локального Supabase-стека
     "supabase/.temp/**",
   ]),

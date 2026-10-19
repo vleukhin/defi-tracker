@@ -31,7 +31,7 @@ export function Segmented<T extends string>({
       className={cn(
         // На тач-ширинах контрол дорастает до 44px: 34px — это hit-зона
         // мимо пальца, а дизайн-код требует не меньше 44 (§6)
-        "inline-flex h-control items-center gap-0.5 rounded-control border border-line-card bg-surface p-[3px] pointer-coarse:h-11",
+        "inline-flex h-control items-center gap-0.5 rounded-control border border-control-border bg-surface p-[3px] pointer-coarse:h-11",
         className,
       )}
     >
@@ -45,7 +45,7 @@ export function Segmented<T extends string>({
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={cn(
-              "h-full min-w-11 rounded-pill px-3 text-[13px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
+              "h-full min-w-11 rounded-pill px-3 text-[13px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] focus-visible:ring-3 focus-visible:ring-ring/50",
               active
                 ? "bg-raised-hover font-medium text-text-1"
                 : "text-text-2 hover:text-text-1",
@@ -94,10 +94,10 @@ export function FilterChips<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               // 28px — плотность десктопа; на тач-ширинах чип дорастает до 44
-              "h-[28px] rounded-control border px-2.5 text-[12.5px] outline-none transition-colors duration-120 ease-out pointer-coarse:h-11 pointer-coarse:px-4 focus-visible:ring-3 focus-visible:ring-ring/50",
+              "h-[28px] rounded-control border px-2.5 text-[12.5px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] pointer-coarse:h-11 pointer-coarse:px-4 focus-visible:ring-3 focus-visible:ring-ring/50",
               active
-                ? "border-line-strong bg-raised text-text-1"
-                : "border-line-card bg-transparent text-text-2 hover:border-line-strong hover:text-text-1",
+                ? "border-control-border bg-raised text-text-1"
+                : "border-control-border bg-transparent text-text-2 hover:border-control-border-hover hover:text-text-1",
             )}
           >
             {o.label}

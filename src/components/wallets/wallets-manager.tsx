@@ -193,6 +193,115 @@ function WalletRow({
   );
 }
 
+/** Мобильная версия строки: важные факты видны без горизонтального скролла. */
+function WalletCard({
+  wallet,
+  facts,
+  now,
+  onDeleted,
+}: {
+  wallet: WalletDto;
+  facts: WalletFacts;
+  now: number;
+  onDeleted: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const refreshedAgo = formatRelativeTime(wallet.lastRefreshedAt, now);
+  const refreshedMs = wallet.lastRefreshedAt
+    ? Date.parse(wallet.lastRefreshedAt)
+    : null;
+  const stale =
+    refreshedMs === null ||
+    Number.isNaN(refreshedMs) ||
+    now - refreshedMs > STALE_MS;
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/wallets/${wallet.id}`, { method: "DELETE" });
+      onDeleted();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Не удалось удалить");
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <li className="px-card py-4">
+      <div className="flex items-start gap-3">
+        <ProtocolTile abbr={walletTag(wallet)} color="var(--text-2)" size={32} />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">{wallet.label ?? "Без метки"}</p>
+          <div className="mt-0.5 flex items-center gap-1">
+            <span className="truncate font-mono text-[12px] text-text-3">
+              {truncateAddress(wallet.address)}
+            </span>
+            <CopyButton address={wallet.address} />
+          </div>
+        </div>
+        <span className="t-meta inline-flex shrink-0 items-center gap-1.5 text-text-3">
+          <FreshnessDot stale={stale} />
+          {refreshedAgo ?? "не читался"}
+        </span>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-3 border-line border-y py-3">
+        <div>
+          <dt className="t-label">Стоимость</dt>
+          <dd className="mt-1 font-mono">
+            {facts.valueUsd === null ? <Dash /> : dcUsd(facts.valueUsd)}
+          </dd>
+        </div>
+        <div className="text-right">
+          <dt className="t-label">Сети</dt>
+          <dd className="mt-1 text-text-2">
+            {facts.chains.length > 0 ? facts.chains.join(", ") : <Dash />}
+          </dd>
+        </div>
+        <div className="col-span-2">
+          <dt className="t-label">Что читаем</dt>
+          <dd className="mt-1 text-text-2">
+            {facts.reads.length > 0 ? facts.reads.join(", ") : <Dash />}
+          </dd>
+        </div>
+      </dl>
+
+      {error && <p className="t-meta mt-2 text-loss">{error}</p>}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            type="button"
+            variant="destructive"
+            className="mt-2.5 w-full"
+            disabled={deleting}
+          >
+            {deleting ? "Удаление…" : "Удалить адрес"}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить кошелёк?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Балансы этого кошелька будут убраны из портфеля.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="secondary">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => void handleDelete()}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </li>
+  );
+}
+
 /** Скелетон строки: размеры конечных элементов, цвет --bg-chip. */
 function SkeletonRow() {
   return (
@@ -413,7 +522,7 @@ export function WalletsManager() {
         </DcCard>
       )}
 
-      <DcCard>
+      <DcCard id="sync-status" className="scroll-mt-20">
         {error && !wallets ? (
           <div className="flex flex-col items-center gap-3 px-card py-10 text-center">
             <p className="t-body text-text-2">Не удалось загрузить кошельки: {error}</p>
@@ -442,6 +551,25 @@ export function WalletsManager() {
           />
         ) : (
           <>
+            <ul className="divide-y divide-line sm:hidden">
+              {loading && !wallets
+                ? [0, 1, 2].map((i) => (
+                    <li key={i} className="space-y-3 px-card py-4">
+                      <div className="h-4 w-32 rounded-pill bg-chip" />
+                      <div className="h-14 rounded-block bg-chip" />
+                    </li>
+                  ))
+                : wallets?.map((w) => (
+                    <WalletCard
+                      key={w.id}
+                      wallet={w}
+                      facts={factsById.get(w.id) ?? EMPTY_FACTS}
+                      now={now}
+                      onDeleted={() => void refetch()}
+                    />
+                  ))}
+            </ul>
+            <div className="hidden sm:block">
             <DcTable minWidth={880}>
               <thead>
                 <tr>
@@ -479,6 +607,7 @@ export function WalletsManager() {
                     ))}
               </tbody>
             </DcTable>
+            </div>
             <Verdict
               chip={
                 unpricedSomewhere ? <Chip>часть позиций без оценки</Chip> : undefined

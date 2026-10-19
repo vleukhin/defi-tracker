@@ -71,7 +71,7 @@ export function GmLevelsPopover({
           className={cn(
             // Тот же контрол, что и кнопка разметки (дизайн-код §5): в шапке
             // карточки они стоят рядом и обязаны читаться одинаково
-            "flex h-[30px] shrink-0 items-center gap-1.5 rounded-control border border-line-card px-2 outline-none transition-colors duration-120 ease-out pointer-coarse:h-11 pointer-coarse:px-3 hover:border-line-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50",
+            "flex h-[30px] shrink-0 items-center gap-1.5 rounded-control border border-control-border px-2 outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] pointer-coarse:h-11 pointer-coarse:px-3 hover:border-control-border-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50",
             reached ? "text-warn" : "text-text-3",
           )}
         >

@@ -1,12 +1,13 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { DcCard, EmptyState } from "@/components/dc/card";
 import { Chip } from "@/components/dc/chip";
 import { HelpTip } from "@/components/dc/help-tip";
 import { Segmented } from "@/components/dc/segmented";
+import { Collapse } from "@/components/dc/disclosure";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,6 +63,7 @@ export function DepositsJournal({
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -88,6 +90,7 @@ export function DepositsJournal({
       setNote("");
       setDate(todayLocal());
       setDirection("in");
+      setFormOpen(false);
       await refetch();
     } catch (err) {
       setFormError(
@@ -133,7 +136,8 @@ export function DepositsJournal({
             </p>
           )}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex flex-col items-end gap-1">
           <span className="t-label">Прибыль</span>
           {profitLoading ? (
             <span aria-hidden className="block h-4 w-[86px] rounded-pill bg-chip" />
@@ -149,12 +153,24 @@ export function DepositsJournal({
               {dcUsdSigned(profitUsd)}
             </span>
           )}
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-expanded={formOpen}
+            onClick={() => setFormOpen((value) => !value)}
+          >
+            {formOpen ? <X /> : <Plus />}
+            {formOpen ? "Скрыть" : "Записать движение"}
+          </Button>
         </div>
       </div>
 
+      <Collapse open={formOpen}>
       <form
         onSubmit={add}
-        className="flex flex-col gap-3 border-line border-b bg-sunken px-card py-4"
+        className="flex flex-col gap-3 border-line border-b bg-sunken px-card py-4 animate-in fade-in-0 duration-[var(--motion-fast)]"
       >
         <Segmented
           ariaLabel="Операция"
@@ -164,6 +180,7 @@ export function DepositsJournal({
             { value: "in", label: "Пополнение" },
             { value: "out", label: "Вывод" },
           ]}
+          className="max-sm:w-full"
         />
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -176,7 +193,7 @@ export function DepositsJournal({
             onChange={(e) => setAmount(e.target.value)}
             placeholder="5000"
             aria-label="Сумма в долларах"
-            className="min-w-[120px] flex-1 text-right font-mono text-base md:text-[13px]"
+            className="min-w-[120px] flex-1 text-right font-mono text-base max-sm:w-full md:text-[13px]"
           />
           <Input
             id="deposit-date"
@@ -186,7 +203,7 @@ export function DepositsJournal({
             max={todayLocal()}
             onChange={(e) => setDate(e.target.value)}
             aria-label="Дата операции"
-            className="w-[152px] shrink-0 font-mono text-base md:text-[13px]"
+            className="w-[152px] shrink-0 font-mono text-base max-sm:w-full md:text-[13px]"
           />
         </div>
 
@@ -199,9 +216,9 @@ export function DepositsJournal({
             onChange={(e) => setNote(e.target.value)}
             placeholder="Перевод с биржи"
             aria-label="Заметка (не обязательно)"
-            className="min-w-[140px] flex-1 text-base md:text-[13px]"
+            className="min-w-[140px] flex-1 text-base max-sm:w-full md:text-[13px]"
           />
-          <Button type="submit" variant="secondary" disabled={pending}>
+          <Button type="submit" variant="secondary" disabled={pending} className="max-sm:w-full">
             {pending ? "Сохранение…" : "Записать"}
           </Button>
         </div>
@@ -212,6 +229,7 @@ export function DepositsJournal({
           </p>
         )}
       </form>
+      </Collapse>
 
       {error && (
         <p role="status" className="t-meta px-card py-3 text-loss">

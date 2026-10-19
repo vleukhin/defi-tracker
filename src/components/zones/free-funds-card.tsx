@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { DcCard, SectionHead } from "@/components/dc/card";
 import { StatusChip, ZoneChip } from "@/components/dc/chip";
+import { Disclosure } from "@/components/dc/disclosure";
 import { Segmented } from "@/components/dc/segmented";
 import { DcTable, Td, Th, Tr } from "@/components/dc/table";
 import { countLabel } from "@/components/portfolio/plural";
@@ -17,9 +18,8 @@ import { cn } from "@/lib/utils";
  * «Свободные средства» — деньги, которые лежат на кошельке и не участвуют
  * ни в залоге, ни в позициях.
  *
- * Стоит перед списком позиций намеренно: это единственные деньги, которые
- * прямо сейчас ничего не делают, и решение по ним требуется раньше, чем
- * взгляд на уже работающий капитал.
+ * Стоит после позиций: в ежедневном проходе сначала читается работающий
+ * капитал. Итог свободных средств виден всегда, список балансов раскрывается.
  *
  * Разметка живёт здесь, а не на «Кошельках», по той же причине, по которой
  * разметка позиции живёт на карточке позиции: следствие метки видно тут же —
@@ -96,7 +96,7 @@ export function FreeFundsCard({
   if (hasNothing) return null;
 
   return (
-    <DcCard as="section" className="mt-3.5 px-card py-card">
+    <DcCard id="free-funds" as="section" className="mt-3.5 px-card py-card">
       <SectionHead
         title="Свободные средства"
         hint={FREE_HINT}
@@ -124,6 +124,19 @@ export function FreeFundsCard({
           </p>
         </div>
       )}
+
+      <Disclosure
+        className="mt-3 -mx-card border-line border-t"
+        defaultOpen={summary.unmarkedCount > 0 || summary.borrowedUsd > 0}
+        title={
+          <span className="t-meta font-medium text-text-2">
+            {summary.unmarkedCount > 0
+              ? `Разметить ${countLabel(summary.unmarkedCount, "баланс", "баланса", "балансов")}`
+              : `Показать ${countLabel(balances.length, "баланс", "баланса", "балансов")}`}
+          </span>
+        }
+        contentClassName="px-card pb-1"
+      >
 
       {/* До sm список раскладывается карточками. Причина не в ширине как
           таковой: «Происхождение» — шестая колонка таблицы в 720px, то есть
@@ -262,6 +275,7 @@ export function FreeFundsCard({
           )}
         </div>
       )}
+      </Disclosure>
     </DcCard>
   );
 }

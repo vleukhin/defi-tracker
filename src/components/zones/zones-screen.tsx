@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DcCard, EmptyState } from "@/components/dc/card";
 import { Chip, StatusChip, ZONE_LABEL, zoneColor } from "@/components/dc/chip";
+import { Disclosure } from "@/components/dc/disclosure";
 import { HelpTip } from "@/components/dc/help-tip";
 import { useNowMs } from "@/components/dc/use-now";
 import { FilterChips } from "@/components/dc/segmented";
@@ -176,7 +177,7 @@ export function ZonesScreen({
         </div>
       )}
 
-      <div className="mt-3.5 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+      <div id="positions" className="mt-3.5 flex scroll-mt-20 flex-wrap items-end justify-between gap-x-5 gap-y-3">
         <div className="flex items-center gap-2.5">
           <h2 className="t-h2">Позиции</h2>
           <span className="text-[13px] text-text-3">
@@ -287,11 +288,20 @@ function SanityStrip({
     zonesTotalUsd === null || assetsUsd === null
       ? null
       : zonesTotalUsd - assetsUsd;
+  const needsAttention = diff === null || Math.abs(diff) >= 0.5;
 
   return (
-    <section className="flex flex-wrap items-center gap-2 rounded-block border border-line bg-sunken px-card py-3">
+    <Disclosure
+      id="zone-reconciliation"
+      className="rounded-block border border-line bg-sunken"
+      defaultOpen={needsAttention}
+      title={<span className="t-label">Сверка данных</span>}
+      summary={<SanityResult diff={diff} unpricedCount={unpricedCount} />}
+      contentClassName="border-line border-t"
+    >
+      <section className="flex flex-wrap items-center gap-2 px-card py-3">
       <span className="mr-1 flex items-center gap-1.5">
-        <span className="t-label">Сверка</span>
+        <span className="t-label">Инварианты</span>
         <HelpTip>{SANITY_HINT}</HelpTip>
       </span>
 
@@ -301,23 +311,7 @@ function SanityStrip({
       </span>
       <SanityChip label="активы" value={assetsUsd} />
 
-      {diff !== null ? (
-        Math.abs(diff) < 0.5 ? (
-          <StatusChip tone="profit" className="h-[26px] text-[12px]">
-            ✓ сходится
-          </StatusChip>
-        ) : (
-          <StatusChip tone="loss" className="h-[26px] text-[12px]">
-            расходится на {dcUsd(Math.abs(diff))}
-          </StatusChip>
-        )
-      ) : (
-        <Chip className="h-[26px] px-2.5 text-[12px]">
-          {unpricedCount > 0
-            ? `${countLabel(unpricedCount, "позиция", "позиции", "позиций")} без оценки`
-            : "сверка недоступна"}
-        </Chip>
-      )}
+      <SanityResult diff={diff} unpricedCount={unpricedCount} />
 
       <span className="min-w-3 flex-1" />
 
@@ -330,7 +324,35 @@ function SanityStrip({
         <span className="text-text-3">категория «Стейблы»</span>
         <span className="font-medium">{dcUsd(stableCategoryUsd)}</span>
       </span>
-    </section>
+      </section>
+    </Disclosure>
+  );
+}
+
+function SanityResult({
+  diff,
+  unpricedCount,
+}: {
+  diff: number | null;
+  unpricedCount: number;
+}) {
+  if (diff === null) {
+    return (
+      <Chip className="h-[26px] px-2.5 text-[12px]">
+        {unpricedCount > 0
+          ? `${countLabel(unpricedCount, "позиция", "позиции", "позиций")} без оценки`
+          : "сверка недоступна"}
+      </Chip>
+    );
+  }
+  return Math.abs(diff) < 0.5 ? (
+    <StatusChip tone="profit" className="h-[26px] text-[12px]">
+      ✓ сходится
+    </StatusChip>
+  ) : (
+    <StatusChip tone="loss" className="h-[26px] text-[12px]">
+      расходится на {dcUsd(Math.abs(diff))}
+    </StatusChip>
   );
 }
 

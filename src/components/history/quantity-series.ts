@@ -3,20 +3,26 @@
  * накопления динамика количества монет важнее кривой стоимости»).
  * Чистые функции без DOM — рядом с chart-geometry.ts.
  *
- * Ключевое правило: `quantity === null` означает «цены категории в тот день
- * не было, эквивалент не выведен», а НЕ ноль. Такой день выбрасывается
- * из серии целиком: день без количества перестает быть соседним по
- * календарю, и график рвет линию сам — ровно как на пропущенном дне.
- * Нарисовать null нулем значило бы показать накопителю «я всё продал».
+ * Количество берется СЧЁТЧИКОМ МОНЕТ из сырого состава точки (`coinCount`),
+ * а не полем `quantity`: последнее — стоимость, делённая на цену категории,
+ * и ползло на 0,1–0,3% в день от одного движения цен. График накопления,
+ * который шевелится сам по себе, не отвечает на вопрос, ради которого
+ * существует. Обоснование правила сложения — в lib/portfolio/coin-count.ts.
+ *
+ * Ключевое правило: отсутствие количества означает «состава в тот день нет»,
+ * а НЕ ноль. Такой день выбрасывается из серии целиком: он перестает быть
+ * соседним по календарю, и график рвет линию сам — ровно как на пропущенном
+ * дне. Нарисовать null нулем значило бы показать накопителю «я всё продал».
  */
 
+import { coinCount } from "@/lib/portfolio/coin-count";
 import type { PortfolioCategory, SnapshotDto } from "@/lib/api/types";
 import type { ValueAxis } from "./chart-geometry";
 
 export interface QuantityPoint {
   /** Календарный день UTC, YYYY-MM-DD. */
   takenOn: string;
-  /** Количество в единицах категории: BTC / ETH / USD. Никогда не null. */
+  /** Счётчик монет категории: BTC / ETH / USD. Никогда не null. */
   quantity: number;
   /** Снепшот помечен как частичный — точку нужно пометить и на графике. */
   isPartial: boolean;
@@ -33,8 +39,13 @@ export const QUANTITY_DECIMALS: Record<PortfolioCategory, number> = {
 };
 
 /**
- * Серия количеств категории. Дни без количества (нет цены) и снепшоты
- * без этой категории в составе не попадают в серию вовсе — не нулями.
+ * Серия количеств категории. Дни без состава и снепшоты без этой категории
+ * не попадают в серию вовсе — не нулями.
+ *
+ * На старый `quantity` при отсутствии состава мы НЕ откатываемся: это
+ * другая величина (эквивалент по цене), и подмешать её в ряд значило бы
+ * нарисовать ступеньку на границе эпох, которой в портфеле не было.
+ * Пропущенные дни честно считает ChartNote («дни без количества»).
  */
 export function quantitySeries(
   snapshots: readonly SnapshotDto[],
@@ -43,8 +54,9 @@ export function quantitySeries(
   const points: QuantityPoint[] = [];
   for (const snapshot of snapshots) {
     const item = snapshot.items.find((i) => i.category === category);
-    const quantity = item?.quantity;
-    if (quantity === null || quantity === undefined) continue;
+    if (!item) continue;
+    const quantity = coinCount(item.composition);
+    if (quantity === null) continue;
     if (!Number.isFinite(quantity)) continue;
     points.push({
       takenOn: snapshot.takenOn,

@@ -10,6 +10,7 @@ import {
   activeSignals,
   buildSignals,
   hasPendingSources,
+  signalGroup,
   type SignalKind,
   type SignalsInput,
 } from "./signals";
@@ -326,6 +327,20 @@ describe("порядок задан стратегией", () => {
     expect(buildSignals(input({ positions: [a, b] }), NOW)).toEqual(
       buildSignals(input({ positions: [b, a] }), NOW),
     );
+  });
+});
+
+describe("группы сигналов", () => {
+  it("непрочитанный HF остаётся риском, а неизвестный таймер — данными", () => {
+    expect(signalGroup("hf-unread")).toBe("risk");
+    expect(signalGroup("hf-stale")).toBe("risk");
+    expect(signalGroup("clmm-unknown-since")).toBe("hygiene");
+  });
+
+  it("уровни, готовый таймер и плечо относятся к стратегии", () => {
+    expect(signalGroup("gm-level")).toBe("strategy");
+    expect(signalGroup("clmm-ready")).toBe("strategy");
+    expect(signalGroup("ltv-off-target")).toBe("strategy");
   });
 });
 

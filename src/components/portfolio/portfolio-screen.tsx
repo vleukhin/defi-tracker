@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DcCard } from "@/components/dc/card";
-import { FreshnessDot, MetaDot, PageHeader } from "@/components/dc/page-header";
+import { PageHeader } from "@/components/dc/page-header";
 import { PullToRefresh } from "@/components/dc/pull-to-refresh";
 import {
   periodChange,
@@ -340,6 +340,17 @@ export function PortfolioScreen() {
               />
             )}
 
+            {view === "signals" && (
+              <SignalsCard
+                signals={active}
+                acked={acked}
+                pending={signalsPending}
+                onOpenZones={() => setView("zones")}
+                onAck={onAck}
+                onRefresh={() => void doRefresh()}
+              />
+            )}
+
             <PortfolioHero
               view={view}
               portfolio={data}
@@ -352,17 +363,10 @@ export function PortfolioScreen() {
                   ? `цены ${formatRelativeTime(data.freshness.oldestPriceAt) ?? "не читались"}`
                   : null
               }
+              compact={view === "signals"}
             />
 
-            {view === "signals" ? (
-              <SignalsCard
-                signals={active}
-                acked={acked}
-                pending={signalsPending}
-                onOpenZones={() => setView("zones")}
-                onAck={onAck}
-              />
-            ) : view === "zones" ? (
+            {view === "signals" ? null : view === "zones" ? (
               zonesData ? (
                 <ZonesScreen
                   data={zonesData}
@@ -412,6 +416,11 @@ function assetsDelta(snapshots: SnapshotDto[]): AssetsDelta | null {
 /**
  * Количества BTC и ETH для hero — главная метрика стратегии (docs/07 §4).
  *
+ * Берётся счётчик монет (`amountCoins`), а не эквивалент по цене: иначе
+ * hero дрейфовал бы вместе с курсом обёрток и расходился бы с «Историей»,
+ * где количество считается по монетам. Фильтра «есть ли цена» больше нет —
+ * счётчик её не требует, и без цены hero теперь не пустеет.
+ *
  * Стейблы отбрасываются по единице: их количество и есть доллары.
  * Изменение берётся из готовой periodChange по тому же окну снепшотов,
  * что и дельта активов, и остаётся null, пока истории меньше двух точек —
@@ -422,11 +431,11 @@ function coinAmounts(
   snapshots: SnapshotDto[],
 ): CoinAmount[] {
   return rows
-    .filter((row) => row.unit !== "USD" && row.amount !== null)
+    .filter((row) => row.unit !== "USD")
     .map((row) => ({
       key: row.category,
       unit: row.unit,
-      amount: row.amount as number,
+      amount: row.amountCoins,
       change: periodChange(quantitySeries(snapshots, row.category))?.abs ?? null,
     }));
 }

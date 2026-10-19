@@ -49,7 +49,7 @@ const CURVE = "monotone" as const;
 
 /** Появление ряда. isAnimationActive по умолчанию 'auto' — Recharts сам
  *  гасит анимацию при prefers-reduced-motion и в SSR. */
-const ANIMATION_MS = 260;
+const ANIMATION_MS = 220;
 
 /**
  * Ширина оси Y ОДНА на все графики «Истории» и фиксированная, а не

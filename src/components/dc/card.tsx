@@ -24,7 +24,7 @@ export function DcCard({
   return (
     <Component
       className={cn(
-        "overflow-hidden rounded-card border border-line-card bg-surface transition-colors duration-120 ease-out",
+        "overflow-hidden rounded-card border border-line-card bg-surface transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)]",
         hoverable && "hover:border-line-strong",
         className,
       )}
@@ -79,7 +79,14 @@ export function SectionHead({
           {count != null && (
             <span className="t-meta shrink-0 text-text-3">{count}</span>
           )}
-          {hint && <HelpTip size="md">{hint}</HelpTip>}
+          {hint && (
+            <HelpTip
+              size="md"
+              label={typeof title === "string" ? `Пояснение: ${title}` : "Пояснение раздела"}
+            >
+              {hint}
+            </HelpTip>
+          )}
         </div>
         {note != null && (
           <p className="t-meta mt-0.5 text-text-3">{note}</p>

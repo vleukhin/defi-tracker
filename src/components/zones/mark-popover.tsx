@@ -59,7 +59,7 @@ export function MarkPopover({
           title="Разметка позиции"
           // На тач-ширинах 30px мало (§6): рядом стоит кнопка уровней с
           // просветом 6px, и промах открывал не тот поповер
-          className="grid size-[30px] shrink-0 place-items-center rounded-control border border-line-card text-text-3 outline-none transition-colors duration-120 ease-out pointer-coarse:size-11 hover:border-line-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+          className="grid size-[30px] shrink-0 place-items-center rounded-control border border-control-border text-text-3 outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] pointer-coarse:size-11 hover:border-control-border-hover hover:text-text-1 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
         >
           <SlidersHorizontal className="size-3.5" />
         </button>

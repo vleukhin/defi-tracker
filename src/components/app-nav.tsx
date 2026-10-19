@@ -85,9 +85,9 @@ export function AppNav({ summary }: { summary?: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex shrink-0 items-center gap-[6px] rounded-control px-[9px] py-[7px] text-[13.5px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
+                  "relative flex shrink-0 items-center gap-[6px] rounded-control px-[9px] py-[7px] text-[13.5px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] after:absolute after:inset-x-2 after:-bottom-[7px] after:h-0.5 after:rounded-full after:bg-transparent focus-visible:ring-3 focus-visible:ring-ring/50",
                   active
-                    ? "bg-raised font-medium text-text-1"
+                    ? "bg-raised font-medium text-text-1 after:bg-accent"
                     : "text-text-2 hover:bg-chip hover:text-text-1",
                 )}
               >
@@ -184,9 +184,9 @@ function MobileNav({ pathname }: { pathname: string }) {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "flex h-12 items-center gap-3 rounded-control px-3 text-[15px] outline-none transition-colors duration-120 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
+                          "relative flex h-12 items-center gap-3 rounded-control px-3 text-[15px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent focus-visible:ring-3 focus-visible:ring-ring/50",
                           active
-                            ? "bg-raised font-medium text-text-1"
+                            ? "bg-raised font-medium text-text-1 before:bg-accent"
                             : "text-text-2 hover:bg-chip hover:text-text-1",
                         )}
                       >

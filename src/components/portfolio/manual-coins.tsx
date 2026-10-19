@@ -1,9 +1,11 @@
 "use client";
 
+import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { DcCard, EmptyState, SectionHead } from "@/components/dc/card";
 import { Segmented } from "@/components/dc/segmented";
+import { Collapse } from "@/components/dc/disclosure";
 import { DcTable, Td, Th, Tr } from "@/components/dc/table";
 import {
   AlertDialog,
@@ -74,6 +76,7 @@ export function ManualCoinsCard({
   const [amount, setAmount] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   // id записи → стоимость в долларах, посчитанная движком портфеля
   const valueById = new Map<string, number>();
@@ -138,28 +141,49 @@ export function ManualCoinsCard({
     }
   }
 
+  function toggleForm() {
+    if (formOpen) {
+      setLabel("");
+      setAmount("");
+      setError(null);
+    }
+    setFormOpen((value) => !value);
+  }
+
   return (
     <DcCard as="section">
       <SectionHead
         title="Монеты вручную"
         hint="Залог в лендинге и свободные монеты на добавленных кошельках читаются автоматически — вносить их сюда не надо. Здесь только то, чего приложение не видит: биржа, кошелёк вне списка, проинвестированные стейблы."
         action={
-          entries === null ? null : (
-            <span className="t-meta shrink-0 text-text-3">
-              {list.length} {pluralEntries(list.length)}
-              {/* Пустому списку сумма не нужна: «0 записей · $0» — шум */}
-              {totalUsd === null || list.length === 0
-                ? ""
-                : ` · ${dcUsd(totalUsd)}`}
-            </span>
-          )
+          <div className="flex shrink-0 items-center gap-2.5">
+            {entries !== null && (
+              <span className="t-meta hidden text-text-3 sm:inline">
+                {list.length} {pluralEntries(list.length)}
+                {totalUsd === null || list.length === 0
+                  ? ""
+                  : ` · ${dcUsd(totalUsd)}`}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-expanded={formOpen}
+              onClick={toggleForm}
+            >
+              {formOpen ? <X /> : <Plus />}
+              {formOpen ? "Скрыть" : "Добавить запись"}
+            </Button>
+          </div>
         }
         className="border-line border-b"
       />
 
+      <Collapse open={formOpen}>
       <form
         onSubmit={add}
-        className="flex flex-col gap-2.5 border-line border-b bg-sunken px-card py-3.5"
+        className="flex flex-col gap-2.5 border-line border-b bg-sunken px-card py-3.5 animate-in fade-in-0 duration-[var(--motion-fast)]"
       >
         <Segmented
           ariaLabel="Актив записи"
@@ -174,6 +198,7 @@ export function ManualCoinsCard({
               </span>
             ),
           }))}
+          className="max-sm:w-full"
         />
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -185,7 +210,7 @@ export function ManualCoinsCard({
             onChange={(e) => setLabel(e.target.value)}
             placeholder={PLACEHOLDER_LABEL[category]}
             aria-label="Где лежит"
-            className="min-w-[140px] flex-1 text-base md:text-[13px]"
+            className="min-w-[140px] flex-1 text-base max-sm:w-full md:text-[13px]"
           />
           <Input
             type="text"
@@ -197,9 +222,9 @@ export function ManualCoinsCard({
             aria-label={
               category === "stable" ? "Сумма в долларах" : "Количество монет"
             }
-            className="w-[120px] shrink-0 text-right font-mono text-base sm:w-[96px] md:text-[13px]"
+            className="w-[120px] shrink-0 text-right font-mono text-base max-sm:w-full sm:w-[96px] md:text-[13px]"
           />
-          <Button type="submit" variant="secondary" disabled={pending}>
+          <Button type="submit" variant="secondary" disabled={pending} className="max-sm:w-full">
             {pending ? "Добавление…" : "Добавить"}
           </Button>
         </div>
@@ -210,6 +235,7 @@ export function ManualCoinsCard({
           </p>
         )}
       </form>
+      </Collapse>
 
       {/* Предупреждение о возможном двойном счёте. Автоматически отличить
           биржевой баланс от кошелькового нельзя — их не сравнить ни по

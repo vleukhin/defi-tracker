@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { DepositsJournal } from "@/components/deposits/deposits-journal";
 import { DcCard, Disclaimer, SectionHead } from "@/components/dc/card";
 import { StatusChip } from "@/components/dc/chip";
+import { Collapse } from "@/components/dc/disclosure";
 import { DcTable, Td, Th, Tr } from "@/components/dc/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,6 +110,8 @@ function TargetsCard({
   onSaved: () => Promise<void> | void;
 }) {
   const [targets, setTargets] = useState<Record<string, string>>({});
+  const [savedTargets, setSavedTargets] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -118,6 +121,7 @@ function TargetsCard({
         const next: Record<string, string> = {};
         for (const t of res.targets) next[t.category] = String(t.targetPct);
         setTargets(next);
+        setSavedTargets(next);
       },
       () => setTargets({}),
     );
@@ -154,6 +158,13 @@ function TargetsCard({
       });
       if (res.warning) toast.warning(`Сохранено. ${res.warning}`);
       else toast.success("Цели сохранены");
+      const persisted: Record<string, string> = {};
+      for (const target of res.targets) {
+        persisted[target.category] = String(target.targetPct);
+      }
+      setTargets(persisted);
+      setSavedTargets(persisted);
+      setEditing(false);
       await onSaved();
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : "Не удалось сохранить");
@@ -169,15 +180,100 @@ function TargetsCard({
           title="Целевые доли"
           hint="Портфель состоит из трёх частей. Пустое поле — цель не задана; сумма целей должна быть 100%."
           action={
-            <span role="status">
+            <div className="flex items-center gap-2">
+            <span role="status" className="max-sm:hidden">
               <StatusChip tone={sumIs100 ? "profit" : "loss"}>
                 {`сумма ${tablePct(sum, Number.isInteger(sum) ? 0 : 2)}`}
               </StatusChip>
             </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-expanded={editing}
+              onClick={() => {
+                if (editing) {
+                  setTargets(savedTargets);
+                  setSaveError(null);
+                }
+                setEditing((value) => !value);
+              }}
+            >
+              {editing ? "Отмена" : "Изменить цели"}
+            </Button>
+            </div>
           }
           className="border-line border-b"
         />
 
+        <div className="sm:hidden">
+          {TARGET_CATEGORIES.map((c) => {
+            const row = rows?.find((r) => r.category === c.key) ?? null;
+            const target = parsed.find((p) => p.key === c.key)?.value ?? null;
+            const diff = deviation(row, target);
+            return (
+              <section key={c.key} className="border-line border-b px-card py-4 last:border-b-0">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2.5 font-medium">
+                    <CategoryDot category={c.key} size={7} />
+                    {c.label}
+                  </h3>
+                  {editing ? (
+                  <div className="relative w-[100px]">
+                    <Input
+                      id={`target-mobile-${c.key}`}
+                      type="text"
+                      inputMode="decimal"
+                      value={targets[c.key] ?? ""}
+                      onChange={(e) =>
+                        setTargets((prev) => ({ ...prev, [c.key]: e.target.value }))
+                      }
+                      placeholder="—"
+                      aria-label={`Цель ${c.label}, проценты`}
+                      className="pr-7 text-right font-mono"
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-text-3">%</span>
+                  </div>
+                  ) : (
+                    <span className="font-mono text-[16px]">
+                      {target === null ? "—" : tablePct(target)}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-4">
+                  <ShareBar category={c.key} actual={row?.percent ?? null} target={target} />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4 border-line border-t pt-3">
+                  <div>
+                    <p className="t-label">Отклонение</p>
+                    <p
+                      className={cn(
+                        "mt-1 font-mono",
+                        diff !== null && Math.abs(diff) > DEVIATION_THRESHOLD_PP
+                          ? "text-warn"
+                          : "text-text-2",
+                      )}
+                    >
+                      {diff === null ? "—" : dcPp(diff)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="t-label">Ориентир</p>
+                    <div className="mt-1 flex justify-end">
+                      <RebalanceValue
+                        row={row}
+                        amount={rebalanceAmount(row, target, totalUsd)}
+                        diff={diff}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+
+        <div className="hidden sm:block">
         <DcTable minWidth={760}>
           <thead>
             <tr>
@@ -185,7 +281,7 @@ function TargetsCard({
               <Th numeric>Цель</Th>
               <Th>Сейчас ↔ цель</Th>
               <Th numeric>Отклонение</Th>
-              <Th numeric>К ребалансировке</Th>
+              <Th numeric>Ориентир</Th>
             </tr>
           </thead>
           <tbody>
@@ -203,6 +299,7 @@ function TargetsCard({
                   </Td>
 
                   <Td numeric className="py-2">
+                    {editing ? (
                     <div className="relative ml-auto w-[92px]">
                       {/* type="text", а не "number": браузер молча съедает
                           запятую, а десятичный разделитель в приложении —
@@ -230,6 +327,11 @@ function TargetsCard({
                         %
                       </span>
                     </div>
+                    ) : (
+                      <span className="font-mono">
+                        {target === null ? "—" : tablePct(target)}
+                      </span>
+                    )}
                   </Td>
 
                   <Td className="min-w-[180px] whitespace-normal">
@@ -252,7 +354,9 @@ function TargetsCard({
             })}
           </tbody>
         </DcTable>
+        </div>
 
+        <Collapse open={editing}>
         <div className="flex flex-wrap items-center gap-3 border-line border-t px-card py-3.5">
           <Button type="submit" disabled={saving || !canSave}>
             {saving ? "Сохранение…" : "Сохранить цели"}
@@ -269,6 +373,7 @@ function TargetsCard({
             )
           )}
         </div>
+        </Collapse>
       </form>
     </DcCard>
   );
@@ -382,37 +487,52 @@ function Rebalance({
   amount: number | null;
   diff: number | null;
 }) {
+  return (
+    <Td numeric className="py-3">
+      <RebalanceValue row={row} amount={amount} diff={diff} />
+    </Td>
+  );
+}
+
+function RebalanceValue({
+  row,
+  amount,
+  diff,
+}: {
+  row: PortfolioRowDto | null;
+  amount: number | null;
+  diff: number | null;
+}) {
   if (row === null || amount === null) {
-    return (
-      <Td numeric mono muted>
-        —
-      </Td>
-    );
+    return <span className="font-mono text-text-3">—</span>;
   }
   const over = diff !== null && Math.abs(diff) > DEVIATION_THRESHOLD_PP;
   const isUsd = row.unit === "USD";
   const usd = row.price === null ? null : amount * row.price;
+  const protectedBaseAsset = !isUsd && amount < 0;
 
   return (
-    <Td numeric className="py-3">
-      <div className="flex flex-col items-end gap-[2px]">
+      <div className="flex flex-col items-end gap-[2px] text-right">
         <span
           className={cn(
             "font-mono text-[13px]",
             over ? "text-warn" : "text-text-1",
           )}
         >
-          {isUsd
+          {protectedBaseAsset
+            ? "не продавать"
+            : isUsd
             ? dcUsdSigned(amount)
             : `${tableSigned(amount, 4)} ${row.unit}`}
         </span>
-        {!isUsd && (
+        {!isUsd && !protectedBaseAsset && (
           <span className="text-[12px] text-text-3">
             {usd === null ? "—" : dcUsdSigned(usd)}
           </span>
         )}
+        {protectedBaseAsset && (
+          <span className="text-[12px] text-text-3">выше целевой доли</span>
+        )}
       </div>
-    </Td>
   );
 }
-

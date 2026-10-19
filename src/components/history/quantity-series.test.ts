@@ -3,12 +3,21 @@ import type { SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
 import { denseDays, niceTicks } from "./chart-geometry";
 import { periodChange, quantitySeries, tickDecimals } from "./quantity-series";
 
-/** Снепшот с количествами по категориям; null = цены в тот день не было. */
+/**
+ * Снепшот с количествами по категориям; null = состава в тот день нет.
+ *
+ * Количество кладётся в СОСТАВ, потому что серия строится из него:
+ * поле quantity — эквивалент по цене, и серия его не читает. Чтобы это
+ * было видно в тестах, quantity здесь намеренно забито неправдой.
+ */
 interface Quantities {
   btc?: number | null;
   eth?: number | null;
   stable?: number | null;
 }
+
+/** Заведомо неверный эквивалент: если серия возьмёт его, тесты упадут. */
+const WRONG_EQUIVALENT = 999;
 
 function snapshot(
   takenOn: string,
@@ -20,8 +29,16 @@ function snapshot(
     quantity: number | null | undefined,
   ): SnapshotItemDto => ({
     category,
-    quantity: quantity ?? null,
-    composition: { collateral: [], manual: [] },
+    quantity: WRONG_EQUIVALENT,
+    composition:
+      quantity == null
+        ? null
+        : {
+            collateral: [
+              { symbol: "WBTC", chain: "ethereum", quantity: String(quantity) },
+            ],
+            manual: [],
+          },
     priceUsd: quantity == null ? null : 1,
     valueUsd: quantity ?? 0,
     percent: 0,
@@ -63,7 +80,7 @@ describe("quantitySeries", () => {
   });
 
   it("выбрасывает день без количества, а не превращает его в ноль", () => {
-    // null = цены не было; ноль означал бы «всё продано»
+    // null = состава не было; ноль означал бы «всё продано»
     const series = quantitySeries(
       [
         snapshot("2026-07-01", { btc: 1.2 }),
@@ -106,7 +123,7 @@ describe("quantitySeries", () => {
     expect(denseDays(series).every((d) => d.point !== null)).toBe(true);
   });
 
-  it("категория без количеств вообще — пустая серия", () => {
+  it("категория без состава вообще — пустая серия", () => {
     const series = quantitySeries(
       [
         snapshot("2026-07-01", { stable: null }),
@@ -135,6 +152,41 @@ describe("quantitySeries", () => {
     const series = quantitySeries([snapshot("2026-07-01", { btc: 0 })], "btc");
     expect(series).toHaveLength(1);
     expect(series[0].quantity).toBe(0);
+  });
+
+  it("берёт счётчик монет, а не эквивалент по цене", () => {
+    // Главный инвариант: ряд строится из состава. Эквивалент в хелпере
+    // забит заведомой неправдой — если серия возьмёт его, видно сразу
+    const series = quantitySeries([snapshot("2026-07-01", { btc: 1.2 })], "btc");
+    expect(series[0].quantity).toBeCloseTo(1.2, 12);
+    expect(series[0].quantity).not.toBe(WRONG_EQUIVALENT);
+  });
+
+  it("цены двигались, количества нет — ряд стоит на месте", () => {
+    // Тот самый баг: колонка ползла на 0,1–0,3% в день без действий
+    // владельца. Цены категории в точках разные, состав — один и тот же
+    const days = ["2026-07-01", "2026-07-02", "2026-07-03"].map((day, i) => {
+      const point = snapshot(day, { btc: 0.9 });
+      for (const item of point.items) item.priceUsd = 100_000 + i * 5_000;
+      return point;
+    });
+    const series = quantitySeries(days, "btc");
+    expect(series.map((p) => p.quantity)).toEqual([0.9, 0.9, 0.9]);
+    expect(periodChange(series)!.abs).toBe(0);
+  });
+
+  it("состав складывается из залога, ручных записей и своих свободных", () => {
+    const point = snapshot("2026-07-01", { btc: 0 });
+    point.items[0].composition = {
+      collateral: [{ symbol: "WBTC", chain: "ethereum", quantity: "0.5" }],
+      manual: [{ label: "Биржа", amount: "0.25" }],
+      free: [
+        { symbol: "cbBTC", chain: "base", quantity: "0.1", funds: "own" },
+        // Заёмные в категорию не входят — и в серию тоже
+        { symbol: "WBTC", chain: "arbitrum", quantity: "9", funds: "borrowed" },
+      ],
+    };
+    expect(quantitySeries([point], "btc")[0].quantity).toBeCloseTo(0.85, 12);
   });
 });
 

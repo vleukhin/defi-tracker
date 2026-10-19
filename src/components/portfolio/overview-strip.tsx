@@ -17,11 +17,9 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Верхняя зона hero-карточки: связка пяти чисел и Health Factor.
- *
- * Порознь эти числа на вопрос «сколько я заработал» не отвечают, поэтому
- * они стоят одной строкой. Крупное здесь ровно одно — «Активы» (§1.1):
- * остальные четыре набраны 19px, и иерархия читается без подписей.
+ * Верхняя зона hero-карточки: количества базовых активов, денежный контекст
+ * и Health Factor. В 1.1 количество BTC/ETH стало первым уровнем, потому что
+ * именно им стратегия измеряет рост; долларовая оценка осталась контекстом.
  *
  * null никогда не выдаётся за ноль: «долг ни разу не прочитан» рисуется
  * «—» с подсказкой, а не «$0».
@@ -52,12 +50,13 @@ export interface AssetsDelta {
 export interface CoinAmount {
   key: string;
   unit: string;
+  /** Счётчик монет: от цен не зависит, поэтому «неизвестно» здесь не бывает. */
   amount: number;
   change: number | null;
 }
 
 const COINS_HINT =
-  "Главная метрика стратегии — сколько монет, а не сколько долларов: на цену повлиять нельзя, на количество можно. Изменение считается за то же окно, что и дельта активов.";
+  "Главная метрика стратегии — сколько монет, а не сколько долларов: на цену повлиять нельзя, на количество можно. Считается по монетам на кошельках и от движения цен не зависит: обёртки и LST идут по номиналу (1 wstETH = 1 ETH). Изменение считается за то же окно, что и дельта активов.";
 
 /**
  * Количества BTC и ETH — строка под «Активами».
@@ -70,29 +69,32 @@ const COINS_HINT =
  * Стейблы сюда не попадают: их «количество» и есть доллары, а вопрос
  * «стало ли монет больше» к ним не относится.
  */
-function CoinAmounts({ coins }: { coins: CoinAmount[] }) {
-  if (coins.length === 0) return null;
+function BaseAssetAmounts({ coins }: { coins: CoinAmount[] }) {
+  if (coins.length === 0) {
+    return <p className="t-meta text-text-3">Количество монет пока неизвестно</p>;
+  }
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="grid grid-cols-2 gap-x-6 gap-y-4">
       {coins.map((coin) => (
-        <span key={coin.key} className="flex items-baseline gap-1.5">
-          <span className="font-mono text-[15px] text-text-1">
+        <div key={coin.key} className="min-w-0">
+          <p className="t-display-sm truncate text-text-1">
             {tableNumber(coin.amount, 4)}
-          </span>
-          <span className="text-[12px] text-text-3">{coin.unit}</span>
-          {coin.change !== null && coin.change !== 0 && (
-            <span
-              className={cn(
-                "font-mono text-[12px]",
-                coin.change > 0 ? "text-profit" : "text-loss",
-              )}
-            >
-              {tableSigned(coin.change, 4)}
-            </span>
-          )}
-        </span>
+          </p>
+          <p className="mt-1 flex flex-wrap items-baseline gap-1.5">
+            <span className="t-label">{coin.unit}</span>
+            {coin.change !== null && coin.change !== 0 && (
+              <span
+                className={cn(
+                  "font-mono text-[12px]",
+                  coin.change > 0 ? "text-profit" : "text-loss",
+                )}
+              >
+                {tableSigned(coin.change, 4)}
+              </span>
+            )}
+          </p>
+        </div>
       ))}
-      <HelpTip>{COINS_HINT}</HelpTip>
     </div>
   );
 }
@@ -112,63 +114,42 @@ export function OverviewStrip({
   staleNote: string | null;
 }) {
   return (
-    <div className="flex flex-wrap items-start gap-x-10 gap-y-6 px-5 pt-[22px] pb-5 sm:px-6">
-      <div className="flex min-w-[230px] flex-col gap-1.5">
+    <div className="flex flex-wrap items-start gap-x-9 gap-y-6 px-5 pt-[22px] pb-5 sm:px-6">
+      <div className="flex min-w-[280px] flex-1 flex-col gap-3 sm:min-w-[320px]">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="t-label">Активы</span>
-          <HelpTip>{ASSETS_HINT}</HelpTip>
-          {/* Устаревшие цены объявлены рядом с самим числом, а не только
-              точкой в мета-строке заголовка: там это 12,5px самым бледным
-              цветом экрана, и решение принималось по числам, которые уже
-              не описывают рынок (docs/07 §7) */}
-          {staleNote !== null && (
-            <StatusChip tone="warn">{staleNote}</StatusChip>
-          )}
+          <span className="t-label">Базовые активы</span>
+          <HelpTip>{COINS_HINT}</HelpTip>
         </div>
-        {/* До sm число набирается ролью 34px: 42px Mono на 360px съедают
-            288px доступной ширины, и семизначная сумма упирается в край */}
-        <p
-          className={cn(
-            "t-display-sm sm:t-display",
-            overview.assetsUsd === null && "text-text-3",
-          )}
-          title={overview.assetsUsd === null ? ASSETS_UNKNOWN_HINT : undefined}
-        >
-          {overview.assetsUsd === null ? "—" : dcUsd(overview.assetsUsd)}
-        </p>
-        {/* Прочерк без объяснения — это вопрос без ответа. title его давал
-            только под мышью, поэтому причина вынесена в «?» */}
-        {overview.assetsUsd === null && (
-          <p className="t-meta flex items-center gap-1.5 text-text-3">
-            величина неизвестна
-            <HelpTip>{ASSETS_UNKNOWN_HINT}</HelpTip>
-          </p>
-        )}
-        <CoinAmounts coins={coins} />
-        {delta && (
-          <p className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
-            <span
-              className={cn(
-                "font-medium",
-                delta.absolute > 0 && "text-profit",
-                delta.absolute < 0 && "text-loss",
-                delta.absolute === 0 && "text-text-2",
-              )}
-            >
-              {/* Дельта — через точку-разделитель, без скобок (§4):
-                  в скобках процент читался бы как второстепенный,
-                  а он здесь не менее важен, чем сумма */}
-              {dcUsdSigned(delta.absolute)}
-              {delta.percent !== null &&
-                `${NBSP}·${NBSP}${tablePctSigned(delta.percent, 1)}`}
-            </span>
-            <span className="text-text-3">{delta.label}</span>
-          </p>
-        )}
+        <BaseAssetAmounts coins={coins} />
       </div>
 
-      {/* 1280 и ниже: четыре метрики складываются в две колонки (§6) */}
-      <dl className="grid min-w-[240px] flex-1 grid-cols-2 gap-x-6 gap-y-5 xl:grid-cols-4 xl:gap-x-[22px]">
+      <dl className="grid min-w-[280px] flex-[1.35] grid-cols-2 gap-x-6 gap-y-5 xl:grid-cols-3 xl:gap-x-[22px]">
+        <HeroMetric
+          label="Активы, USD"
+          hint={ASSETS_HINT}
+          value={overview.assetsUsd === null ? null : dcUsd(overview.assetsUsd)}
+          unknownHint={ASSETS_UNKNOWN_HINT}
+          note={
+            <span className="flex flex-wrap items-center gap-1.5">
+              {delta && (
+                <span
+                  className={cn(
+                    "font-medium",
+                    delta.absolute > 0 && "text-profit",
+                    delta.absolute < 0 && "text-loss",
+                    delta.absolute === 0 && "text-text-2",
+                  )}
+                >
+                  {dcUsdSigned(delta.absolute)}
+                  {delta.percent !== null &&
+                    `${NBSP} · ${tablePctSigned(delta.percent, 1)}`}
+                </span>
+              )}
+              {delta && <span>{delta.label}</span>}
+              {staleNote !== null && <StatusChip tone="warn">{staleNote}</StatusChip>}
+            </span>
+          }
+        />
         <HeroMetric
           label="Долг"
           value={overview.debtUsd === null ? null : dcUsd(overview.debtUsd)}
@@ -210,12 +191,16 @@ function HeroMetric({
   hint,
   value,
   tone,
+  note,
+  unknownHint = DEBT_UNREAD_HINT,
 }: {
   label: string;
   hint?: ReactNode;
   /** null = величина неизвестна: «—» с подсказкой, а не ноль. */
   value: string | null;
   tone?: "profit" | "loss";
+  note?: ReactNode;
+  unknownHint?: string;
 }) {
   return (
     <div className="min-w-0">
@@ -230,15 +215,16 @@ function HeroMetric({
           tone === "profit" && "text-profit",
           tone === "loss" && "text-loss",
         )}
-        title={value === null ? DEBT_UNREAD_HINT : undefined}
+        title={value === null ? unknownHint : undefined}
       >
         {value ?? (
           <span className="inline-flex items-center gap-1.5">
             —
-            <HelpTip>{DEBT_UNREAD_HINT}</HelpTip>
+            <HelpTip>{unknownHint}</HelpTip>
           </span>
         )}
       </dd>
+      {note && <dd className="t-meta mt-1 text-text-3">{note}</dd>}
     </div>
   );
 }

@@ -89,7 +89,7 @@ export function LtvTarget({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-line border-t bg-sunken px-card py-3.5">
+    <div id="ltv-target" className="flex scroll-mt-20 flex-wrap items-center justify-between gap-x-6 gap-y-3 border-line border-t bg-sunken px-card py-3.5">
       <div className="flex items-center gap-2.5">
         <span className="t-label">Целевой LTV</span>
         <HelpTip>{HINT}</HelpTip>
@@ -133,12 +133,19 @@ export function LtvTarget({
             >
               {plan.action === "on-target"
                 ? "на цели"
-                : `${plan.action === "borrow" ? "взять ещё" : "погасить"} ${dcUsd(Math.abs(plan.deltaUsd))}`}
+                : plan.action === "borrow"
+                  ? `после подтверждения можно взять ${dcUsd(Math.abs(plan.deltaUsd))}`
+                  : `погасить ${dcUsd(Math.abs(plan.deltaUsd))}`}
             </p>
             <p className="t-meta mt-1 text-text-3">
               долг станет {dcUsd(plan.targetDebtUsd)} при LTV{" "}
               {tablePct(effective, 2)}
             </p>
+            {plan.action === "borrow" && (
+              <p className="t-meta mt-1 max-w-md text-warn">
+                Сначала дождитесь закрепления цены около 48 часов или закрытия недели.
+              </p>
+            )}
           </>
         )}
       </div>

@@ -48,7 +48,9 @@ export const COVERED_RESERVES: Record<string, ReserveSpec> = {
   eBTC: { category: "btc", coingeckoId: "ether-fi-staked-btc" },
   FBTC: { category: "btc", coingeckoId: "ignition-fbtc" },
   // --- ETH-подобные (LST/LRT оцениваются по своей цене, не 1:1 к ETH) ---
-  WETH: { category: "eth", coingeckoId: "weth" },
+  // WETH -> "ethereum", а не "weth": 1:1 держится контрактом обертки.
+  // Обоснование целиком — в prices/symbol-coingecko.ts.
+  WETH: { category: "eth", coingeckoId: "ethereum" },
   wstETH: { category: "eth", coingeckoId: "wrapped-steth" },
   weETH: { category: "eth", coingeckoId: "wrapped-eeth" },
   rETH: { category: "eth", coingeckoId: "rocket-pool-eth" },
