@@ -18,6 +18,12 @@ import type { ChainId } from "./config";
  * кошельков пользователя, не для справочника контрактов.
  *
  * ВАЖНО: USDC и USDC.e (bridged) — разные активы, никогда не объединяются.
+ *
+ * WETH во всех сетях стоит на id "ethereum", а не на своем фиде "weth":
+ * обертка держит ETH 1:1 контрактом. Обоснование — в prices/symbol-coingecko.ts;
+ * здесь важно лишь, чтобы свободный WETH и залоговый WETH (chains/aave.ts)
+ * оценивались ОДНИМ фидом, иначе один и тот же токен стоит разных денег
+ * в зависимости от того, каким контуром он прочитан.
  */
 
 export interface AllowlistToken {
@@ -43,7 +49,7 @@ const T = (
 
 export const TOKEN_ALLOWLIST: Record<ChainId, readonly AllowlistToken[]> = {
   ethereum: [
-    T("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "WETH", 18, "weth"),
+    T("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "WETH", 18, "ethereum"),
     T("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", "WBTC", 8, "wrapped-bitcoin"),
     T("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "USDC", 6, "usd-coin"),
     T("0xdac17f958d2ee523a2206206994597c13d831ec7", "USDT", 6, "tether"),
@@ -75,7 +81,7 @@ export const TOKEN_ALLOWLIST: Record<ChainId, readonly AllowlistToken[]> = {
     T("0x808507121b80c02388fad14726482e061b8da827", "PENDLE", 18, "pendle"),
   ],
   arbitrum: [
-    T("0x82af49447d8a07e3bd95bd0d56f35241523fbab1", "WETH", 18, "weth"),
+    T("0x82af49447d8a07e3bd95bd0d56f35241523fbab1", "WETH", 18, "ethereum"),
     T("0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f", "WBTC", 8, "wrapped-bitcoin"),
     // USDC (native Circle) и USDC.e (bridged) — разные активы!
     T("0xaf88d065e77c8cc2239327c5edb3a432268e5831", "USDC", 6, "usd-coin"),
@@ -100,7 +106,7 @@ export const TOKEN_ALLOWLIST: Record<ChainId, readonly AllowlistToken[]> = {
     T("0x3082cc23568ea640225c2467653db90e9250aaa0", "RDNT", 18, "radiant-capital"),
   ],
   base: [
-    T("0x4200000000000000000000000000000000000006", "WETH", 18, "weth"),
+    T("0x4200000000000000000000000000000000000006", "WETH", 18, "ethereum"),
     // USDC (native Circle) и USDbC (bridged) — разные активы!
     T("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", "USDC", 6, "usd-coin"),
     T("0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca", "USDbC", 6, "bridged-usd-coin-base"),
@@ -121,7 +127,7 @@ export const TOKEN_ALLOWLIST: Record<ChainId, readonly AllowlistToken[]> = {
     T("0xecac9c5f704e954931349da37f60e39f515c11c1", "LBTC", 8, "lombard-staked-btc"),
   ],
   optimism: [
-    T("0x4200000000000000000000000000000000000006", "WETH", 18, "weth"),
+    T("0x4200000000000000000000000000000000000006", "WETH", 18, "ethereum"),
     T("0x4200000000000000000000000000000000000042", "OP", 18, "optimism"),
     // USDC (native Circle) и USDC.e (bridged) — разные активы!
     T("0x0b2c639c533813f4aa9d7837caf62653d097ff85", "USDC", 6, "usd-coin"),

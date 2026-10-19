@@ -37,7 +37,16 @@ import { CategoryDot } from "./category";
  */
 
 const REBALANCE_HINT =
-  "Сколько нужно купить или продать, чтобы вернуть долю к цели.";
+  "Сколько нужно купить или продать, чтобы вернуть долю к цели. Считается в эквиваленте по цене, а не в монетах: цель задана долей в долларах.";
+/**
+ * Два числа у одной категории неизбежно вызывают вопрос «почему они
+ * разные» — отвечаем заранее. Полное обоснование правила сложения
+ * разнородных токенов — в lib/portfolio/coin-count.ts.
+ */
+const COINS_HINT =
+  "Сколько монет лежит в категории: обёртки и LST считаются по номиналу (1 wstETH = 1 ETH, 1 WBTC = 1 BTC). От цен не зависит, поэтому меняется только от ваших действий и начисленных процентов. Главная метрика стратегии.";
+const EQUIVALENT_HINT =
+  "Стоимость категории, делённая на цену базового актива. Выше счётчика монет ровно настолько, насколько обёртки и LST дороже базового актива. Зависит от цен и меняется каждый день — поэтому крупно показан счётчик, а не эквивалент.";
 const NO_AVG_HINT = "нет данных о цене покупки";
 const STALE_PRICE_HINT = "Цена устарела: не удалось обновить";
 
@@ -131,7 +140,12 @@ export function PortfolioTable({
         <thead>
           <tr>
             <Th>Актив</Th>
-            <Th numeric>Кол-во</Th>
+            <Th numeric>
+              <span className="inline-flex items-center gap-1.5">
+                Монет
+                <HelpTip>{COINS_HINT}</HelpTip>
+              </span>
+            </Th>
             <Th numeric>Стоимость</Th>
             <Th numeric>Цена</Th>
             <Th numeric>Доля</Th>
@@ -176,12 +190,10 @@ export function PortfolioTable({
                     </button>
                   </Td>
 
+                  {/* Счётчик монет: цены ему не нужны, поэтому «нет цены»
+                      здесь больше не бывает — оно осталось у колонки «Цена» */}
                   <Td numeric mono>
-                    {row.amount === null ? (
-                      <span className="font-sans text-text-3">нет цены</span>
-                    ) : (
-                      tableNumber(row.amount, amountDecimals(row.unit))
-                    )}
+                    {tableNumber(row.amountCoins, amountDecimals(row.unit))}
                   </Td>
 
                   <Td numeric mono>
@@ -374,20 +386,19 @@ function RowCard({
           </span>
         </div>
 
+        {/* «×» между количеством и ценой здесь больше нет намеренно:
+            счётчик монет на цену не умножается — у обёрток и LST
+            произведение не сойдётся со стоимостью строкой выше */}
         <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-[13px] text-text-2">
-          {row.amount === null ? (
-            <span className="font-sans text-text-3">нет цены</span>
-          ) : (
-            <span className="text-text-1">
-              {tableNumber(row.amount, amountDecimals(row.unit))}
-              <span className="ml-1 font-sans text-[12px] text-text-3">
-                {row.unit}
-              </span>
+          <span className="text-text-1">
+            {tableNumber(row.amountCoins, amountDecimals(row.unit))}
+            <span className="ml-1 font-sans text-[12px] text-text-3">
+              {row.unit}
             </span>
-          )}
+          </span>
           {row.price !== null && (
             <span className="text-text-3">
-              × {tableUsd(row.price, usdDecimals(row.price))}
+              цена {tableUsd(row.price, usdDecimals(row.price))}
             </span>
           )}
           {row.priceStale && (
@@ -538,6 +549,47 @@ function RowDetail({ row }: { row: PortfolioRowDto }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Два числа категории рядом, в одном месте на оба макета: крупно
+          на экране стоит счётчик монет, а эквивалент по цене — та самая
+          величина, которой колонка была раньше, и которой считается
+          выравнивание до цели. По разнице между ними видно, насколько
+          обёртки и LST дороже базового актива. У стейблов разницы нет
+          по определению, поэтому там второго числа не показываем. */}
+      {row.unit !== "USD" && (
+        <dl className="flex flex-wrap items-baseline gap-x-6 gap-y-1.5 text-[13px]">
+          <div className="flex items-baseline gap-1.5">
+            <dt className="t-label" title={COINS_HINT}>
+              Монет
+            </dt>
+            <dd className="font-mono text-text-1">
+              {tableNumber(row.amountCoins, amountDecimals(row.unit))}
+              <span className="ml-1 font-sans text-[12px] text-text-3">
+                {row.unit}
+              </span>
+            </dd>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <dt className="t-label" title={EQUIVALENT_HINT}>
+              Эквивалент по цене
+            </dt>
+            <dd className="font-mono text-text-2">
+              {row.amount === null ? (
+                <span className="font-sans text-text-3" title="цены категории нет — эквивалент не выводится">
+                  нет цены
+                </span>
+              ) : (
+                <>
+                  {tableNumber(row.amount, amountDecimals(row.unit))}
+                  <span className="ml-1 font-sans text-[12px] text-text-3">
+                    {row.unit}
+                  </span>
+                </>
+              )}
+            </dd>
+          </div>
+        </dl>
+      )}
+
       {row.collateralDetail.length > 0 && (
         <div>
           <p className="t-label">

@@ -449,9 +449,16 @@ describe("computePortfolio: свободные средства", () => {
     });
     const eth = res.rows.find((r) => r.category === "eth")!;
     expect(eth.warnings.join(" ")).toContain("cbETH");
-    // Без цены баланс оценивается в 0 и потому уходит в пыль — но не молча:
-    // предупреждение уже выставлено
-    expect(res.freeDust.count).toBe(1);
+    // Пылью такой баланс НЕ считается: порог долларовый, а оценки у него
+    // нет вовсе — «меньше доллара» здесь было бы ровно тем самым NULL = 0.
+    // Монеты при этом лежат на кошельке, и счетчик обязан их видеть:
+    // главная метрика стратегии не вправе зависеть от доступности цены
+    expect(res.freeDust.count).toBe(0);
+    expect(eth.freeBalances).toHaveLength(1);
+    expect(eth.freeBalances[0].priceUsd).toBeNull();
+    expect(eth.amountCoins).toBe(1);
+    // В стоимость он при этом не попадает: оценивать нечем
+    expect(eth.breakdown.freeUsd).toBe(0);
   });
 
   it("без входа free результат прежний: freeUsd = 0, счетчики пустые", () => {
@@ -466,5 +473,131 @@ describe("computePortfolio: свободные средства", () => {
     expect(res.freeBorrowedUsd).toBe(0);
     expect(res.freeOther).toEqual([]);
     expect(res.freeDust).toEqual({ count: 0, valueUsd: 0 });
+  });
+});
+
+/**
+ * Счетчик монет — главная метрика стратегии, и ее единственное обязательство
+ * в том, что она не шевелится сама. Раньше количество выводилось как
+ * стоимость / цена категории, и колонка ползла на 0,1–0,3% в день: числитель
+ * считался по ценам токенов, знаменатель — по цене чистой категории.
+ *
+ * Правило сложения разнородных токенов и его обоснование — в coin-count.ts.
+ */
+describe("computePortfolio: счетчик монет", () => {
+  /** Один и тот же портфель, оцененный разными ценами. */
+  function portfolioAt(priceMap: Record<string, number>) {
+    return computePortfolio({
+      collateral: [
+        collateral({ symbol: "WBTC", coingeckoId: "wrapped-bitcoin", quantity: "0.8" }),
+        collateral({
+          symbol: "wstETH",
+          category: "eth",
+          coingeckoId: "wrapped-steth",
+          quantity: "4",
+        }),
+      ],
+      manual: [
+        manual({ id: "m1", category: "btc", label: "Биржа", amount: "0.1" }),
+        manual({ id: "m2", category: "stable", label: "Pendle PT", amount: "5000" }),
+      ],
+      free: [
+        free({ quantity: "1.5" }),
+        free({
+          key: "w1:arbitrum:0xusdc",
+          chain: "arbitrum",
+          token: "0xusdc",
+          symbol: "USDC",
+          category: "stable",
+          coingeckoId: "usd-coin",
+          quantity: "2000",
+          funds: "borrowed",
+        }),
+      ],
+      targets: {},
+      prices: prices(priceMap),
+    });
+  }
+
+  // Владелец не делал ничего: двигался только рынок. Разъехались и цены
+  // категорий, и спред оберток к базовому активу
+  const day1 = portfolioAt({
+    bitcoin: 100_000,
+    "wrapped-bitcoin": 99_900,
+    ethereum: 4_000,
+    "wrapped-steth": 4_960,
+    "usd-coin": 1,
+  });
+  const day2 = portfolioAt({
+    bitcoin: 112_500,
+    "wrapped-bitcoin": 112_700,
+    ethereum: 3_700,
+    "wrapped-steth": 4_625,
+    "usd-coin": 1,
+  });
+
+  const coins = (res: ReturnType<typeof portfolioAt>, category: string) =>
+    res.rows.find((r) => r.category === category)!.amountCoins;
+
+  it("BTC: 0,8 WBTC + 0,1 вручную = 0,9 в оба дня", () => {
+    expect(coins(day1, "btc")).toBeCloseTo(0.9, 12);
+    expect(coins(day2, "btc")).toBe(coins(day1, "btc"));
+  });
+
+  it("ETH: 4 wstETH по номиналу + 1,5 свободного ETH = 5,5 в оба дня", () => {
+    expect(coins(day1, "eth")).toBeCloseTo(5.5, 12);
+    expect(coins(day2, "eth")).toBe(coins(day1, "eth"));
+  });
+
+  it("стейблы: ручные $5 000; заемные $2 000 в категорию не входят", () => {
+    expect(coins(day1, "stable")).toBe(5_000);
+    expect(coins(day2, "stable")).toBe(5_000);
+  });
+
+  it("а стоимость и эквивалент по цене за те же два дня разъехались", () => {
+    // Контроль чувствительности: без движения цен совпадение счетчика
+    // ничего не доказывало бы
+    const btc1 = day1.rows.find((r) => r.category === "btc")!;
+    const btc2 = day2.rows.find((r) => r.category === "btc")!;
+    expect(btc2.amountUsd).not.toBeCloseTo(btc1.amountUsd, 6);
+    expect(btc2.amount).not.toBeCloseTo(btc1.amount!, 6);
+
+    const eth1 = day1.rows.find((r) => r.category === "eth")!;
+    const eth2 = day2.rows.find((r) => r.category === "eth")!;
+    expect(eth2.amount).not.toBeCloseTo(eth1.amount!, 6);
+  });
+
+  it("эквивалент ETH выше счетчика: wstETH дороже ETH", () => {
+    // Осознанное занижение счетчика — цена отказа от ценового дрейфа
+    const eth = day1.rows.find((r) => r.category === "eth")!;
+    expect(eth.amount!).toBeGreaterThan(eth.amountCoins);
+  });
+
+  it("без цены категории счетчик остается, эквивалент — нет", () => {
+    const noPrice = portfolioAt({ "usd-coin": 1 });
+    const btc = noPrice.rows.find((r) => r.category === "btc")!;
+    expect(btc.amount).toBeNull();
+    expect(btc.amountCoins).toBeCloseTo(0.9, 12);
+  });
+
+  it("выравнивание до цели по-прежнему считается от эквивалента", () => {
+    // Цель задана долей в долларах — счетчик монет на этот вопрос
+    // ответить не может, и подменять им базис нельзя
+    const res = computePortfolio({
+      collateral: [collateral({ symbol: "wstETH", category: "eth", coingeckoId: "wrapped-steth", quantity: "10" })],
+      manual: [],
+      targets: { eth: 50 },
+      prices: prices({ ethereum: 4_000, "wrapped-steth": 5_000 }),
+    });
+    const eth = res.rows.find((r) => r.category === "eth")!;
+    // 10 wstETH × $5 000 = $50 000, и это весь портфель. Цель 50% → $25 000,
+    // то есть продать на $25 000; выражено это в единицах категории по ЦЕНЕ
+    // категории: 25 000 / 4 000 = 6,25 ETH
+    expect(eth.amountUsd).toBe(50_000);
+    expect(eth.amountToBalance).toBeCloseTo(-6.25, 9);
+    // Счетчик монет на этот вопрос ответить не мог бы: он про другое,
+    // и от эквивалента отличается ровно на наценку wstETH
+    expect(eth.amountCoins).toBe(10);
+    expect(eth.amount).toBeCloseTo(12.5, 9);
   });
 });

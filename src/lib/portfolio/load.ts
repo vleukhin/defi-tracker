@@ -631,13 +631,18 @@ export async function loadPortfolio(
   });
 
   // Unrealized P/L и расхождение леджер/факт — здесь, где известны текущая
-  // цена категории (row.price) и фактическое количество (row.amount)
+  // цена категории (row.price) и фактическое количество (row.amountCoins).
+  //
+  // Фактом выступает СЧЕТЧИК МОНЕТ, а не эквивалент по цене: по леджеру
+  // количество тоже считается монетами (сумма покупок минус продажи),
+  // и сравнивать его с эквивалентом значило бы ловить расхождение там,
+  // где разъехались всего лишь цена обертки и цена базового актива.
   const ledger = replayTrades(ledgerTrades);
   const rows: PortfolioRowWithLedger[] = result.rows.map((row) => ({
     ...row,
     ledger: buildLedgerRowInfo(ledger[row.category], {
       currentPriceUsd: row.price,
-      actualQty: row.amount,
+      actualQty: row.amountCoins,
     }),
   }));
 

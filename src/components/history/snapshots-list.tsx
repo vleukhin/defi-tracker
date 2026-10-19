@@ -11,6 +11,7 @@ import {
   TRADE_CATEGORIES,
 } from "@/components/trades/categories";
 import type { SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
+import { coinCount } from "@/lib/portfolio/coin-count";
 import {
   NBSP,
   dcUsd,
@@ -32,10 +33,39 @@ import { QUANTITY_DECIMALS } from "./quantity-series";
  * главная метрика стратегии — сколько монет, а не сколько процентов
  * (AGENTS.md).
  *
+ * Количество — это СЧЁТЧИК МОНЕТ из сырого состава точки (`coinCount`),
+ * а не поле `quantity`: последнее равно стоимости, делённой на цену
+ * категории, и меняется от одного движения рынка. Колонка, которая ползёт
+ * без действий владельца, на вопрос «сколько я набрал» не отвечает.
+ * Правило сложения разнородных токенов — в lib/portfolio/coin-count.ts.
+ *
+ * Эквивалент по цене из таблицы не выброшен: он лежит в раскрытом составе
+ * отдельной строкой, рядом со счётчиком и стоимостью.
+ *
  * Строка раскрывается в полный состав на дату (S3.2) — как строки категорий
- * в таблице портфеля. Количество и цена приходят null (а не нулём), когда
- * цены на момент съёма не было: показываем «—», не «0».
+ * в таблице портфеля. Состав, цена и эквивалент приходят null (а не нулём),
+ * когда данных на момент съёма не было: показываем «—», не «0».
  */
+
+/** Состава в точке нет — счёт монет не из чего сложить; ноль был бы враньём. */
+const NO_COMPOSITION =
+  "Сырой состав на эту дату не сохранён — счётчик монет не из чего сложить. " +
+  "Эквивалент по цене есть в раскрытой строке.";
+
+/**
+ * Два числа рядом неизбежно вызывают вопрос «почему они разные» — отвечаем
+ * заранее: счётчик складывает токены по номиналу, эквивалент пересчитывает
+ * их стоимость в цену категории (подробности — lib/portfolio/coin-count.ts).
+ */
+const COINS_HINT =
+  "Сумма монет в составе по номиналу: 1 wstETH считается за 1 ETH, " +
+  "1 WBTC — за 1 BTC. От цен не зависит, поэтому меняется только от ваших " +
+  "действий и начисленных процентов.";
+
+const EQUIVALENT_HINT =
+  "Стоимость категории, делённая на цену базового актива. Выше счётчика " +
+  "монет ровно настолько, насколько обёртки и LST дороже базового актива. " +
+  "Зависит от цен и меняется каждый день.";
 
 const HF_HINT =
   "Health Factor на дату снепшота не сохраняется — в истории колонка остаётся пустой. Текущее значение живёт на странице «Долг».";
@@ -50,7 +80,9 @@ function orderedItems(snapshot: SnapshotDto): SnapshotItemDto[] {
       snapshot.items.find((i) => i.category === c.key) ?? {
         category: c.key,
         quantity: null,
-        composition: { collateral: [], manual: [] },
+        // Категории в точке нет вовсе — состава тоже; пустой состав здесь
+        // означал бы «монет не было», а правильный ответ «не записано»
+        composition: null,
         priceUsd: null,
         valueUsd: 0,
         percent: 0,
@@ -78,7 +110,7 @@ export function SnapshotsList({ snapshots }: { snapshots: SnapshotDto[] }) {
       <SectionHead
         title="Снепшоты"
         count={all.length}
-        hint="Точка истории за календарный день. Строка раскрывается в состав портфеля на эту дату — количества, цены и разбивку «залог / вручную»."
+        hint="Точка истории за календарный день. В колонках BTC, ETH и стейблов — количество монет из сохранённого состава: от движения цен оно не зависит. Строка раскрывается в состав портфеля на эту дату — количества, цены и разбивку «залог / вручную»."
         className="border-line border-b"
       />
 
@@ -129,18 +161,27 @@ export function SnapshotsList({ snapshots }: { snapshots: SnapshotDto[] }) {
                   <Td numeric mono>
                     {dcUsd(snapshot.totalUsd)}
                   </Td>
-                  {items.map((item) => (
-                    <Td key={item.category} numeric mono muted>
-                      {item.quantity === null ? (
-                        <Dash />
-                      ) : (
-                        tableNumber(
-                          item.quantity,
-                          QUANTITY_DECIMALS[item.category],
-                        )
-                      )}
-                    </Td>
-                  ))}
+                  {items.map((item) => {
+                    const coins = coinCount(item.composition);
+                    return (
+                      <Td
+                        key={item.category}
+                        numeric
+                        mono
+                        muted
+                        title={coins === null ? NO_COMPOSITION : undefined}
+                      >
+                        {coins === null ? (
+                          <Dash />
+                        ) : (
+                          tableNumber(
+                            coins,
+                            QUANTITY_DECIMALS[item.category],
+                          )
+                        )}
+                      </Td>
+                    );
+                  })}
                   <Td numeric mono muted>
                     {snapshot.debtUsd === null ? (
                       <Dash />
@@ -204,6 +245,7 @@ function SnapshotDetail({
         {items.map((item) => {
           const unit = CATEGORY_UNIT[item.category];
           const decimals = QUANTITY_DECIMALS[item.category];
+          const coins = coinCount(item.composition);
           return (
             <div key={item.category} className="bg-surface px-card py-3.5">
               <div className="flex items-baseline gap-2">
@@ -221,9 +263,24 @@ function SnapshotDetail({
               </div>
 
               <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
-                <Detail label="Количество">
+                <Detail label="Монет" hint={COINS_HINT}>
+                  {coins === null ? (
+                    <NoData title={NO_COMPOSITION} />
+                  ) : (
+                    <>
+                      {tableNumber(coins, decimals)}
+                      <span className="ml-1 font-sans text-[12px] text-text-3">
+                        {unit}
+                      </span>
+                    </>
+                  )}
+                </Detail>
+                {/* Эквивалент по цене — та самая величина, которой раньше
+                    была колонка. Осталась рядом: по ней видно, насколько
+                    обёртки и LST дороже базового актива */}
+                <Detail label="Эквивалент" hint={EQUIVALENT_HINT}>
                   {item.quantity === null ? (
-                    <NoData title="цены на момент съёма не было — количество не выводится" />
+                    <NoData title="цены на момент съёма не было — эквивалент не выводится" />
                   ) : (
                     <>
                       {tableNumber(item.quantity, decimals)}
@@ -257,14 +314,18 @@ function SnapshotDetail({
 
 function Detail({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <dt className="t-label">{label}</dt>
+      <dt className="t-label" title={hint}>
+        {label}
+      </dt>
       <dd className="mt-1 font-mono text-[13px]">{children}</dd>
     </div>
   );

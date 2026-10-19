@@ -416,6 +416,11 @@ function assetsDelta(snapshots: SnapshotDto[]): AssetsDelta | null {
 /**
  * Количества BTC и ETH для hero — главная метрика стратегии (docs/07 §4).
  *
+ * Берётся счётчик монет (`amountCoins`), а не эквивалент по цене: иначе
+ * hero дрейфовал бы вместе с курсом обёрток и расходился бы с «Историей»,
+ * где количество считается по монетам. Фильтра «есть ли цена» больше нет —
+ * счётчик её не требует, и без цены hero теперь не пустеет.
+ *
  * Стейблы отбрасываются по единице: их количество и есть доллары.
  * Изменение берётся из готовой periodChange по тому же окну снепшотов,
  * что и дельта активов, и остаётся null, пока истории меньше двух точек —
@@ -426,11 +431,11 @@ function coinAmounts(
   snapshots: SnapshotDto[],
 ): CoinAmount[] {
   return rows
-    .filter((row) => row.unit !== "USD" && row.amount !== null)
+    .filter((row) => row.unit !== "USD")
     .map((row) => ({
       key: row.category,
       unit: row.unit,
-      amount: row.amount as number,
+      amount: row.amountCoins,
       change: periodChange(quantitySeries(snapshots, row.category))?.abs ?? null,
     }));
 }

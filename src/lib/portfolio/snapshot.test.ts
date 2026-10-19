@@ -9,6 +9,7 @@ import type { PortfolioCategory, PortfolioRow } from "./portfolio";
  */
 
 interface RowOverrides {
+  amountCoins?: number;
   amount?: number | null;
   amountUsd?: number;
   price?: number | null;
@@ -28,6 +29,9 @@ function row(category: PortfolioCategory, o: RowOverrides = {}): PortfolioRow {
     category,
     label: category.toUpperCase(),
     unit: category === "stable" ? "USD" : category.toUpperCase(),
+    // Счетчик монет по умолчанию равен эквиваленту: здесь проверяется
+    // правило частичности, а не расхождение двух метрик
+    amountCoins: o.amountCoins ?? ("amount" in o ? (o.amount ?? 0) : 0),
     amount: "amount" in o ? (o.amount ?? null) : 0,
     amountUsd,
     price: "price" in o ? (o.price ?? null) : 1,

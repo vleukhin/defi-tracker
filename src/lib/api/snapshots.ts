@@ -110,8 +110,11 @@ export function mapSnapshotRow(row: SnapshotRow): SnapshotDto {
     .map((item) => ({
       category: item.category as PortfolioCategory,
       quantity: nullableNum(item.quantity),
-      // Сырые количества монет: не зависят от цен, поэтому отдаются как есть
-      composition: item.composition ?? { collateral: [], manual: [] },
+      // Сырые количества монет: не зависят от цен, поэтому отдаются как
+      // есть. Отсутствие состава подставным пустым НЕ затыкается: из него
+      // считается счётчик монет, и пустой состав дал бы ноль там, где
+      // правильный ответ — «не записали» (см. coinCount)
+      composition: item.composition ?? null,
       priceUsd: nullableNum(item.price_usd),
       valueUsd: num(item.value_usd),
       percent: num(item.percent),

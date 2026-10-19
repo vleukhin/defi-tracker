@@ -5,10 +5,25 @@ import type { FundsMark } from "@/lib/api/types";
  *
  * Чистые функции без I/O — вся работа с БД и прайсером снаружи.
  *
- * Ключевое правило оценки: каждый залоговый актив оценивается ПО СВОЕЙ цене
- * (1 wstETH ≈ 1.24 ETH), а отображаемое количество категории выводится как
- * стоимость / цена категории, то есть в BTC- или ETH-эквиваленте. Считать
- * wstETH за 1 ETH завысило бы количество ETH почти на четверть.
+ * Ключевое правило ОЦЕНКИ: каждый актив оценивается ПО СВОЕЙ цене
+ * (1 wstETH ≈ 1.24 ETH). Считать wstETH за 1 ETH занизило бы стоимость
+ * категории почти на четверть.
+ *
+ * Отсюда у категории ДВА числа, и путать их нельзя:
+ *
+ *  * `amountCoins` — счетчик монет: сумма количеств токенов по номиналу
+ *    (1 wstETH = 1 ETH). Цены в него не входят вообще, поэтому при
+ *    неизменных количествах он не двигается ни при каком движении рынка.
+ *    Это главная метрика стратегии (AGENTS.md §1, docs/07 §4), и именно
+ *    она показывается крупно. Правило сложения разнородных токенов и его
+ *    обоснование — в `coin-count.ts`; здесь оно просто применяется к живым
+ *    данным вместо состава снепшота.
+ *
+ *  * `amount` — долларовый ЭКВИВАЛЕНТ: стоимость / цена категории. Зависит
+ *    от цен и дрейфует сам по себе (числитель считается по ценам токенов,
+ *    знаменатель — по цене чистой категории). Остается потому, что доли
+ *    и выравнивание до цели считаются в долларах: `amountToBalance` без
+ *    него не выразить.
  *
  * Долг здесь не участвует вообще: учет портфеля независим от заемных средств.
  */
@@ -152,7 +167,18 @@ export interface PortfolioRow {
   category: PortfolioCategory;
   label: string;
   unit: string;
-  /** Количество в единицах категории (BTC/ETH-эквивалент, USD для стейблов). */
+  /**
+   * СЧЕТЧИК МОНЕТ категории — главная метрика стратегии. Сумма количеств
+   * токенов по номиналу в единицах базового актива; у стейблов — доллары.
+   * От цен не зависит, поэтому «нет данных» здесь не бывает: количества
+   * известны всегда, даже когда цену прочитать не удалось.
+   */
+  amountCoins: number;
+  /**
+   * Долларовый ЭКВИВАЛЕНТ в единицах категории: стоимость / цена категории.
+   * Не главная метрика (он дрейфует вместе с ценами) — нужен долевой
+   * арифметике, см. amountToBalance. null = цены категории нет.
+   */
   amount: number | null;
   amountUsd: number;
   price: number | null;
@@ -160,7 +186,13 @@ export interface PortfolioRow {
   percent: number;
   targetPercent: number | null;
   percentDiff: number | null;
-  /** В единицах категории: минус — продать, плюс — купить. */
+  /**
+   * В единицах категории: минус — продать, плюс — купить. Считается от
+   * `amount`, а не от счетчика монет, и это намеренно: цель задана ДОЛЕЙ
+   * в долларах, и ответ «на сколько изменить позицию» выражается в тех же
+   * единицах, в которых считалась доля. Счетчик монет на этот вопрос
+   * ответить не может — он про другое.
+   */
   amountToBalance: number | null;
   breakdown: { collateralUsd: number; manualUsd: number; freeUsd: number };
   collateralDetail: CollateralDetail[];
@@ -288,7 +320,13 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
       );
     }
 
-    if (valueUsd < FREE_DUST_USD) {
+    // Порог пыли применим только к ОЦЕНЕННОМУ балансу. Без цены valueUsd
+    // равен нулю не потому, что баланс мал, а потому, что мы его не знаем,
+    // и «меньше доллара» здесь было бы ровно тем самым NULL = 0. Раньше
+    // такой баланс сметался в пыль; с появлением счетчика монет цена
+    // ошибки выросла: из главной метрики пропадали бы монеты, которые
+    // физически лежат на кошельке. Предупреждение уже выставлено выше.
+    if (assetPrice && valueUsd < FREE_DUST_USD) {
       freeDust.count += 1;
       freeDust.valueUsd += valueUsd;
       continue;
@@ -330,6 +368,9 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
     // --- Залог: каждый актив по своей цене ---
     const collateralDetail: CollateralDetail[] = [];
     let collateralUsd = 0;
+    // Счетчик монет копится параллельно стоимости: те же слагаемые,
+    // но по номиналу и без цен (правило — в coin-count.ts)
+    let coins = 0;
     for (const c of input.collateral) {
       if (c.category !== category) continue;
       const assetPrice = input.prices.get(c.coingeckoId) ?? null;
@@ -343,6 +384,10 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
         warnings.push(`нет цены для ${c.symbol} (${c.chain})`);
       }
       collateralUsd += valueUsd;
+      // Обертка идет за базовый актив как есть: 1 WBTC = 1 BTC,
+      // 1 wstETH = 1 ETH. Цена в счетчик не входит, поэтому ее отсутствие
+      // монеты не отменяет
+      coins += quantity;
       collateralDetail.push({
         walletId: c.walletId,
         walletLabel: c.walletLabel,
@@ -368,6 +413,9 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
         warnings.push(`нет цены ${CATEGORY_LABELS[category]}: запись «${m.label}» не оценена`);
       }
       manualUsd += valueUsd;
+      // btc/eth внесены в монетах, stable — в долларах: обе величины уже
+      // в единицах категории, пересчитывать нечего
+      coins += amount;
       manualEntries.push({
         id: m.id,
         label: m.label,
@@ -383,6 +431,12 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
       (sum, b) => sum + (b.countedInCategory ? b.valueUsd : 0),
       0,
     );
+    // Заемные свободные в счетчик не идут по той же причине, по которой
+    // не идут в стоимость категории: категории ведутся по собственным
+    // средствам (Фаза 7). Неразмеченные идут — там умолчание «свое»
+    for (const b of freeBalances) {
+      if (b.countedInCategory) coins += toNumber(b.quantity);
+    }
 
     const amountUsd = collateralUsd + manualUsd + freeUsd;
 
@@ -390,7 +444,10 @@ export function computePortfolio(input: ComputeInput): PortfolioResult {
       category,
       label: CATEGORY_LABELS[category],
       unit: CATEGORY_UNITS[category],
-      // Количество категории = стоимость / цена категории (BTC/ETH-эквивалент)
+      // Главная метрика: монеты по номиналу, без участия цен
+      amountCoins: coins,
+      // Эквивалент: стоимость / цена категории. Дрейфует вместе с ценами —
+      // крупным на экран не идет, нужен долевой арифметике ниже
       amount: price ? (price.priceUsd > 0 ? amountUsd / price.priceUsd : 0) : null,
       amountUsd,
       price: price?.priceUsd ?? null,
