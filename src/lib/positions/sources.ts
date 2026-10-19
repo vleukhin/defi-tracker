@@ -9,11 +9,13 @@
 export const FLUID_SOURCE = "fluid" as const;
 export const GMX_SOURCE = "gmx_v2" as const;
 export const UNIV3_SOURCE = "uni_v3" as const;
+export const PENDLE_SOURCE = "pendle" as const;
 
 export const POSITION_SOURCES = [
   FLUID_SOURCE,
   GMX_SOURCE,
   UNIV3_SOURCE,
+  PENDLE_SOURCE,
 ] as const;
 
 /**
@@ -33,4 +35,5 @@ export const PROTOCOL_LABELS: Record<
   fluid: "Fluid",
   gmx_v2: "GMX v2",
   uni_v3: "Uniswap v3",
+  pendle: "Pendle",
 };

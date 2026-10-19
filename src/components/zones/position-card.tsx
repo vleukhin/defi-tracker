@@ -16,6 +16,7 @@ import {
 import { FluidCard } from "./fluid-card";
 import { GmxCard } from "./gmx-card";
 import { MarkPopover } from "./mark-popover";
+import { PendleCard } from "./pendle-card";
 import { type MarkFn } from "./shared";
 import { UniswapCard } from "./uniswap-card";
 
@@ -23,7 +24,8 @@ import { UniswapCard } from "./uniswap-card";
  * Карточка позиции. Каркас у всех типов один (см. card-parts.tsx),
  * разбор идёт по протоколу: у депозита лендинга и у пула ликвидности
  * разные вопросы к позиции, и общий набор метрик отвечал на них
- * одинаково плохо — Fluid живёт ставкой, LP диапазоном, а GM переоценкой.
+ * одинаково плохо — Fluid живёт ставкой, LP диапазоном, GM переоценкой,
+ * а Pendle — сроком погашения.
  *
  * Третий тип из дизайна — заём — в списке позиций не приходит: в модели
  * данных это долговая строка Aave. Его карточка лежит рядом
@@ -79,6 +81,16 @@ export function PositionCard({
         onMark={onMark}
         journal={journal}
         onJournalRefetch={onJournalRefetch}
+      />
+    );
+  }
+  if (position.protocol === "pendle") {
+    return (
+      <PendleCard
+        position={position}
+        busy={busy}
+        onMark={onMark}
+        nowMs={nowMs}
       />
     );
   }

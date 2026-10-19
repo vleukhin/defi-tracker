@@ -41,6 +41,7 @@ function gm(
     range: null,
     supplyRatePercent: null,
     rewardsRatePercent: null,
+    pendle: null,
     walletId: "w",
     walletLabel: null,
     updatedAt: "2026-08-01T00:00:00.000Z",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildZones,
   defaultZoneForCategory,
+  defaultZoneForPendle,
   zoneOfManual,
   type BuildZonesInput,
   type FreeAtom,
@@ -76,6 +77,20 @@ describe("инвариант: сумма зон = Активы", () => {
       positions: [{ ...base.positions[0], ownUsd: 300 }],
     });
     expect(s.totalUsd).toBe(bez.totalUsd);
+  });
+
+  it("PT Pendle в Stability и LP Pendle в Yield не ломают сумму", () => {
+    const r = buildZones({
+      collateral: [{ category: "btc", valueUsd: 100_000 }],
+      manual: [],
+      positions: [
+        { id: "pt", protocol: "pendle", title: "PT sUSDe", valueUsd: 9_950, zone: "stability", ownUsd: 9_950 },
+        { id: "lp", protocol: "pendle", title: "LP sUSDe", valueUsd: 2_780, zone: "yield", ownUsd: 0 },
+      ],
+    });
+    expect(zoneValue(r, "stability")).toBe(9_950);
+    expect(zoneValue(r, "yield")).toBe(2_780);
+    expect(r.totalUsd).toBe(100_000 + 9_950 + 2_780);
   });
 });
 
@@ -208,6 +223,12 @@ describe("зона по умолчанию", () => {
     expect(defaultZoneForCategory("stable")).toBe("stability");
     expect(defaultZoneForCategory("btc")).toBe("growth");
     expect(defaultZoneForCategory("eth")).toBe("growth");
+  });
+
+  it("Pendle: PT — Stability по стратегии, YT и LP — Yield", () => {
+    expect(defaultZoneForPendle("pt")).toBe("stability");
+    expect(defaultZoneForPendle("yt")).toBe("yield");
+    expect(defaultZoneForPendle("lp")).toBe("yield");
   });
 
   it("zoneOfManual уважает явную разметку", () => {

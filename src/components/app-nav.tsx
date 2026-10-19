@@ -41,6 +41,11 @@ function isActive(pathname: string, href: string) {
  * Шапка приложения (дизайн-код §6): высота 60px, sticky, фон с blur 14px.
  * Активный пункт — --bg-raised, неактивный — --text-2.
  *
+ * Активность несут подложка, насыщенность текста и иконки; подчеркивающей
+ * черты под пунктом нет — подложка уже отвечает на вопрос «где я», а вторая
+ * метка тем же цветом только утяжеляла строку. Признак для скринридера
+ * (aria-current) от оформления не зависит и остается в любом случае.
+ *
  * Справа дизайн просит сумму портфеля и дневную дельту; шапка их не считает
  * сама, а принимает слотом — иначе она полезла бы в данные страницы.
  *
@@ -85,9 +90,9 @@ export function AppNav({ summary }: { summary?: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative flex shrink-0 items-center gap-[6px] rounded-control px-[9px] py-[7px] text-[13.5px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] after:absolute after:inset-x-2 after:-bottom-[7px] after:h-0.5 after:rounded-full after:bg-transparent focus-visible:ring-3 focus-visible:ring-ring/50",
+                  "flex shrink-0 items-center gap-[6px] rounded-control px-[9px] py-[7px] text-[13.5px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] focus-visible:ring-3 focus-visible:ring-ring/50",
                   active
-                    ? "bg-raised font-medium text-text-1 after:bg-accent"
+                    ? "bg-raised font-medium text-text-1"
                     : "text-text-2 hover:bg-chip hover:text-text-1",
                 )}
               >
@@ -129,6 +134,11 @@ export function AppNav({ summary }: { summary?: React.ReactNode }) {
  * Мобильная навигация: панель, выезжающая справа (сторона кнопки — палец не
  * перекрывает список, который открыл). Пункт — строка 48px с иконкой и полной
  * подписью: на ширину панели помещается любая, сокращать нечего.
+ *
+ * Активный пункт помечен так же, как в широкой шапке: подложка, вес текста
+ * и цвет иконки, без accent-полоски сбоку. Признак один на оба брейкпоинта
+ * намеренно — две разные метки за одно и то же состояние пришлось бы
+ * держать в синхроне при каждой правке оформления.
  *
  * Диалог неуправляемый: каждый пункт обёрнут в Dialog.Close, поэтому панель
  * закрывается и при переходе на текущий маршрут, где pathname не меняется и
@@ -184,9 +194,9 @@ function MobileNav({ pathname }: { pathname: string }) {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "relative flex h-12 items-center gap-3 rounded-control px-3 text-[15px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent focus-visible:ring-3 focus-visible:ring-ring/50",
+                          "flex h-12 items-center gap-3 rounded-control px-3 text-[15px] outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-standard)] focus-visible:ring-3 focus-visible:ring-ring/50",
                           active
-                            ? "bg-raised font-medium text-text-1 before:bg-accent"
+                            ? "bg-raised font-medium text-text-1"
                             : "text-text-2 hover:bg-chip hover:text-text-1",
                         )}
                       >

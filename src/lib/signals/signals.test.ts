@@ -165,6 +165,7 @@ function position(overrides: Partial<PositionDto> = {}): PositionDto {
     range: null,
     supplyRatePercent: null,
     rewardsRatePercent: null,
+    pendle: null,
     walletId: "w1",
     walletLabel: null,
     updatedAt: hoursAgo(0.1),
@@ -895,5 +896,76 @@ describe("отметка «выполнено»", () => {
       pending: { portfolio: false, debt: false, zones: false, acks: true, journals: false },
     });
     expect(hasPendingSources(inp)).toBe(true);
+  });
+});
+
+describe("погашение Pendle", () => {
+  // NOW — 05.08.2026
+  function pendle(
+    tokenType: "pt" | "yt" | "lp",
+    expiry: string,
+    id = `pendle-${tokenType}`,
+  ): PositionDto {
+    return position({
+      id,
+      protocol: "pendle",
+      protocolLabel: "Pendle",
+      chain: "ethereum",
+      zone: tokenType === "pt" ? "stability" : "yield",
+      zoneKey: `pendle:ethereum:${id}`,
+      title: `${tokenType.toUpperCase()} sUSDe`,
+      ownPrincipalUsd: 10_000,
+      borrowedPrincipalUsd: 0,
+      valueUsd: 9_950,
+      pendle: {
+        tokenType,
+        marketName: "sUSDe",
+        expiry,
+        assetSymbol: "USDe",
+        rateToAsset: 0.995,
+        impliedApyPercent: 5,
+        underlyingApyPercent: 4,
+      },
+    });
+  }
+
+  it("далёкое погашение молчит", () => {
+    expect(kinds(input({ positions: [pendle("pt", "2026-11-26T00:00:00.000Z")] }))).toEqual([]);
+  });
+
+  it("за неделю до срока — сигнал с числом дней", () => {
+    const [s] = activeSignals(
+      buildSignals(input({ positions: [pendle("pt", "2026-08-08T00:00:00.000Z")] }), NOW),
+    );
+    expect(s.kind).toBe("pendle-maturing");
+    expect(s.severity).toBe("timer");
+    expect(s.chip).toBe("3 дня");
+    expect(s.detail).toContain("USDe");
+  });
+
+  it("погашенный токен — громко, выше приближающегося", () => {
+    const inp = input({
+      positions: [
+        pendle("pt", "2026-08-08T00:00:00.000Z", "soon"),
+        pendle("pt", "2026-08-01T00:00:00.000Z", "done"),
+      ],
+    });
+    expect(kinds(inp)).toEqual(["pendle-matured", "pendle-maturing"]);
+    const matured = buildSignals(inp, NOW).find((s) => s.kind === "pendle-matured")!;
+    expect(matured.title).toContain("4 дня назад");
+    expect(matured.detail).toContain("1:1");
+  });
+
+  it("у YT и LP после погашения — свои действия", () => {
+    const yt = buildSignals(input({ positions: [pendle("yt", "2026-08-01T00:00:00.000Z")] }), NOW)[0];
+    const lp = buildSignals(input({ positions: [pendle("lp", "2026-08-01T00:00:00.000Z")] }), NOW)[0];
+    expect(yt.detail).toContain("YT больше не начисляет");
+    expect(lp.detail).toContain("вывести");
+  });
+
+  it("отметки «выполнено» нет: сигнал гаснет вместе с позицией", () => {
+    const [s] = buildSignals(input({ positions: [pendle("pt", "2026-08-01T00:00:00.000Z")] }), NOW);
+    expect(s.ackKey).toBeNull();
+    expect(signalGroup(s.kind)).toBe("strategy");
   });
 });

@@ -15,7 +15,9 @@ export type ApiProvider =
   // Фаза 5: цены GM-токенов и состав пулов (arbitrum-api.gmxinfra.io)
   | "gmx"
   // Фаза 6: доставка уведомлений (api.telegram.org)
-  | "telegram";
+  | "telegram"
+  // Справочник рынков Pendle (api-v2.pendle.finance)
+  | "pendle";
 
 export async function logApiCall(
   provider: ApiProvider,

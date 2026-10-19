@@ -465,3 +465,150 @@ describe("прочее", () => {
     expect(ids).not.toContain("gmx");
   });
 });
+
+/**
+ * Pendle: PT, YT и LP. Оценка — количество × курс оракула к активу ×
+ * свежая цена актива; зона без разметки — по типу токена (docs/07 §3).
+ */
+function pendleRow(
+  id: string,
+  opts: {
+    tokenType?: "pt" | "yt" | "lp";
+    quantity?: string;
+    rateToAsset?: number | null;
+    assetSymbol?: string | null;
+    assetCoingeckoId?: string | null;
+  } = {},
+): PositionRowInput {
+  const tokenType = opts.tokenType ?? "pt";
+  return {
+    ...BASE,
+    chain: "ethereum",
+    id,
+    protocol: "pendle",
+    externalId: `0x${id}`,
+    quantity: opts.quantity ?? "10000",
+    valueUsd: null,
+    payload: {
+      kind: "pendle",
+      tokenType,
+      token: `0x${id}`,
+      market: "0xmarket",
+      marketName: "sUSDe",
+      expiry: "2026-11-26T00:00:00.000Z",
+      decimals: 18,
+      raw: "10000000000000000000000",
+      assetSymbol: opts.assetSymbol === undefined ? "USDe" : opts.assetSymbol,
+      assetCoingeckoId:
+        opts.assetCoingeckoId === undefined ? "ethena-usde" : opts.assetCoingeckoId,
+      rateToAsset: opts.rateToAsset === undefined ? 0.995 : opts.rateToAsset,
+      impliedApyPercent: 5.01,
+      underlyingApyPercent: 4.2,
+    },
+  };
+}
+
+const PENDLE_PRICES = new Map<string, number>([
+  ["ethena-usde", 1.001],
+  ["staked-ether", 3000],
+]);
+
+describe("Pendle", () => {
+  it("стоимость = количество × курс к активу × цена актива", () => {
+    // 10 000 PT по 0,995 USDe = 9 950 USDe; USDe стоит $1,001
+    const r = buildPositions({ rows: [pendleRow("pt")], pricesUsd: PENDLE_PRICES });
+    const p = r.positions[0];
+    expect(p.protocol).toBe("pendle");
+    expect(p.valueUsd).toBeCloseTo(9_950 * 1.001, 9);
+    expect(p.components).toEqual([
+      { symbol: "USDe", quantity: 9_950, valueUsd: p.valueUsd, side: null },
+    ]);
+    expect(p.title).toBe("PT sUSDe");
+    expect(p.pendle).toMatchObject({
+      tokenType: "pt",
+      expiry: "2026-11-26T00:00:00.000Z",
+      rateToAsset: 0.995,
+      impliedApyPercent: 5.01,
+    });
+  });
+
+  it("implied APY не выдается за ставку позиции", () => {
+    // Иначе PT попал бы в сравнение «депозит дороже займа» с чужой семантикой
+    const r = buildPositions({ rows: [pendleRow("pt")], pricesUsd: PENDLE_PRICES });
+    expect(r.positions[0].supplyRatePercent).toBeNull();
+    expect(r.positions[0].rewardsRatePercent).toBeNull();
+  });
+
+  it("PT без разметки — Stability, YT и LP — Yield", () => {
+    const r = buildPositions({
+      rows: [
+        pendleRow("pt"),
+        pendleRow("yt", { tokenType: "yt", rateToAsset: 0.005 }),
+        pendleRow("lp", { tokenType: "lp", rateToAsset: 2.78 }),
+      ],
+      pricesUsd: PENDLE_PRICES,
+    });
+    const zoneOf = (t: string) =>
+      r.positions.find((p) => p.pendle?.tokenType === t)?.zone;
+    expect(zoneOf("pt")).toBe("stability");
+    expect(zoneOf("yt")).toBe("yield");
+    expect(zoneOf("lp")).toBe("yield");
+  });
+
+  it("разметка зоны побеждает умолчание PT", () => {
+    // PT, купленный на заемные ради спреда, — это уже Yield
+    const r = buildPositions({
+      rows: [pendleRow("pt")],
+      pricesUsd: PENDLE_PRICES,
+      marksByKey: marks("pendle:ethereum:0xpt", 0, 9_000, null, "yield"),
+    });
+    expect(r.positions[0].zone).toBe("yield");
+  });
+
+  it("оракул не ответил — стоимость неизвестна, а не ноль, и позиция не теряется", () => {
+    const r = buildPositions({
+      rows: [pendleRow("pt", { rateToAsset: null })],
+      pricesUsd: PENDLE_PRICES,
+    });
+    expect(r.positions).toHaveLength(1);
+    expect(r.positions[0].valueUsd).toBeNull();
+    expect(r.positions[0].components).toEqual([]);
+    expect(r.summary.unpricedCount).toBe(1);
+    expect(r.summary.positionsUsd).toBeNull();
+  });
+
+  it("нет цены актива — стоимость неизвестна; цену по похожему тикеру не берем", () => {
+    const r = buildPositions({
+      rows: [pendleRow("pt", { assetSymbol: "USDx", assetCoingeckoId: null })],
+      pricesUsd: PENDLE_PRICES,
+    });
+    expect(r.positions[0].valueUsd).toBeNull();
+    // Количество в активе при этом известно — его и показываем
+    expect(r.positions[0].pendle?.rateToAsset).toBe(0.995);
+  });
+
+  it("погашенный YT стоит ноль — это ответ, а не «нет данных»", () => {
+    const r = buildPositions({
+      rows: [pendleRow("yt", { tokenType: "yt", rateToAsset: 0 })],
+      pricesUsd: PENDLE_PRICES,
+    });
+    expect(r.positions[0].valueUsd).toBe(0);
+  });
+
+  it("у не-Pendle позиций блока pendle нет", () => {
+    const r = buildPositions({
+      rows: [fluidRow("a", "1", "usd-coin"), gmRow("g", 100), lpRow("42")],
+      pricesUsd: PRICES,
+    });
+    for (const p of r.positions) expect(p.pendle).toBeNull();
+  });
+
+  it("positionPriceIds просит цену актива Pendle", () => {
+    const ids = positionPriceIds([
+      pendleRow("pt"),
+      pendleRow("lp", { tokenType: "lp", assetCoingeckoId: "staked-ether" }),
+      pendleRow("x", { assetCoingeckoId: null }),
+    ]);
+    expect(ids.sort()).toEqual(["ethena-usde", "staked-ether"]);
+  });
+});

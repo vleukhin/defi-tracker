@@ -17,6 +17,7 @@ export const PROTOCOL_BRANDS: Record<string, ProtocolBrand> = {
   aave: { abbr: "AAV", color: "var(--protocol-aave)", label: "Aave v3" },
   fluid: { abbr: "FLD", color: "var(--protocol-fluid)", label: "Fluid" },
   gmx: { abbr: "GMX", color: "var(--protocol-gmx)", label: "GMX" },
+  pendle: { abbr: "PDL", color: "var(--protocol-pendle)", label: "Pendle" },
   manual: { abbr: "MAN", color: "var(--protocol-manual)", label: "Вручную" },
 };
 

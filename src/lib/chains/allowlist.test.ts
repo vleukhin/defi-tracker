@@ -87,4 +87,16 @@ describe("TOKEN_ALLOWLIST: нет пересечений с залогом, до
       }
     }
   });
+
+  it("нет PT, YT и LP Pendle — их читает контур Pendle", () => {
+    for (const chain of CHAIN_IDS) {
+      for (const t of TOKEN_ALLOWLIST[chain]) {
+        // PT-sUSDE-26NOV2026, YT-…, PLP-… и старое PENDLE-LPT. Голый PENDLE —
+        // governance-токен, обычный свободный баланс
+        expect(t.symbol, `${chain}:${t.symbol}`).not.toMatch(
+          /^(PT|YT|PLP)-|^PENDLE-LPT$/,
+        );
+      }
+    }
+  });
 });
