@@ -23,6 +23,11 @@ import {
   readWalletGmx,
 } from "@/lib/chains/gmx";
 import {
+  persistPendlePositions,
+  persistPendleStatus,
+  readWalletPendle,
+} from "@/lib/chains/pendle";
+import {
   persistUniswapV3Positions,
   persistUniswapV3Status,
   readWalletUniswapV3,
@@ -550,6 +555,13 @@ export async function refreshUserWallets(
         await persistUniswapV3Status(admin, wallet.id as string, lpStatuses);
       } catch (err) {
         console.warn(`[snapshot] LP-позиции ${wallet.address}:`, err);
+      }
+      try {
+        const pendleStatuses = await readWalletPendle(wallet.address as Address);
+        await persistPendlePositions(admin, wallet.id as string, pendleStatuses);
+        await persistPendleStatus(admin, wallet.id as string, pendleStatuses);
+      } catch (err) {
+        console.warn(`[snapshot] Pendle ${wallet.address}:`, err);
       }
       // Свободные средства кошелька (Фаза 7). Последними: контуры идут
       // последовательно, а баланс на прошлую дату задним числом уже

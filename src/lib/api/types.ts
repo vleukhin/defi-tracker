@@ -623,7 +623,7 @@ export interface DebtResponseDto {
 
 // --- Фаза 5: размещение заемных средств ---
 
-export type PositionProtocol = "fluid" | "gmx_v2" | "uni_v3";
+export type PositionProtocol = "fluid" | "gmx_v2" | "uni_v3" | "pendle";
 
 /**
  * Зоны стратегии Capital Growth (docs/07-strategia-capital-growth.md).
@@ -733,10 +733,43 @@ export interface PositionDto {
   supplyRatePercent: number | null;
   /** Награды сверх базовой ставки, % годовых (APR); null = неизвестны. */
   rewardsRatePercent: number | null;
+  /** Токен Pendle и его погашение; null — позиция не Pendle. */
+  pendle: PendleDetailsDto | null;
   walletId: string;
   walletLabel: string | null;
   /** Момент чтения: стоимость позиции — на ЭТУ дату, не на момент показа. */
   updatedAt: string;
+}
+
+/**
+ * Позиция Pendle: что за токен и когда он погашается.
+ *
+ * Отдельным объектом, как range у CLMM: у остальных протоколов этих полей
+ * нет вовсе, и четыре null на каждой позиции читались бы как «не прочитано».
+ *
+ * Implied APY НЕ кладется в supplyRatePercent намеренно: та ставка
+ * сравнивается со ставкой займа (правило «депозит выше займа», docs/07 §3),
+ * а implied APY — текущая доходность рынка для НОВОГО покупателя, не то,
+ * что зафиксировано в купленном PT.
+ */
+export interface PendleDetailsDto {
+  /** pt — principal, yt — доход, lp — ликвидность рынка. */
+  tokenType: "pt" | "yt" | "lp";
+  /** Имя базового инструмента рынка («sUSDe»). */
+  marketName: string;
+  /** Дата погашения, ISO. */
+  expiry: string;
+  /** В чем выражен курс токена (USDe, USDC, stETH); null = SY не прочитан. */
+  assetSymbol: string | null;
+  /**
+   * Сколько актива стоит один токен (TWAP 15 минут). У PT к погашению
+   * сходится к 1, у YT — к 0. null = оракул не ответил.
+   */
+  rateToAsset: number | null;
+  /** Текущая подразумеваемая доходность PT на рынке, % годовых. */
+  impliedApyPercent: number | null;
+  /** Доходность базового актива, % годовых. */
+  underlyingApyPercent: number | null;
 }
 
 /**

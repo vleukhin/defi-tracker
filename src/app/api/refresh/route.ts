@@ -30,6 +30,11 @@ import {
   readWalletUniswapV3,
 } from "@/lib/chains/uniswap-v3";
 import {
+  persistPendlePositions,
+  persistPendleStatus,
+  readWalletPendle,
+} from "@/lib/chains/pendle";
+import {
   persistBalanceStatus,
   persistBalances,
   readWalletBalances,
@@ -44,7 +49,8 @@ import { symbolCategory } from "@/lib/symbol-category";
  * 3) второй multicall на сеть (Фаза 4): Pool.getUserAccountData (Долг и HF,
  *    оракул Aave) + vToken.balanceOf по всем резервам (разбивка долга);
  * 4) размещение заемных средств (Фаза 5): депозиты Fluid (один вызов
- *    резолвера на сеть), GM-пулы GMX (Arbitrum) и LP-позиции Uniswap v3;
+ *    резолвера на сеть), GM-пулы GMX (Arbitrum), LP-позиции Uniswap v3
+ *    и PT/YT/LP Pendle (справочник рынков из API Pendle + multicall);
  * 5) свободные средства кошелька (Фаза 7): нативная монета + ERC-20
  *    по allowlist, один multicall на сеть;
  * 6) цены категорий, залоговых, долговых токенов и компонентов позиций —
@@ -160,6 +166,21 @@ export async function POST(request: NextRequest) {
         }
       } catch (err) {
         console.warn(`[refresh] LP-позиции кошелька ${wallet.id} не прочитаны:`, err);
+      }
+
+      // Pendle: свой контур по той же причине — справочник рынков живет
+      // во внешнем API, и его отказ не должен уносить Fluid, GM и LP
+      try {
+        const pendleStatuses = await readWalletPendle(wallet.address as Address);
+        await persistPendlePositions(admin, wallet.id, pendleStatuses);
+        await persistPendleStatus(admin, wallet.id, pendleStatuses);
+        for (const s of pendleStatuses) {
+          for (const p of s.positions) {
+            if (p.assetCoingeckoId) collateralIds.add(p.assetCoingeckoId);
+          }
+        }
+      } catch (err) {
+        console.warn(`[refresh] позиции Pendle кошелька ${wallet.id} не прочитаны:`, err);
       }
 
       // Свободные средства кошелька (Фаза 7): нативная монета + ERC-20

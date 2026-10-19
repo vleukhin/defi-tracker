@@ -68,6 +68,7 @@
   --protocol-aave: #b6509e;
   --protocol-fluid: #3ba1ff;
   --protocol-gmx: #3d8ff5;
+  --protocol-pendle: #1bb5a5;
   --protocol-manual: #98a2af;
 
   --shadow-pop: 0 14px 38px rgb(0 0 0 / 0.6);
@@ -121,6 +122,7 @@
   --protocol-aave: #94418a;
   --protocol-fluid: #147abf;
   --protocol-gmx: #256fc2;
+  --protocol-pendle: #0f8a7e;
   --protocol-manual: #6b717b;
 
   --shadow-pop: 0 12px 30px rgb(20 22 26 / 0.14);
@@ -237,6 +239,7 @@
   --color-protocol-aave: var(--protocol-aave);
   --color-protocol-fluid: var(--protocol-fluid);
   --color-protocol-gmx: var(--protocol-gmx);
+  --color-protocol-pendle: var(--protocol-pendle);
   --color-protocol-manual: var(--protocol-manual);
 
   /* семантические имена shadcn */

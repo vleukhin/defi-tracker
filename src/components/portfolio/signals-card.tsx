@@ -449,6 +449,8 @@ function signalCta(kind: SignalKind): string {
     "clmm-ready": "Открыть позицию",
     "clmm-waiting": "Открыть позицию",
     "clmm-unknown-since": "Проверить таймер",
+    "pendle-maturing": "Открыть позицию",
+    "pendle-matured": "Открыть позицию",
     "ltv-off-target": "Открыть LTV",
     "rate-below-borrow": "Открыть ставку",
     "gm-split": "Открыть сплит",

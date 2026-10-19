@@ -21,6 +21,7 @@ import { chainLabel, dcPp, dcRate, dcUsd, tablePct } from "@/lib/format";
 import { gmLevels } from "@/lib/positions/gm-levels";
 import { GM_SHARE_TOLERANCE_PP, gmShare } from "@/lib/positions/gm-split";
 import { exitSide } from "@/lib/positions/lp-range";
+import { maturityDecision } from "@/lib/positions/maturity";
 import { RANGE_WAIT_HOURS, rangeDecision } from "@/lib/positions/range-timer";
 import { positionSpread } from "@/lib/positions/rates";
 
@@ -57,7 +58,7 @@ export type SignalSeverity =
   | "liquidation"
   /** Уровень падения или роста GM пройден (§5, §6). */
   | "level"
-  /** Правило 48 часов по CLMM (§7). */
+  /** Правило 48 часов по CLMM (§7) и погашение Pendle. */
   | "timer"
   /** Плечо и ставки — правятся при следующей операции. */
   | "leverage"
@@ -84,6 +85,8 @@ export type SignalKind =
   | "clmm-ready"
   | "clmm-waiting"
   | "clmm-unknown-since"
+  | "pendle-maturing"
+  | "pendle-matured"
   | "ltv-off-target"
   | "rate-below-borrow"
   | "gm-split"
@@ -466,6 +469,7 @@ function positionSignals(input: SignalsInput, nowMs: number): SignalDraft[] {
       out.push(...gmSignals(position, input.actedGmLevels?.get(position.zoneKey)));
     }
     if (position.protocol === "uni_v3") out.push(...clmmSignals(position, nowMs));
+    if (position.protocol === "pendle") out.push(...pendleSignals(position, nowMs));
   }
   return out;
 }
@@ -600,6 +604,66 @@ function clmmSignals(position: PositionDto, nowMs: number): SignalDraft[] {
           : side === "up"
             ? "Позиция целиком в стейблах — по стратегии диапазон перезаливают."
             : "По стратегии позицию на этом сроке закрывают.",
+      hint: null,
+      target: "zones",
+    },
+  ];
+}
+
+/**
+ * Погашение Pendle. Отметки «выполнено» у сигнала нет и не нужно: забрал
+ * токен — баланс обнулился, позиция исчезла из чтения, и сигнал погас сам.
+ */
+function pendleSignals(position: PositionDto, nowMs: number): SignalDraft[] {
+  const pendle = position.pendle;
+  if (pendle === null) return [];
+  const decision = maturityDecision(pendle.expiry, nowMs);
+  if (decision === null) return [];
+
+  const name = position.title;
+  const asset = pendle.assetSymbol ?? "базовый актив";
+
+  if (decision.matured) {
+    const since =
+      decision.daysSince === 0
+        ? "сегодня"
+        : `${countLabel(decision.daysSince, "день", "дня", "дней")} назад`;
+    return [
+      {
+        key: `pendle-matured:${position.id}`,
+        kind: "pendle-matured",
+        severity: "timer",
+        // Погашенное стоит выше любого приближающегося: деньги уже лежат
+        // без дела, а там у срока еще есть запас
+        weight: 1000 + decision.daysSince,
+        tone: "warn",
+        chip: "погашено",
+        title: `${name} погашен ${since}`,
+        detail:
+          pendle.tokenType === "pt"
+            ? `PT обменивается на ${asset} 1:1 — по стратегии решить, в какую зону идут средства.`
+            : pendle.tokenType === "yt"
+              ? "YT больше не начисляет доход — забрать начисленное."
+              : "Половина ликвидности — погашенный PT: вывести и забрать актив.",
+        hint: "После погашения курс оракула фиксирован: PT ровно 1:1 к активу, YT — ноль. Стоимость позиции дальше двигается только с ценой самого актива.",
+        target: "zones",
+      },
+    ];
+  }
+
+  if (!decision.soon) return [];
+
+  return [
+    {
+      key: `pendle-maturing:${position.id}`,
+      kind: "pendle-maturing",
+      severity: "timer",
+      // Ближе срок — выше в ленте
+      weight: -decision.daysLeft,
+      tone: "neutral",
+      chip: `${countLabel(decision.daysLeft, "день", "дня", "дней")}`,
+      title: `${name}: до погашения ${countLabel(decision.daysLeft, "день", "дня", "дней")}`,
+      detail: `После погашения средства в ${asset} перестают работать — решить заранее, куда они пойдут.`,
       hint: null,
       target: "zones",
     },

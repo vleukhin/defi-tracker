@@ -60,9 +60,28 @@ export function defaultZoneForCategory(
 /**
  * Зона позиции по умолчанию — Yield: по стратегии читаемые позиции
  * открываются на заемные средства и служат генерации дохода. Стейблкоин-
- * стратегии Stability (Pendle PT, пулы USDC/USDT) размечаются вручную.
+ * пулы USDC/USDT, которые стратегия относит к Stability, по чтению от пулов
+ * Yield не отличить — они размечаются вручную.
  */
 export const DEFAULT_POSITION_ZONE: StrategyZone = "yield";
+
+/**
+ * Зона позиции Pendle без разметки.
+ *
+ * PT — единственный инструмент, у которого зона читается из самого токена:
+ * стратегия прямо относит покупку principal-токенов к Stability (docs/07
+ * §3), а фиксированная доходность с погашением 1:1 в актив — это ровно
+ * задача зоны, страховать, а не зарабатывать на движении. YT и LP —
+ * ставка на доходность и ликвидность рынка, это Yield.
+ *
+ * Разметка пользователя по-прежнему побеждает: PT, купленный на заемные
+ * ради спреда к ставке займа, — уже Yield, и сказать это может только он.
+ */
+export function defaultZoneForPendle(
+  tokenType: "pt" | "yt" | "lp",
+): StrategyZone {
+  return tokenType === "pt" ? "stability" : DEFAULT_POSITION_ZONE;
+}
 
 export interface CollateralAtom {
   category: PortfolioCategory;

@@ -6,9 +6,10 @@ import type {
   PositionsSummaryDto,
   StrategyZone,
 } from "@/lib/api/types";
+import { tableDate } from "@/lib/format";
 import { buildLpRange } from "./lp-range";
 import { POSITION_SOURCES, PROTOCOL_LABELS } from "./sources";
-import { DEFAULT_POSITION_ZONE } from "./zones";
+import { DEFAULT_POSITION_ZONE, defaultZoneForPendle } from "./zones";
 
 /**
  * Сборка размещенных позиций (Фаза 5) — чистая функция без I/O.
@@ -103,7 +104,22 @@ interface LpToken {
   feesQuantity: number | null;
 }
 
-type PositionPayload = FluidPayload | GmPayload | UniV3Payload;
+/** Зеркало PendlePositionPayload читателя (chains/pendle.ts). */
+interface PendlePayload {
+  kind: "pendle";
+  tokenType: "pt" | "yt" | "lp";
+  token: string;
+  market: string;
+  marketName: string;
+  expiry: string;
+  assetSymbol: string | null;
+  assetCoingeckoId: string | null;
+  rateToAsset: number | null;
+  impliedApyPercent: number | null;
+  underlyingApyPercent: number | null;
+}
+
+type PositionPayload = FluidPayload | GmPayload | UniV3Payload | PendlePayload;
 
 export interface PositionRowInput {
   id: string;
@@ -233,12 +249,17 @@ export interface BuildPositionsResult {
 }
 
 const isProtocol = (p: string): p is PositionProtocol =>
-  p === "fluid" || p === "gmx_v2" || p === "uni_v3";
+  (POSITION_SOURCES as readonly string[]).includes(p);
 
 function payloadOf(value: unknown): PositionPayload | null {
   if (value === null || typeof value !== "object") return null;
   const kind = (value as { kind?: unknown }).kind;
-  if (kind === "fluid_supply" || kind === "gmx_gm" || kind === "univ3_lp") {
+  if (
+    kind === "fluid_supply" ||
+    kind === "gmx_gm" ||
+    kind === "univ3_lp" ||
+    kind === "pendle"
+  ) {
     return value as PositionPayload;
   }
   return null;
@@ -304,6 +325,7 @@ function buildFluid(
     // процентом, а не переоценкой, и его сравнивают со ставкой займа
     supplyRatePercent: payload.supplyRatePercent ?? null,
     rewardsRatePercent: payload.rewardsRatePercent ?? null,
+    pendle: null,
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -349,6 +371,7 @@ function buildGm(
     // Пул не начисляет процент: доход GM считается переоценкой стоимости
     supplyRatePercent: null,
     rewardsRatePercent: null,
+    pendle: null,
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -439,6 +462,89 @@ function buildLp(
     // У LP дохода-процента нет: он складывается из комиссий и переоценки
     supplyRatePercent: null,
     rewardsRatePercent: null,
+    pendle: null,
+    walletId: row.walletId,
+    walletLabel: row.walletLabel,
+    updatedAt: row.updatedAt,
+  };
+}
+
+const PENDLE_TOKEN_LABEL: Record<PendlePayload["tokenType"], string> = {
+  pt: "PT",
+  yt: "YT",
+  lp: "LP",
+};
+
+function buildPendle(
+  row: PositionRowInput,
+  payload: PendlePayload,
+  prices: Map<string, number>,
+  mark: PositionMark | undefined,
+): PositionDto {
+  const quantity = row.quantity === null ? null : Number(row.quantity);
+  const price =
+    payload.assetCoingeckoId !== null
+      ? (prices.get(payload.assetCoingeckoId) ?? null)
+      : null;
+
+  // Позиция в единицах базового актива: курс оракула на момент чтения.
+  // Оценка — по СВЕЖЕЙ цене актива: курс к активу меняется медленно
+  // (к погашению PT сходится к 1), а цена актива — с рынком
+  const assetQuantity =
+    quantity !== null && payload.rateToAsset !== null
+      ? quantity * payload.rateToAsset
+      : null;
+  const valueUsd =
+    assetQuantity !== null && price !== null ? assetQuantity * price : null;
+
+  const kind = PENDLE_TOKEN_LABEL[payload.tokenType];
+  return {
+    id: row.id,
+    protocol: "pendle",
+    protocolLabel: PROTOCOL_LABELS.pendle,
+    chain: row.chain,
+    // По стратегии PT — инструмент Stability, YT и LP — Yield (docs/07 §3)
+    zone: mark?.zone ?? defaultZoneForPendle(payload.tokenType),
+    zoneKey: zoneKeyOf(row),
+    ...splitPosition(valueUsd, mark),
+    entryPriceUsd: mark?.entryPriceUsd ?? null,
+    entryPriceSetAt: mark?.entryPriceSetAt ?? null,
+    title: `${kind} ${payload.marketName}`,
+    subtitle: `Погашение ${tableDate(payload.expiry)}`,
+    quantity: row.quantity,
+    valueUsd,
+    // Составляющая — актив, в который позиция превратится: для PT это
+    // и есть ответ на вопрос «что я получу к погашению»
+    components:
+      payload.assetSymbol !== null && assetQuantity !== null
+        ? [
+            {
+              symbol: payload.assetSymbol,
+              quantity: assetQuantity,
+              valueUsd,
+              side: null,
+            },
+          ]
+        : [],
+    feesUsd: null,
+    fees24hUsd: null,
+    fees24hReason: null,
+    inRange: null,
+    outOfRangeSince: null,
+    range: null,
+    // implied APY — доходность рынка для нового покупателя, а не ставка
+    // этой позиции; в сравнение со ставкой займа ее не подаем
+    supplyRatePercent: null,
+    rewardsRatePercent: null,
+    pendle: {
+      tokenType: payload.tokenType,
+      marketName: payload.marketName,
+      expiry: payload.expiry,
+      assetSymbol: payload.assetSymbol,
+      rateToAsset: payload.rateToAsset,
+      impliedApyPercent: payload.impliedApyPercent,
+      underlyingApyPercent: payload.underlyingApyPercent,
+    },
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -462,6 +568,8 @@ export function positionPriceIds(rows: PositionRowInput[]): string[] {
       for (const t of [payload.token0, payload.token1]) {
         if (t.coingeckoId) ids.push(t.coingeckoId);
       }
+    } else if (payload.kind === "pendle") {
+      if (payload.assetCoingeckoId) ids.push(payload.assetCoingeckoId);
     }
   }
   return [...new Set(ids)];
@@ -485,7 +593,9 @@ export function buildPositions(
         ? buildFluid(row, payload, input.pricesUsd, mark)
         : payload.kind === "gmx_gm"
           ? buildGm(row, payload, mark)
-          : buildLp(row, payload, input.pricesUsd, mark);
+          : payload.kind === "univ3_lp"
+            ? buildLp(row, payload, input.pricesUsd, mark)
+            : buildPendle(row, payload, input.pricesUsd, mark);
 
     positions.push(dto);
     values.push(dto.valueUsd);
