@@ -1,6 +1,7 @@
 import "server-only";
 import { erc20Abi, formatUnits, type Address } from "viem";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { closeVanishedPositions } from "./closures";
 import { CHAIN_IDS, getChainClients, type ChainId } from "./config";
 import { blockAtTimestamp } from "./blocks";
 import {
@@ -993,6 +994,7 @@ export function nextOutOfRangeSince(
  */
 export async function persistUniswapV3Positions(
   admin: SupabaseClient,
+  userId: string,
   walletId: string,
   statuses: UniV3ChainStatus[],
   valueUsdByTokenId: Map<string, number> = new Map(),
@@ -1059,20 +1061,19 @@ export async function persistUniswapV3Positions(
     if (error) throw new Error(`protocol_positions (univ3) upsert: ${error.message}`);
   }
 
+  // Перезаливка диапазона — это закрытие: старый NFT сжигается, и новый
+  // tokenId приходит отдельной позицией. Запись в архив тут не лишняя,
+  // а единственный след прежнего цикла (docs/07 §5)
   for (const status of statuses) {
     if (!status.ok) continue;
-    const alive = status.positions.map((p) => p.tokenId);
-    let query = admin
-      .from("protocol_positions")
-      .delete()
-      .eq("wallet_id", walletId)
-      .eq("protocol", UNIV3_SOURCE)
-      .eq("chain", status.chain);
-    if (alive.length > 0) {
-      query = query.not("external_id", "in", `(${alive.join(",")})`);
-    }
-    const { error } = await query;
-    if (error) throw new Error(`protocol_positions (univ3) cleanup: ${error.message}`);
+    await closeVanishedPositions(admin, {
+      userId,
+      walletId,
+      protocol: UNIV3_SOURCE,
+      chain: status.chain,
+      aliveExternalIds: status.positions.map((p) => p.tokenId),
+      closedAt: nowIso,
+    });
   }
 }
 

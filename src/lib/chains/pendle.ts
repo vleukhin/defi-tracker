@@ -1,6 +1,7 @@
 import "server-only";
 import { erc20Abi, formatUnits, type Address } from "viem";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { closeVanishedPositions } from "./closures";
 import { CHAIN_IDS, getChainClients, type ChainId } from "./config";
 import { getPendleMarkets, type PendleMarket } from "@/lib/prices/pendle-api";
 import { coingeckoIdForSymbol } from "@/lib/prices/symbol-coingecko";
@@ -413,12 +414,14 @@ export function pendleRowOf(walletId: string, p: PendlePositionReading, nowIso: 
 }
 
 /**
- * Запись позиций: ненулевые — upsert, исчезнувшие — delete только на
- * сетях, которые ответили. Неоцененная позиция записывается как есть:
- * она существует, и удалить ее значило бы показать закрытие.
+ * Запись позиций: ненулевые — upsert, исчезнувшие уходят в архив закрытых
+ * и удаляются — только на сетях, которые ответили. Неоцененная позиция
+ * записывается как есть: она существует, и удалить ее значило бы показать
+ * закрытие.
  */
 export async function persistPendlePositions(
   admin: SupabaseClient,
+  userId: string,
   walletId: string,
   statuses: PendleChainStatus[],
 ): Promise<void> {
@@ -436,18 +439,14 @@ export async function persistPendlePositions(
 
   for (const status of statuses) {
     if (!status.ok) continue;
-    const alive = status.positions.map((p) => p.token);
-    let query = admin
-      .from("protocol_positions")
-      .delete()
-      .eq("wallet_id", walletId)
-      .eq("protocol", PENDLE_SOURCE)
-      .eq("chain", status.chain);
-    if (alive.length > 0) {
-      query = query.not("external_id", "in", `(${alive.join(",")})`);
-    }
-    const { error } = await query;
-    if (error) throw new Error(`protocol_positions (pendle) cleanup: ${error.message}`);
+    await closeVanishedPositions(admin, {
+      userId,
+      walletId,
+      protocol: PENDLE_SOURCE,
+      chain: status.chain,
+      aliveExternalIds: status.positions.map((p) => p.token),
+      closedAt: nowIso,
+    });
   }
 }
 

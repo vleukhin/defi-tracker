@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { DcCard, EmptyState } from "@/components/dc/card";
 import { HelpTip } from "@/components/dc/help-tip";
 import { MetaDot, PageHeader } from "@/components/dc/page-header";
+import { Segmented } from "@/components/dc/segmented";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type {
@@ -17,6 +18,7 @@ import type {
 import { NBSP, tableDate, tableTimeUtc } from "@/lib/format";
 import { ApiError, apiFetch, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
+import { ClosedPositions } from "./closed-positions";
 import { CompositionChart } from "./composition-chart";
 import { PeriodSwitcher, periodFull } from "./period-switcher";
 import { ProfitChart } from "./profit-chart";
@@ -31,12 +33,48 @@ import { ValueChart } from "./value-chart";
  *
  * Три сценария рисуются намеренно по-разному: истории нет вовсе, история
  * из одной точки (линия по одной точке — не график, а обман) и полная серия.
+ *
+ * Второй режим экрана — «Закрытые позиции»: архив позиций, которых больше
+ * нет на цепочке. Он стоит здесь, а не восьмым пунктом навигации: пунктов
+ * семь, и именно семь продиктовали брейкпоинт xl (app-nav.tsx). По существу
+ * это тот же вопрос «что было раньше» с другой стороны — динамика отвечает
+ * суммами по дням, архив отвечает позициями.
+ *
+ * Переключатель держит состояние компонента, а не адрес. В portfolio-tabs.tsx
+ * разрез уехал в history.replaceState, потому что `/` рендерится статически
+ * и router.replace залипал; здесь period с самого начала живёт в useState,
+ * и ссылка, восстанавливающая режим, но не период, честнее не станет —
+ * она станет наполовину верной.
  */
 
 /** Ежедневный серверный снепшот (S3.1) — та же формулировка на всех экранах. */
 const CRON_NOTE = "Снепшот снимается автоматически раз в сутки, в 03:00 UTC.";
 
+/** Что показывает экран: динамику портфеля или архив закрытых позиций. */
+type HistoryMode = "dynamics" | "closed";
+
+const MODE_OPTIONS: { value: HistoryMode; label: React.ReactNode }[] = [
+  { value: "dynamics", label: "Динамика" },
+  {
+    value: "closed",
+    // На узких ширинах подпись сокращается: три сегмента рядом с периодом
+    // и кнопкой в строку не встают, а «Закрытые» двусмысленным не выглядит
+    label: (
+      <>
+        <span className="sm:hidden">Закрытые</span>
+        <span className="hidden sm:inline">Закрытые позиции</span>
+      </>
+    ),
+  },
+];
+
+const CLOSED_NOTE =
+  "Запись создаётся автоматически, когда обновление перестаёт видеть позицию " +
+  "на ответившей сети. Стоимость в ней — последняя прочитанная, а не выручка " +
+  "от выхода: сделок выхода приложение не читает.";
+
 export function HistoryScreen() {
+  const [mode, setMode] = useState<HistoryMode>("dynamics");
   const [period, setPeriod] = useState<SnapshotPeriod>("30d");
   const { data, error, loading, refetch } = useApi<SnapshotsResponseDto>(
     `/api/snapshots?period=${period}`,
@@ -92,7 +130,12 @@ export function HistoryScreen() {
         <PageHeader
           title="История"
           meta={
-            data === null ? (
+            mode === "closed" ? (
+              <>
+                <span>позиции, которых больше нет на цепочке</span>
+                <HelpTip>{CLOSED_NOTE}</HelpTip>
+              </>
+            ) : data === null ? (
               <span className="inline-block h-3.5 w-48 rounded-pill bg-chip" />
             ) : (
               <>
@@ -108,19 +151,45 @@ export function HistoryScreen() {
           }
           action={
             <div className="flex flex-wrap items-center gap-2.5">
+              {/* Переключатель режима стоит первым и не исчезает: он отвечает
+                  на вопрос «где я», и его смещение читалось бы как подмена
+                  контрола */}
+              <Segmented
+                options={MODE_OPTIONS}
+                value={mode}
+                onChange={setMode}
+                ariaLabel="Что показывать в истории"
+              />
+              {/* Период фильтрует оба режима: в архиве — по дате закрытия.
+                  Один период в двух проекциях — ровно то, для чего стоит
+                  сегментированный переключатель */}
               <PeriodSwitcher period={period} onChange={setPeriod} />
-              {/* Единственная primary-кнопка экрана — создающее действие */}
-              <Button
-                onClick={() => void takeSnapshot()}
-                disabled={taking}
-                title="Снять снепшот портфеля прямо сейчас"
-              >
-                {taking ? "Снимаем…" : "Снепшот сейчас"}
-              </Button>
+              {/* Единственная primary-кнопка экрана — создающее действие.
+                  К архиву она отношения не имеет и уезжает вместе со своим
+                  режимом */}
+              {mode === "dynamics" && (
+                <Button
+                  onClick={() => void takeSnapshot()}
+                  disabled={taking}
+                  title="Снять снепшот портфеля прямо сейчас"
+                >
+                  {taking ? "Снимаем…" : "Снепшот сейчас"}
+                </Button>
+              )}
             </div>
           }
         />
 
+        {/* Полное размонтирование, а не hidden: recharts в скрытом контейнере
+            считает нулевую ширину и восстанавливается только по ресайзу */}
+        {mode === "closed" ? (
+          <ClosedPositions
+            period={period}
+            periodLabel={periodLabel}
+            onShowAll={() => setPeriod("all")}
+          />
+        ) : (
+          <>
         {loading && data === null && <HistorySkeleton />}
 
         {error !== null && data === null && (
@@ -177,6 +246,8 @@ export function HistoryScreen() {
             <CompositionChart snapshots={snapshots} periodLabel={periodLabel} />
             {/* key по периоду: смена периода возвращает список на первую страницу */}
             <SnapshotsList key={period} snapshots={snapshots} />
+          </>
+        )}
           </>
         )}
       </div>

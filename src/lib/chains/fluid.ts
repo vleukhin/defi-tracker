@@ -1,6 +1,7 @@
 import "server-only";
 import { formatUnits, type Address } from "viem";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { closeVanishedPositions } from "./closures";
 import { getChainClients, type ChainId } from "./config";
 import { coingeckoIdForSymbol } from "@/lib/prices/symbol-coingecko";
 import { logApiCall } from "@/lib/metrics";
@@ -321,13 +322,15 @@ export interface FluidPositionPayload {
 /**
  * Запись депозитов в protocol_positions (та же гигиена, что у Aave):
  * external_id = адрес fToken в нижнем регистре; ненулевые — upsert,
- * исчезнувшие — delete; упавшая сеть кэш НЕ трогает.
+ * исчезнувшие уходят в архив закрытых и удаляются; упавшая сеть кэш
+ * НЕ трогает.
  *
  * value_usd проставляется вызывающим (ему доступны цены), здесь пишется
  * только количество: цена — не забота читателя цепочки.
  */
 export async function persistFluidPositions(
   admin: SupabaseClient,
+  userId: string,
   walletId: string,
   statuses: FluidChainStatus[],
   valueUsdByFToken: Map<string, number> = new Map(),
@@ -379,22 +382,19 @@ export async function persistFluidPositions(
     if (error) throw new Error(`protocol_positions (fluid) upsert: ${error.message}`);
   }
 
-  // Закрытые депозиты: удаляем только на сетях, которые ОТВЕТИЛИ, и только
-  // те строки, которых в ответе нет. Упавшая сеть сохраняет прежнее состояние.
+  // Закрытые депозиты: уходят в архив и удаляются — только на сетях,
+  // которые ОТВЕТИЛИ, и только те строки, которых в ответе нет. Упавшая
+  // сеть сохраняет прежнее состояние: отказ чтения закрытием не считается.
   for (const status of statuses) {
     if (!status.ok) continue;
-    const alive = status.positions.map((p) => p.fToken.toLowerCase());
-    let query = admin
-      .from("protocol_positions")
-      .delete()
-      .eq("wallet_id", walletId)
-      .eq("protocol", FLUID_SOURCE)
-      .eq("chain", status.chain);
-    if (alive.length > 0) {
-      query = query.not("external_id", "in", `(${alive.join(",")})`);
-    }
-    const { error } = await query;
-    if (error) throw new Error(`protocol_positions (fluid) cleanup: ${error.message}`);
+    await closeVanishedPositions(admin, {
+      userId,
+      walletId,
+      protocol: FLUID_SOURCE,
+      chain: status.chain,
+      aliveExternalIds: status.positions.map((p) => p.fToken.toLowerCase()),
+      closedAt: nowIso,
+    });
   }
 }
 

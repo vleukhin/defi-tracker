@@ -7,6 +7,7 @@ import {
   type Address,
 } from "viem";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { closeVanishedPositions } from "./closures";
 import { getChainClients, type ChainId } from "./config";
 import {
   getGmxApiData,
@@ -416,10 +417,12 @@ export interface GmPositionPayload {
 
 /**
  * Запись GM-позиций. Как и везде: упавшее чтение кэш не трогает, исчезнувшие
- * позиции удаляются только после успешного ответа сети.
+ * позиции уходят в архив закрытых и удаляются только после успешного ответа
+ * сети.
  */
 export async function persistGmxPositions(
   admin: SupabaseClient,
+  userId: string,
   walletId: string,
   status: GmxChainStatus,
 ): Promise<void> {
@@ -457,17 +460,14 @@ export async function persistGmxPositions(
     ...status.positions.map((p) => p.marketToken.toLowerCase()),
     ...status.unpriced.map((u) => u.marketToken),
   ];
-  let query = admin
-    .from("protocol_positions")
-    .delete()
-    .eq("wallet_id", walletId)
-    .eq("protocol", GMX_SOURCE)
-    .eq("chain", status.chain);
-  if (keep.length > 0) {
-    query = query.not("external_id", "in", `(${keep.join(",")})`);
-  }
-  const { error } = await query;
-  if (error) throw new Error(`protocol_positions (gmx) cleanup: ${error.message}`);
+  await closeVanishedPositions(admin, {
+    userId,
+    walletId,
+    protocol: GMX_SOURCE,
+    chain: status.chain,
+    aliveExternalIds: keep,
+    closedAt: nowIso,
+  });
 }
 
 /** Статус чтения GMX — отдельный источник (может упасть при живом Aave). */

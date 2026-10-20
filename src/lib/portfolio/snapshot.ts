@@ -537,28 +537,28 @@ export async function refreshUserWallets(
       // Fluid — и уж тем более не должна ронять обновление кошелька целиком.
       try {
         const fluidStatuses = await readWalletFluid(wallet.address as Address);
-        await persistFluidPositions(admin, wallet.id as string, fluidStatuses);
+        await persistFluidPositions(admin, userId, wallet.id as string, fluidStatuses);
         await persistFluidStatus(admin, wallet.id as string, fluidStatuses);
       } catch (err) {
         console.warn(`[snapshot] Fluid ${wallet.address}:`, err);
       }
       try {
         const gmxStatus = await readWalletGmx(wallet.address as Address);
-        await persistGmxPositions(admin, wallet.id as string, gmxStatus);
+        await persistGmxPositions(admin, userId, wallet.id as string, gmxStatus);
         await persistGmxStatus(admin, wallet.id as string, gmxStatus);
       } catch (err) {
         console.warn(`[snapshot] GM-пулы ${wallet.address}:`, err);
       }
       try {
         const lpStatuses = await readWalletUniswapV3(wallet.address as Address);
-        await persistUniswapV3Positions(admin, wallet.id as string, lpStatuses);
+        await persistUniswapV3Positions(admin, userId, wallet.id as string, lpStatuses);
         await persistUniswapV3Status(admin, wallet.id as string, lpStatuses);
       } catch (err) {
         console.warn(`[snapshot] LP-позиции ${wallet.address}:`, err);
       }
       try {
         const pendleStatuses = await readWalletPendle(wallet.address as Address);
-        await persistPendlePositions(admin, wallet.id as string, pendleStatuses);
+        await persistPendlePositions(admin, userId, wallet.id as string, pendleStatuses);
         await persistPendleStatus(admin, wallet.id as string, pendleStatuses);
       } catch (err) {
         console.warn(`[snapshot] Pendle ${wallet.address}:`, err);

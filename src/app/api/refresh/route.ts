@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       // поэтому у каждого свой try/catch.
       try {
         const fluidStatuses = await readWalletFluid(wallet.address as Address);
-        await persistFluidPositions(admin, wallet.id, fluidStatuses);
+        await persistFluidPositions(admin, user.id, wallet.id, fluidStatuses);
         await persistFluidStatus(admin, wallet.id, fluidStatuses);
         for (const s of fluidStatuses) {
           for (const p of s.positions) {
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const gmxStatus = await readWalletGmx(wallet.address as Address);
-        await persistGmxPositions(admin, wallet.id, gmxStatus);
+        await persistGmxPositions(admin, user.id, wallet.id, gmxStatus);
         await persistGmxStatus(admin, wallet.id, gmxStatus);
       } catch (err) {
         console.warn(`[refresh] GM-пулы кошелька ${wallet.id} не прочитаны:`, err);
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const lpStatuses = await readWalletUniswapV3(wallet.address as Address);
-        await persistUniswapV3Positions(admin, wallet.id, lpStatuses);
+        await persistUniswapV3Positions(admin, user.id, wallet.id, lpStatuses);
         await persistUniswapV3Status(admin, wallet.id, lpStatuses);
         for (const s of lpStatuses) {
           for (const p of s.positions) {
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
       // во внешнем API, и его отказ не должен уносить Fluid, GM и LP
       try {
         const pendleStatuses = await readWalletPendle(wallet.address as Address);
-        await persistPendlePositions(admin, wallet.id, pendleStatuses);
+        await persistPendlePositions(admin, user.id, wallet.id, pendleStatuses);
         await persistPendleStatus(admin, wallet.id, pendleStatuses);
         for (const s of pendleStatuses) {
           for (const p of s.positions) {
