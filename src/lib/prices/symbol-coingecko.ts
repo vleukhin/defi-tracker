@@ -66,6 +66,9 @@ const SYMBOL_TO_ID: Record<string, string> = {
   USDe: "ethena-usde",
   sUSDe: "ethena-staked-usde",
   USDtb: "ethena-usdtb",
+  // Актив рынков Pendle Saturn (PT-USDat); id сверен с контрактом
+  // 0x2323…aa71 в карточке CoinGecko
+  USDat: "saturn-dollar",
   RLUSD: "ripple-usd",
   AUSD: "agora-dollar",
   EURC: "euro-coin",
