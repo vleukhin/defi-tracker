@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { TimelineBar } from "@/components/dc/bar";
 import { Verdict } from "@/components/dc/card";
 import { Chip, StatusChip } from "@/components/dc/chip";
@@ -14,12 +15,14 @@ import {
 } from "@/lib/positions/maturity";
 import {
   CardHead,
+  MetaMono,
   MetricRow,
   ownershipDelta,
   PlainBlock,
   PositionShell,
   principalOf,
   profitDelta,
+  tokenQuantity,
   UnmarkedChip,
   VisualHead,
   VisualRow,
@@ -76,7 +79,12 @@ export function PendleCard({
             <UnmarkedChip position={position} />
           </>
         }
-        meta={[position.title, position.subtitle, chainLabel(position.chain)]}
+        meta={[
+          position.title,
+          position.subtitle,
+          heldMeta(position, tokenLabel),
+          chainLabel(position.chain),
+        ]}
         status={<MaturityStatus decision={decision} />}
         menu={<MarkPopover position={position} busy={busy} onMark={onMark} />}
       />
@@ -127,6 +135,41 @@ export function PendleCard({
 
       <Verdict>{verdictText(pendle, decision, asset)}</Verdict>
     </PositionShell>
+  );
+}
+
+/**
+ * Сколько токенов на руках и сколько это базового актива сейчас.
+ *
+ * Доллары отвечают «сколько стоит», а держат позицию Pendle ради штук:
+ * к погашению PT меняется на актив 1:1, и «сколько получу» считается
+ * от количества, а не от текущей оценки. Эквивалент — то же количество
+ * по курсу оракула на момент чтения, поэтому «≈», а не «=»: курс живой
+ * и у YT к сроку уходит в ноль.
+ *
+ * Курса нет — показываем одни штуки: выдумывать эквивалент нельзя,
+ * а количество на руках известно и без оракула.
+ */
+function heldMeta(position: PositionDto, label: string): ReactNode | null {
+  const held = position.quantity === null ? null : Number(position.quantity);
+  if (held === null || !Number.isFinite(held)) return null;
+  const asset = position.components[0] ?? null;
+  return (
+    <>
+      <span className="whitespace-nowrap">
+        <MetaMono>{tokenQuantity(held)}</MetaMono>
+        {` ${label}`}
+      </span>
+      {asset !== null && (
+        <>
+          {" ≈ "}
+          <span className="whitespace-nowrap">
+            <MetaMono>{tokenQuantity(asset.quantity)}</MetaMono>
+            {` ${asset.symbol}`}
+          </span>
+        </>
+      )}
+    </>
   );
 }
 
