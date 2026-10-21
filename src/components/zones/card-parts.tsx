@@ -5,7 +5,8 @@ import type { Segment } from "@/components/dc/bar";
 import { DcCard } from "@/components/dc/card";
 import { Chip, ZoneChip } from "@/components/dc/chip";
 import { Delta, MetricGrid } from "@/components/dc/metrics";
-import { MetaDot, ProtocolTile } from "@/components/dc/page-header";
+import { MetaDot } from "@/components/dc/page-header";
+import { ProtocolMark } from "@/components/dc/protocol-icons";
 import { protocolBrand } from "@/components/dc/protocols";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type {
@@ -74,7 +75,7 @@ export function CardHead({
   status,
   menu,
 }: {
-  /** Ключ протокола: из него берутся аббревиатура плитки и фирменный цвет. */
+  /** Ключ протокола: из него берутся знак плитки и фирменный цвет. */
   protocol: string;
   name?: string;
   zone: StrategyZone;
@@ -90,7 +91,7 @@ export function CardHead({
   const brand = protocolBrand(protocol);
   return (
     <div className="flex items-center gap-[13px] px-card pt-4 pb-3.5">
-      <ProtocolTile abbr={brand.abbr} color={brand.color} />
+      <ProtocolMark protocol={protocol} />
       <div className="flex min-w-0 flex-col gap-[3px]">
         <div className="flex flex-wrap items-center gap-x-[9px] gap-y-1">
           <span className="t-h3 truncate">{name ?? brand.label}</span>

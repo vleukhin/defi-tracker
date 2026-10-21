@@ -4,8 +4,7 @@ import { useState } from "react";
 import { DcCard, Disclaimer, EmptyState, SectionHead } from "@/components/dc/card";
 import { ZoneChip } from "@/components/dc/chip";
 import { HelpTip } from "@/components/dc/help-tip";
-import { ProtocolTile } from "@/components/dc/page-header";
-import { protocolBrand } from "@/components/dc/protocols";
+import { ProtocolMark } from "@/components/dc/protocol-icons";
 import { Dash, DcTable, Td, Th, Tr } from "@/components/dc/table";
 import { Pagination } from "@/components/pagination";
 import { Button } from "@/components/ui/button";
@@ -281,10 +280,9 @@ function HeadWithHint({
 
 /** Плитка протокола, название и подзаголовок — тот же каркас, что у живой карточки. */
 function PositionCell({ closed }: { closed: ClosedPositionDto }) {
-  const brand = protocolBrand(closed.protocol);
   return (
     <span className="flex items-center gap-2.5">
-      <ProtocolTile abbr={brand.abbr} color={brand.color} size={28} />
+      <ProtocolMark protocol={closed.protocol} size={28} />
       <span className="flex min-w-0 flex-col">
         <span className="truncate font-medium">{closed.title}</span>
         {closed.subtitle !== null && (

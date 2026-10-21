@@ -1,7 +1,7 @@
 /**
- * Плитки протоколов: аббревиатура и фирменный цвет. Логотипы в дизайне
- * не финальны — плитка рассчитана на подмену аббревиатуры реальным знаком
- * без изменения каркаса шапки карточки (README, «Fidelity»).
+ * Плитки протоколов: фирменный цвет, аббревиатура и подпись. Сам знак
+ * живёт в [`protocol-icons.tsx`](./protocol-icons.tsx) — аббревиатура
+ * осталась запасным вариантом для источника, марки которого у нас нет.
  *
  * Цвета берутся из брендов протоколов и НЕ участвуют в ролях дизайн-кода:
  * это метка источника, а не данные и не семантика.
@@ -21,18 +21,36 @@ export const PROTOCOL_BRANDS: Record<string, ProtocolBrand> = {
   manual: { abbr: "MAN", color: "var(--protocol-manual)", label: "Вручную" },
 };
 
+/**
+ * `protocol_positions.protocol` → ключ бренда. Версия протокола в строке
+ * читателя — деталь источника: Uniswap остаётся Uniswap и в v3, и в v4,
+ * а плитка у него одна.
+ */
+const PROTOCOL_ALIASES: Record<string, string> = {
+  uni_v3: "uniswap",
+  gmx_v2: "gmx",
+};
+
 const FALLBACK: ProtocolBrand = {
   abbr: "—",
   color: "var(--protocol-manual)",
   label: "Протокол",
 };
 
+/** Канонический ключ бренда; null — протокола в записи нет. */
+export function protocolKey(protocol: string | null | undefined): string | null {
+  if (!protocol) return null;
+  const key = protocol.toLowerCase();
+  return PROTOCOL_ALIASES[key] ?? key;
+}
+
 export function protocolBrand(protocol: string | null | undefined) {
-  if (!protocol) return FALLBACK;
-  return PROTOCOL_BRANDS[protocol.toLowerCase()] ?? {
+  const key = protocolKey(protocol);
+  if (key === null) return FALLBACK;
+  return PROTOCOL_BRANDS[key] ?? {
     ...FALLBACK,
-    abbr: protocol.slice(0, 3).toUpperCase(),
-    label: protocol,
+    abbr: key.slice(0, 3).toUpperCase(),
+    label: protocol as string,
   };
 }
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -63,16 +63,20 @@ export function MetaDot() {
 }
 
 /**
- * Плитка протокола 34px: моно-аббревиатура на фоне в тон бренда.
- * Реальный логотип встаёт в ту же плитку, не меняя каркас шапки.
+ * Плитка протокола 34px: знак бренда на фоне в тон бренда. Без знака
+ * в той же плитке стоит моно-аббревиатура — так помечены источники
+ * без марки (кошельки, инициалы пользователя, незнакомый протокол).
  */
 export function ProtocolTile({
   abbr,
+  icon: Icon,
   color,
   size = 34,
   className,
 }: {
   abbr: string;
+  /** Знак бренда; без него плитка показывает `abbr`. */
+  icon?: ComponentType<{ size: number }>;
   /** Фирменный цвет протокола; из него берутся фон 12% и обводка 26%. */
   color: string;
   size?: number;
@@ -94,7 +98,7 @@ export function ProtocolTile({
         color,
       }}
     >
-      {abbr}
+      {Icon ? <Icon size={Math.round(size * 0.58)} /> : abbr}
     </span>
   );
 }

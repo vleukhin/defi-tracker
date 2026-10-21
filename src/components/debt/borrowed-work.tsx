@@ -1,6 +1,6 @@
 import { DcCard, SectionHead, Verdict } from "@/components/dc/card";
 import { ProtocolTile } from "@/components/dc/page-header";
-import { protocolBrand } from "@/components/dc/protocols";
+import { ProtocolMark } from "@/components/dc/protocol-icons";
 import { Dash } from "@/components/dc/table";
 import type { PositionDto } from "@/lib/api/types";
 import { dcPp, dcRate, dcUsd } from "@/lib/format";
@@ -14,13 +14,6 @@ import { cn } from "@/lib/utils";
  * Ставка и спред считаются в `lib/positions/rates` — те же два числа
  * читает лента сигналов, и расходиться им нельзя.
  */
-
-/** protocol_positions.protocol → бренд плитки. */
-const TILE_KEY: Record<string, string> = {
-  fluid: "fluid",
-  gmx_v2: "gmx",
-  uni_v3: "uniswap",
-};
 
 export function BorrowedWork({
   positions,
@@ -66,16 +59,12 @@ export function BorrowedWork({
       ) : (
         <ul className="grid gap-px bg-line">
           {sorted.map((position) => {
-            const brand = protocolBrand(
-              TILE_KEY[position.protocol] ?? position.protocol,
-            );
             const rate = positionRate(position);
             const spread = positionSpread(position, borrowRatePercent);
             return (
               <Row
                 key={position.id}
-                abbr={brand.abbr}
-                color={brand.color}
+                mark={<ProtocolMark protocol={position.protocol} size={30} />}
                 title={`${position.protocolLabel} · ${position.title}`}
                 note={[
                   position.valueUsd === null ? "—" : dcUsd(position.valueUsd),
@@ -100,8 +89,7 @@ export function BorrowedWork({
 
           {freeStablesUsd !== null && (
             <Row
-              abbr="·"
-              color="var(--text-3)"
+              mark={<ProtocolTile abbr="·" color="var(--text-3)" size={30} />}
               title="Свободные стейблы"
               note="не размещены"
               value={
@@ -129,21 +117,20 @@ export function BorrowedWork({
 
 /** Строка списка: плитка 30px → название и сумма → число справа. */
 function Row({
-  abbr,
-  color,
+  mark,
   title,
   note,
   value,
 }: {
-  abbr: string;
-  color: string;
+  /** Плитка источника: знак протокола или нейтральная точка. */
+  mark: React.ReactNode;
   title: string;
   note: string;
   value: React.ReactNode;
 }) {
   return (
     <li className="flex items-center gap-3 bg-surface px-card py-3.5">
-      <ProtocolTile abbr={abbr} color={color} size={30} />
+      {mark}
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13.5px] font-medium">{title}</p>
         <p className="truncate text-[12px] text-text-3">{note}</p>
