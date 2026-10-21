@@ -1,20 +1,28 @@
 "use client";
 
+import { TimelineBar } from "@/components/dc/bar";
 import { Verdict } from "@/components/dc/card";
 import { Chip, StatusChip } from "@/components/dc/chip";
 import { Metric } from "@/components/dc/metrics";
 import { countLabel } from "@/components/portfolio/plural";
 import type { PendleDetailsDto, PositionDto } from "@/lib/api/types";
 import { chainLabel, dcRate, dcTokens, dcUsd, tableDate } from "@/lib/format";
-import { maturityDecision, type MaturityDecision } from "@/lib/positions/maturity";
+import {
+  maturityDecision,
+  maturityProgress,
+  type MaturityDecision,
+} from "@/lib/positions/maturity";
 import {
   CardHead,
   MetricRow,
   ownershipDelta,
+  PlainBlock,
   PositionShell,
   principalOf,
   profitDelta,
   UnmarkedChip,
+  VisualHead,
+  VisualRow,
 } from "./card-parts";
 import { MarkPopover } from "./mark-popover";
 import { type MarkFn } from "./shared";
@@ -35,8 +43,9 @@ const TOKEN_CHIP: Record<PendleDetailsDto["tokenType"], string> = {
  * и курс к активу, а не ставка: implied APY рынка — доходность для того,
  * кто покупает СЕЙЧАС, и выдавать ее за доход этой позиции было бы ошибкой.
  *
- * Визуалов, как у депозита Fluid, нет: состав одномерный — один актив,
- * в котором выражен курс.
+ * Визуал один — шкала срока: от покупки до погашения, с маркером
+ * «сейчас». Состава как у пула нет: актив один, полоса из одного сегмента
+ * была бы украшением, а срок — то, ради чего на карточку и смотрят.
  */
 export function PendleCard({
   position,
@@ -107,8 +116,64 @@ export function PendleCard({
         />
       </MetricRow>
 
+      {pendle !== null && (
+        <MaturityTimeline
+          start={pendle.heldSince}
+          expiry={pendle.expiry}
+          zone={position.zone}
+          nowMs={nowMs}
+        />
+      )}
+
       <Verdict>{verdictText(pendle, decision, asset)}</Verdict>
     </PositionShell>
+  );
+}
+
+/** Шкала «покупка → погашение» с маркером «сейчас». */
+function MaturityTimeline({
+  start,
+  expiry,
+  zone,
+  nowMs,
+}: {
+  start: string | null;
+  expiry: string;
+  zone: PositionDto["zone"];
+  nowMs: number;
+}) {
+  const progress = maturityProgress(start, expiry, nowMs);
+  if (start === null || progress === null) {
+    return (
+      <VisualRow>
+        <PlainBlock label="Срок до погашения">
+          Дата покупки ещё не найдена в истории переводов — шкала появится
+          после обновления.
+        </PlainBlock>
+      </VisualRow>
+    );
+  }
+  const percent = progress.fraction * 100;
+  const note =
+    progress.fraction >= 1
+      ? "срок пройден"
+      : `${progress.elapsedDays} из ${countLabel(progress.totalDays, "дня", "дней", "дней")} · ${Math.round(percent)}%`;
+  return (
+    <>
+      <VisualHead className="border-line border-t" label="Срок до погашения" note={note} />
+      <TimelineBar
+        className="pt-2.5"
+        percent={percent}
+        color={`var(--zone-${zone})`}
+        ariaLabel={`Пройдено ${Math.round(percent)}% срока до погашения ${tableDate(expiry)}`}
+        labels={
+          <>
+            <span>покупка {tableDate(start)}</span>
+            <span>погашение {tableDate(expiry)}</span>
+          </>
+        }
+      />
+    </>
   );
 }
 

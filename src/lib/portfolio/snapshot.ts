@@ -23,6 +23,7 @@ import {
   readWalletGmx,
 } from "@/lib/chains/gmx";
 import {
+  attachPendleHeldSince,
   persistPendlePositions,
   persistPendleStatus,
   readWalletPendle,
@@ -558,6 +559,7 @@ export async function refreshUserWallets(
       }
       try {
         const pendleStatuses = await readWalletPendle(wallet.address as Address);
+        await attachPendleHeldSince(admin, wallet.id as string, wallet.address as string, pendleStatuses);
         await persistPendlePositions(admin, userId, wallet.id as string, pendleStatuses);
         await persistPendleStatus(admin, wallet.id as string, pendleStatuses);
       } catch (err) {

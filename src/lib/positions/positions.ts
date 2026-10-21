@@ -112,6 +112,8 @@ interface PendlePayload {
   market: string;
   marketName: string;
   expiry: string;
+  /** Необязателен: строки, записанные до появления шкалы, его не хранят. */
+  heldSince?: string | null;
   assetSymbol: string | null;
   assetCoingeckoId: string | null;
   rateToAsset: number | null;
@@ -540,6 +542,7 @@ function buildPendle(
       tokenType: payload.tokenType,
       marketName: payload.marketName,
       expiry: payload.expiry,
+      heldSince: payload.heldSince ?? null,
       assetSymbol: payload.assetSymbol,
       rateToAsset: payload.rateToAsset,
       impliedApyPercent: payload.impliedApyPercent,

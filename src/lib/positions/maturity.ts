@@ -52,3 +52,39 @@ export function maturityDecision(
     soon: !matured && daysLeft <= MATURITY_SOON_DAYS,
   };
 }
+
+export interface MaturityProgress {
+  /** Пройденная доля срока, 0…1; после погашения ровно 1. */
+  fraction: number;
+  /** Полных дней с начала шкалы. */
+  elapsedDays: number;
+  /** Весь срок от начала шкалы до погашения, дней (к ближайшему). */
+  totalDays: number;
+}
+
+/**
+ * Где мы на пути от покупки к погашению.
+ *
+ * Начало шкалы — дата покупки (held-since.ts): шкала отвечает на вопрос
+ * владельца «сколько из МОЕГО срока прошло», а не «сколько прожил рынок».
+ * Купленный за неделю до погашения PT иначе выглядел бы почти пройденным
+ * в день покупки.
+ */
+export function maturityProgress(
+  startIso: string | null,
+  expiryIso: string,
+  nowMs: number,
+): MaturityProgress | null {
+  if (startIso === null) return null;
+  const start = Date.parse(startIso);
+  const expiry = Date.parse(expiryIso);
+  if (Number.isNaN(start) || Number.isNaN(expiry) || expiry <= start) {
+    return null;
+  }
+  const fraction = Math.min(1, Math.max(0, (nowMs - start) / (expiry - start)));
+  return {
+    fraction,
+    elapsedDays: Math.max(0, Math.floor((Math.min(nowMs, expiry) - start) / DAY_MS)),
+    totalDays: Math.round((expiry - start) / DAY_MS),
+  };
+}

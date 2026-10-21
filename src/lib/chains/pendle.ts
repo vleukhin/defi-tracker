@@ -3,6 +3,7 @@ import { erc20Abi, formatUnits, type Address } from "viem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { closeVanishedPositions } from "./closures";
 import { CHAIN_IDS, getChainClients, type ChainId } from "./config";
+import { findHeldSince } from "./pendle-held";
 import { getPendleMarkets, type PendleMarket } from "@/lib/prices/pendle-api";
 import { coingeckoIdForSymbol } from "@/lib/prices/symbol-coingecko";
 import { PENDLE_SOURCE } from "@/lib/positions/sources";
@@ -120,6 +121,12 @@ export interface PendlePositionReading {
   marketName: string;
   /** Дата погашения, ISO. */
   expiry: string;
+  /**
+   * Начало текущего удержания токена, ISO: последний момент, когда баланс
+   * вырос с нуля. Читатель его не знает — заполняет attachPendleHeldSince
+   * по истории переводов; null = не найдено.
+   */
+  heldSince: string | null;
   raw: bigint;
   decimals: number;
   /** null = SY не ответил: в чем выражен курс, неизвестно. */
@@ -321,6 +328,7 @@ export async function readChainPendle(
         market: h.market.address,
         marketName: h.market.name,
         expiry: h.market.expiry,
+        heldSince: null,
         raw: h.raw,
         decimals: decRes.result,
         assetAddress: asset?.address ?? null,
@@ -373,6 +381,8 @@ export interface PendlePositionPayload {
   market: string;
   marketName: string;
   expiry: string;
+  /** Начало текущего удержания — начало шкалы до погашения; null = неизвестно. */
+  heldSince: string | null;
   decimals: number;
   /** Сырое значение строкой — пересчет без потери точности. */
   raw: string;
@@ -401,6 +411,7 @@ export function pendleRowOf(walletId: string, p: PendlePositionReading, nowIso: 
       market: p.market,
       marketName: p.marketName,
       expiry: p.expiry,
+      heldSince: p.heldSince,
       decimals: p.decimals,
       raw: p.raw.toString(),
       assetSymbol: p.assetSymbol,
@@ -419,6 +430,50 @@ export function pendleRowOf(walletId: string, p: PendlePositionReading, nowIso: 
  * записывается как есть: она существует, и удалить ее значило бы показать
  * закрытие.
  */
+/**
+ * Дата покупки для каждой прочитанной позиции.
+ *
+ * Перенос из прошлого чтения — первым делом: история переводов не меняется,
+ * а поиск по ней стоит двух запросов на токен. Ищется только то, чего ещё
+ * нет: новая позиция или та, у которой прошлый поиск не дал ответа.
+ *
+ * Перенос держится, пока позиция видна. Ушла в ноль — строка закрывается
+ * (closures.ts), и повторный вход ищется заново как новое удержание.
+ * Выход и вход между двумя обновлениями увидеть нельзя: тогда останется
+ * старая дата. Цена ошибки — шкала, начатая раньше, а не неверная сумма.
+ */
+export async function attachPendleHeldSince(
+  admin: SupabaseClient,
+  walletId: string,
+  wallet: string,
+  statuses: PendleChainStatus[],
+  find: typeof findHeldSince = findHeldSince,
+): Promise<void> {
+  const { data: existing, error } = await admin
+    .from("protocol_positions")
+    .select("chain, external_id, payload")
+    .eq("wallet_id", walletId)
+    .eq("protocol", PENDLE_SOURCE);
+  if (error) throw new Error(`protocol_positions (pendle) read: ${error.message}`);
+
+  const previous = new Map<string, string>();
+  for (const row of existing ?? []) {
+    const held = (row.payload as Partial<PendlePositionPayload> | null)?.heldSince;
+    if (typeof held === "string") previous.set(`${row.chain}:${row.external_id}`, held);
+  }
+
+  await Promise.all(
+    statuses
+      .filter((s) => s.ok)
+      .flatMap((s) => s.positions)
+      .map(async (p) => {
+        p.heldSince =
+          previous.get(`${p.chain}:${p.token}`) ??
+          (await find(p.chain, p.token, wallet));
+      }),
+  );
+}
+
 export async function persistPendlePositions(
   admin: SupabaseClient,
   userId: string,

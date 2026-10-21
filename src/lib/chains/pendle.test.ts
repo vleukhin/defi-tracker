@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
 import type { PendleMarket } from "@/lib/prices/pendle-api";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  attachPendleHeldSince,
   PENDLE_ORACLE,
   pendleRateToAsset,
   pendleRowOf,
@@ -182,5 +184,50 @@ describe("чтение сети", () => {
     const status = await readChainPendle(c, "optimism", WALLET, [], noLog);
     expect(status).toEqual({ chain: "optimism", ok: true, positions: [] });
     expect(c.calls).toHaveLength(0);
+  });
+});
+
+describe("дата покупки: перенос из прошлого чтения", () => {
+  function adminWith(rows: { chain: string; external_id: string; payload: unknown }[]) {
+    const result = Promise.resolve({ data: rows, error: null });
+    return {
+      from: () => ({
+        select: () => ({ eq: () => ({ eq: () => result }) }),
+      }),
+    } as unknown as SupabaseClient;
+  }
+
+  it("известная дата переносится, история не запрашивается заново", async () => {
+    const status = await readChainPendle(client(holder), "ethereum", WALLET, [MARKET], noLog);
+    const find = vi.fn(async () => "2026-10-01T00:00:00.000Z");
+    await attachPendleHeldSince(
+      adminWith([
+        { chain: "ethereum", external_id: MARKET.pt, payload: { heldSince: "2026-09-01T00:00:00.000Z" } },
+      ]),
+      "w1",
+      WALLET,
+      [status],
+      find,
+    );
+    const pt = status.positions.find((p) => p.tokenType === "pt")!;
+    const lp = status.positions.find((p) => p.tokenType === "lp")!;
+    expect(pt.heldSince).toBe("2026-09-01T00:00:00.000Z");
+    // LP — новая позиция: её дата ищется, и только она
+    expect(lp.heldSince).toBe("2026-10-01T00:00:00.000Z");
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(find).toHaveBeenCalledWith("ethereum", MARKET.address, WALLET);
+  });
+
+  it("прошлый поиск не дал ответа — ищется снова", async () => {
+    const status = await readChainPendle(client(holder), "ethereum", WALLET, [MARKET], noLog);
+    const find = vi.fn(async () => null);
+    await attachPendleHeldSince(
+      adminWith([{ chain: "ethereum", external_id: MARKET.pt, payload: { heldSince: null } }]),
+      "w1",
+      WALLET,
+      [status],
+      find,
+    );
+    expect(find).toHaveBeenCalledTimes(2);
   });
 });

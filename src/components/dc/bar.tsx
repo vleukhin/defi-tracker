@@ -208,3 +208,49 @@ export function SafetyBar({
     </div>
   );
 }
+
+/**
+ * Полоса срока: от начала до конца периода (погашение PT Pendle).
+ *
+ * Пройденная часть залита цветом данных — зоной позиции, а не семантикой:
+ * течение времени само по себе ни хорошо, ни плохо. Маркер «сейчас»
+ * 2×15px, как у полосы запаса прочности. `percent` — пройденная доля,
+ * 0…100; на 100 срок наступил, и маркер стоит в конце.
+ */
+export function TimelineBar({
+  percent,
+  color,
+  labels,
+  ariaLabel,
+  className,
+}: {
+  percent: number;
+  color: string;
+  /** Подписи под полосой: начало слева, конец справа. */
+  labels: ReactNode;
+  ariaLabel: string;
+  className?: string;
+}) {
+  const clamped = Math.min(100, Math.max(0, percent));
+  return (
+    <div className={cn("bg-sunken px-card py-3.5", className)}>
+      <div
+        role="img"
+        aria-label={ariaLabel}
+        className="relative h-[7px] rounded-[var(--bar-radius)] bg-raised"
+      >
+        <div
+          className="absolute inset-y-0 left-0 rounded-[var(--bar-radius)]"
+          style={{ width: `${clamped}%`, background: color }}
+        />
+        <div
+          className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 w-[2px] rounded-[1px] bg-text-1"
+          style={{ left: `${clamped}%`, height: 15 }}
+        />
+      </div>
+      <div className="mt-3 flex justify-between text-[12px] text-text-3">
+        {labels}
+      </div>
+    </div>
+  );
+}

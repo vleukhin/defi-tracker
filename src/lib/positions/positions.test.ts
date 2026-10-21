@@ -478,6 +478,7 @@ function pendleRow(
     rateToAsset?: number | null;
     assetSymbol?: string | null;
     assetCoingeckoId?: string | null;
+    heldSince?: string | null;
   } = {},
 ): PositionRowInput {
   const tokenType = opts.tokenType ?? "pt";
@@ -496,6 +497,7 @@ function pendleRow(
       market: "0xmarket",
       marketName: "sUSDe",
       expiry: "2026-11-26T00:00:00.000Z",
+      heldSince: opts.heldSince === undefined ? "2026-09-01T00:00:00.000Z" : opts.heldSince,
       decimals: 18,
       raw: "10000000000000000000000",
       assetSymbol: opts.assetSymbol === undefined ? "USDe" : opts.assetSymbol,
@@ -530,6 +532,16 @@ describe("Pendle", () => {
       rateToAsset: 0.995,
       impliedApyPercent: 5.01,
     });
+  });
+
+  it("дата покупки доходит до карточки; у старых строк ее нет — null", () => {
+    const r = buildPositions({
+      rows: [pendleRow("pt"), pendleRow("old", { heldSince: null })],
+      pricesUsd: PENDLE_PRICES,
+    });
+    const byId = (id: string) => r.positions.find((p) => p.id === id)!.pendle!;
+    expect(byId("pt").heldSince).toBe("2026-09-01T00:00:00.000Z");
+    expect(byId("old").heldSince).toBeNull();
   });
 
   it("implied APY не выдается за ставку позиции", () => {

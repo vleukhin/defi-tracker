@@ -30,6 +30,7 @@ import {
   readWalletUniswapV3,
 } from "@/lib/chains/uniswap-v3";
 import {
+  attachPendleHeldSince,
   persistPendlePositions,
   persistPendleStatus,
   readWalletPendle,
@@ -172,6 +173,7 @@ export async function POST(request: NextRequest) {
       // во внешнем API, и его отказ не должен уносить Fluid, GM и LP
       try {
         const pendleStatuses = await readWalletPendle(wallet.address as Address);
+        await attachPendleHeldSince(admin, wallet.id, wallet.address, pendleStatuses);
         await persistPendlePositions(admin, user.id, wallet.id, pendleStatuses);
         await persistPendleStatus(admin, wallet.id, pendleStatuses);
         for (const s of pendleStatuses) {
