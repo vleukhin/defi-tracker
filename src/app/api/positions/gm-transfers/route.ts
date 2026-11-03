@@ -53,9 +53,14 @@ export async function GET(request: NextRequest) {
   const payload = position.payload as {
     components?: { side?: unknown; symbol?: unknown; coingeckoId?: unknown }[];
   } | null;
-  const long = payload?.components?.find((component) => component.side === "long");
-  const longSymbol = typeof long?.symbol === "string" ? long.symbol : null;
-  const coingeckoId = typeof long?.coingeckoId === "string" ? long.coingeckoId : null;
+  // Базовый актив: длинная сторона, а у рынка на одном активе (BTC/USD
+  // [BTC-BTC]) — единственный компонент, который сторону не несёт
+  const components = payload?.components ?? [];
+  const base =
+    components.find((component) => component.side === "long") ??
+    (components.length === 1 ? components[0] : undefined);
+  const longSymbol = typeof base?.symbol === "string" ? base.symbol : null;
+  const coingeckoId = typeof base?.coingeckoId === "string" ? base.coingeckoId : null;
   const clients = getChainClients() as unknown as Record<ChainId, GmSearchRpcClient>;
   const nowMs = Date.now();
   const response = await findGmTransfers(

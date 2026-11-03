@@ -32,6 +32,21 @@ import { logApiCall } from "@/lib/metrics";
  *
  * Проверено живым вызовом на рынке ETH/USD [ETH-USDC]:
  * poolValue / totalSupply сходится с возвращаемой ценой GM до 4 знаков.
+ *
+ * --- Рынки на одном активе ---
+ *
+ * У GMX есть рынки, где длинный и короткий токены совпадают: BTC/USD
+ * [BTC-BTC] (на Arbitrum это [WBTC.b-WBTC.b] и [tBTC-tBTC]), ETH/USD
+ * [ETH-ETH]. Держатель такого пула стоит в базовом активе целиком, стейблов
+ * в пуле нет вовсе.
+ *
+ * Reader при этом по-прежнему возвращает longTokenAmount и shortTokenAmount
+ * отдельно, но это не две стороны, а ПОЛОВИНЫ одного запаса: в
+ * MarketUtils.getPoolAmount при longToken == shortToken делитель равен двум
+ * (getPoolDivisor), и обе величины выходят по половине реального количества.
+ * Два компонента по 50% соврали бы дважды — показали бы сторону, которой
+ * нет, и половину количества вместо целого. Поэтому такой рынок даёт один
+ * компонент без стороны и с суммой половин.
  */
 
 /** GM-пулы читаются только на Arbitrum — там развернут GMX v2. */
@@ -125,7 +140,11 @@ export const readerAbi = [
 
 /** Компонент GM-позиции: часть пула, приходящаяся на долю пользователя. */
 export interface GmComponent {
-  side: "long" | "short";
+  /**
+   * Сторона пула. null — рынок на одном активе (BTC/USD [BTC-BTC]): сторон
+   * у него нет, и компонент у позиции один (см. шапку модуля).
+   */
+  side: "long" | "short" | null;
   symbol: string;
   address: string;
   coingeckoId: string | null;
@@ -183,11 +202,18 @@ export interface GmxReadOptions {
 
 /** Символ токена по адресу: в /tokens он есть, но нам удобнее по адресу. */
 function symbolFromMarketName(market: GmxMarket, side: "long" | "short"): string {
-  // Имя рынка вида «ETH/USD [ETH-USDC]» — в скобках long-short пара
+  // Имя рынка вида «ETH/USD [ETH-USDC]» — в скобках long-short пара.
+  // У рынка на одном активе («ETH/USD [ETH-ETH]») обе половины названы
+  // одинаково, поэтому сторона там безразлична.
   const inside = market.name.match(/\[([^\]]+)\]/)?.[1];
   const parts = inside?.split("-") ?? [];
   const symbol = side === "long" ? parts[0] : parts[1];
   return symbol?.trim() ?? side;
+}
+
+/** Рынок на одном активе: длинный и короткий токены — один и тот же. */
+export function isSingleAssetMarket(market: GmxMarket): boolean {
+  return market.longToken.toLowerCase() === market.shortToken.toLowerCase();
 }
 
 interface PoolValueInfo {
@@ -357,27 +383,40 @@ export async function readWalletGmx(
       // не терять точность на больших supply
       const shareNum = Number(raw) / Number(totalSupply);
 
-      const components: GmComponent[] = (["long", "short"] as const).map(
-        (side) => {
-          const tokenAddr =
-            side === "long" ? market.longToken : market.shortToken;
-          const decimals = api.decimals.get(tokenAddr.toLowerCase()) ?? 18;
-          const poolAmount =
-            side === "long" ? info.longTokenAmount : info.shortTokenAmount;
-          const qty =
-            Number(formatUnits(poolAmount, decimals)) * shareNum;
-          const price = api.prices.get(tokenAddr.toLowerCase());
-          const symbol = symbolFromMarketName(market, side);
-          return {
-            side,
-            symbol,
-            address: tokenAddr.toLowerCase(),
-            coingeckoId: coingeckoIdForSymbol(symbol),
-            quantity: qty,
-            valueUsd: price ? qty * gmxMidPriceUsd(price, decimals) : 0,
-          };
-        },
-      );
+      const component = (
+        side: "long" | "short" | null,
+        tokenAddr: string,
+        poolAmount: bigint,
+      ): GmComponent => {
+        const address = tokenAddr.toLowerCase();
+        const decimals = api.decimals.get(address) ?? 18;
+        const qty = Number(formatUnits(poolAmount, decimals)) * shareNum;
+        const price = api.prices.get(address);
+        const symbol = symbolFromMarketName(market, side ?? "long");
+        return {
+          side,
+          symbol,
+          address,
+          coingeckoId: coingeckoIdForSymbol(symbol),
+          quantity: qty,
+          valueUsd: price ? qty * gmxMidPriceUsd(price, decimals) : 0,
+        };
+      };
+
+      // Рынок на одном активе — один компонент без стороны, количество
+      // складывается из обеих половин (см. шапку модуля)
+      const components: GmComponent[] = isSingleAssetMarket(market)
+        ? [
+            component(
+              null,
+              market.longToken,
+              info.longTokenAmount + info.shortTokenAmount,
+            ),
+          ]
+        : [
+            component("long", market.longToken, info.longTokenAmount),
+            component("short", market.shortToken, info.shortTokenAmount),
+          ];
 
       positions.push({
         marketToken: market.marketToken as Address,

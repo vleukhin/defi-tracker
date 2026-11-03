@@ -63,7 +63,8 @@ interface GmPayload {
   marketName: string;
   gmPriceUsd: number;
   components: {
-    side: "long" | "short";
+    /** null — рынок на одном активе: компонент один, сторон у него нет. */
+    side: "long" | "short" | null;
     symbol: string;
     quantity: number;
     valueUsd: number;

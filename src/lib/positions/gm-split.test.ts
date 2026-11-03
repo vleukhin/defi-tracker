@@ -48,12 +48,29 @@ function gm(
   };
 }
 
+/** Пул на одном активе (BTC/USD [BTC-BTC]): один компонент без стороны. */
+function gmSingleAsset(
+  id: string,
+  symbol: string,
+  valueUsd: number | null,
+): PositionDto {
+  return {
+    ...gm(id, symbol, valueUsd),
+    components: [{ symbol, quantity: 1, valueUsd, side: null }],
+  };
+}
+
 describe("gmMarketCategory", () => {
   it("рынок определяется long-стороной, а не стейблом", () => {
     expect(gmMarketCategory(gm("1", "BTC", 1))).toBe("btc");
     expect(gmMarketCategory(gm("2", "WETH", 1))).toBe("eth");
     // Рынок вне двух базовых активов цели по стратегии не имеет
     expect(gmMarketCategory(gm("3", "SOL", 1))).toBeNull();
+  });
+
+  it("у рынка на одном активе сторон нет — берётся единственный компонент", () => {
+    expect(gmMarketCategory(gmSingleAsset("1", "WBTC.b", 1))).toBe("btc");
+    expect(gmMarketCategory(gmSingleAsset("2", "ETH", 1))).toBe("eth");
   });
 });
 
@@ -64,7 +81,8 @@ describe("gmShare", () => {
     const share = gmShare(btc, [btc, eth]);
 
     expect(share.totalUsd).toBe(10_000);
-    expect(share.sharePercent).toBeCloseTo(70, 9);
+    expect(share.poolSharePercent).toBeCloseTo(70, 9);
+    expect(share.categorySharePercent).toBeCloseTo(70, 9);
     expect(share.targetPercent).toBe(70);
     expect(share.deviationPp).toBeCloseTo(0, 9);
   });
@@ -75,6 +93,19 @@ describe("gmShare", () => {
     expect(gmShare(eth, [btc, eth]).deviationPp).toBeCloseTo(-15, 9);
   });
 
+  it("с целью сравнивается доля актива, а не доля одного пула", () => {
+    // Два BTC-пула рядом: по отдельности каждый мимо 70%, вместе — в цели
+    const pair = gm("1", "BTC", 4_000);
+    const single = gmSingleAsset("2", "WBTC.b", 3_000);
+    const eth = gm("3", "WETH", 3_000);
+    const share = gmShare(pair, [pair, single, eth]);
+
+    expect(share.poolSharePercent).toBeCloseTo(40, 9);
+    expect(share.categorySharePercent).toBeCloseTo(70, 9);
+    expect(share.categoryPools).toBe(2);
+    expect(share.deviationPp).toBeCloseTo(0, 9);
+  });
+
   it("неоцененный пул делает неизвестной и сумму, и долю", () => {
     // Доля от части пулов вводила бы в заблуждение сильнее, чем прочерк
     const btc = gm("1", "BTC", 7_000);
@@ -82,20 +113,23 @@ describe("gmShare", () => {
     const share = gmShare(btc, [btc, eth]);
 
     expect(share.totalUsd).toBeNull();
-    expect(share.sharePercent).toBeNull();
+    expect(share.poolSharePercent).toBeNull();
+    expect(share.categorySharePercent).toBeNull();
     expect(share.deviationPp).toBeNull();
   });
 
   it("позиции других протоколов в сумму GM не входят", () => {
     const btc = gm("1", "BTC", 7_000);
     const lp = { ...gm("2", "WETH", 3_000), protocol: "uni_v3" as const };
-    expect(gmShare(btc, [btc, lp]).sharePercent).toBeCloseTo(100, 9);
+    expect(gmShare(btc, [btc, lp]).poolSharePercent).toBeCloseTo(100, 9);
   });
 
   it("рынок без цели по стратегии — доля есть, цели нет", () => {
     const sol = gm("1", "SOL", 1_000);
     const share = gmShare(sol, [sol]);
-    expect(share.sharePercent).toBeCloseTo(100, 9);
+    expect(share.poolSharePercent).toBeCloseTo(100, 9);
+    expect(share.categorySharePercent).toBeNull();
+    expect(share.categoryPools).toBe(0);
     expect(share.targetPercent).toBeNull();
     expect(share.deviationPp).toBeNull();
   });
