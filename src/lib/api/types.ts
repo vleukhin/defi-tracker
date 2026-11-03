@@ -623,7 +623,17 @@ export interface DebtResponseDto {
 
 // --- Фаза 5: размещение заемных средств ---
 
-export type PositionProtocol = "fluid" | "gmx_v2" | "uni_v3" | "pendle";
+/**
+ * Протоколы размещения. `aave_v3_supply` — депозит стейблов на Aave:
+ * размещение, а не залог, поэтому значение отдельное от 'aave_v3'
+ * (обоснование — в positions/sources.ts).
+ */
+export type PositionProtocol =
+  | "fluid"
+  | "gmx_v2"
+  | "uni_v3"
+  | "pendle"
+  | "aave_v3_supply";
 
 /**
  * Зоны стратегии Capital Growth (docs/07-strategia-capital-growth.md).

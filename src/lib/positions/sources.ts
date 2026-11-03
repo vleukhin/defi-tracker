@@ -50,4 +50,5 @@ export const PROTOCOL_LABELS: Record<
   gmx_v2: "GMX v2",
   uni_v3: "Uniswap v3",
   pendle: "Pendle",
+  aave_v3_supply: "Aave v3",
 };

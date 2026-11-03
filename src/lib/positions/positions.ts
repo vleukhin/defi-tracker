@@ -60,6 +60,17 @@ interface FluidPayload {
   supplyRatePercent?: number | null;
   rewardsRatePercent?: number | null;
 }
+/** Зеркало AaveSupplyPositionPayload читателя (chains/aave-supply.ts). */
+interface AaveSupplyPayload {
+  kind: "aave_supply";
+  symbol: string;
+  coingeckoId: string | null;
+  decimals: number;
+  /** Ставка депозита на момент чтения; null = не прочитана. */
+  supplyRatePercent: number | null;
+  /** Держит ли депозит health factor; null = не прочитано, не «нет». */
+  usedAsCollateral: boolean | null;
+}
 interface GmPayload {
   kind: "gmx_gm";
   marketName: string;
@@ -130,7 +141,12 @@ interface PendlePayload {
   underlyingApyPercent: number | null;
 }
 
-type PositionPayload = FluidPayload | GmPayload | UniV3Payload | PendlePayload;
+type PositionPayload =
+  | FluidPayload
+  | AaveSupplyPayload
+  | GmPayload
+  | UniV3Payload
+  | PendlePayload;
 
 export interface PositionRowInput {
   id: string;
@@ -298,6 +314,7 @@ function payloadOf(value: unknown): PositionPayload | null {
   const kind = (value as { kind?: unknown }).kind;
   if (
     kind === "fluid_supply" ||
+    kind === "aave_supply" ||
     kind === "gmx_gm" ||
     kind === "univ3_lp" ||
     kind === "pendle"
@@ -370,6 +387,72 @@ function buildFluid(
     // процентом, а не переоценкой, и его сравнивают со ставкой займа
     supplyRatePercent: payload.supplyRatePercent ?? null,
     rewardsRatePercent: payload.rewardsRatePercent ?? null,
+    pendle: null,
+    gm: null,
+    walletId: row.walletId,
+    walletLabel: row.walletLabel,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Депозит стейблов на Aave — та же сборка, что у Fluid: оба держат обычный
+ * баланс токена, доход начисляют ставкой и сравниваются со ставкой займа.
+ *
+ * Отличие одно и важное: тот же депозит может быть залогом, то есть держать
+ * health factor. Это сказано подписью, потому что от неё зависит решение:
+ * вывести депозит, который в залоге, значит двинуть HF, а не просто забрать
+ * деньги. «Не прочитано» (null) подписью не притворяется ни тем, ни другим.
+ */
+function buildAaveSupply(
+  row: PositionRowInput,
+  payload: AaveSupplyPayload,
+  prices: Map<string, number>,
+  mark: PositionMark | undefined,
+): PositionDto {
+  const quantity = row.quantity === null ? null : Number(row.quantity);
+  const price =
+    payload.coingeckoId !== null ? prices.get(payload.coingeckoId) : undefined;
+
+  // Депозит — обычный баланс aToken'а, поэтому оценивается по СВЕЖЕЙ цене,
+  // как залог Aave и депозит Fluid. value_usd из БД — запасной вариант
+  const valueUsd =
+    quantity !== null && price !== undefined ? quantity * price : row.valueUsd;
+
+  return {
+    id: row.id,
+    protocol: "aave_v3_supply",
+    protocolLabel: PROTOCOL_LABELS.aave_v3_supply,
+    chain: row.chain,
+    zone: mark?.zone ?? DEFAULT_POSITION_ZONE,
+    zoneKey: zoneKeyOf(row),
+    ...splitPosition(valueUsd, mark),
+    entryPriceUsd: mark?.entryPriceUsd ?? null,
+    entryPriceSetAt: mark?.entryPriceSetAt ?? null,
+    title: payload.symbol,
+    subtitle:
+      payload.usedAsCollateral === true
+        ? "Депозит в залоге"
+        : payload.usedAsCollateral === false
+          ? "Депозит, не в залоге"
+          : "Депозит",
+    quantity: row.quantity,
+    valueUsd,
+    components: [
+      { symbol: payload.symbol, quantity: quantity ?? 0, valueUsd, side: null },
+    ],
+    feesUsd: null,
+    fees24hUsd: null,
+    fees24hReason: null,
+    inRange: null,
+    outOfRangeSince: null,
+    range: null,
+    // Ставка депозита — то же, ради чего держат Fluid; её и сравнивают
+    // со ставкой заёмных стейблов
+    supplyRatePercent: payload.supplyRatePercent,
+    // Награды Aave (кампании Merit) начисляются вне рынка и в
+    // getReserveData не приходят: ноль здесь был бы выдумкой
+    rewardsRatePercent: null,
     pendle: null,
     gm: null,
     walletId: row.walletId,
@@ -618,7 +701,7 @@ export function positionPriceIds(rows: PositionRowInput[]): string[] {
   for (const row of rows) {
     const payload = payloadOf(row.payload);
     if (payload === null) continue;
-    if (payload.kind === "fluid_supply") {
+    if (payload.kind === "fluid_supply" || payload.kind === "aave_supply") {
       if (payload.coingeckoId) ids.push(payload.coingeckoId);
     } else if (payload.kind === "univ3_lp") {
       for (const t of [payload.token0, payload.token1]) {
@@ -648,11 +731,13 @@ export function buildPositions(
     const dto =
       payload.kind === "fluid_supply"
         ? buildFluid(row, payload, input.pricesUsd, mark)
-        : payload.kind === "gmx_gm"
-          ? buildGm(row, payload, mark)
-          : payload.kind === "univ3_lp"
-            ? buildLp(row, payload, input.pricesUsd, mark)
-            : buildPendle(row, payload, input.pricesUsd, mark);
+        : payload.kind === "aave_supply"
+          ? buildAaveSupply(row, payload, input.pricesUsd, mark)
+          : payload.kind === "gmx_gm"
+            ? buildGm(row, payload, mark)
+            : payload.kind === "univ3_lp"
+              ? buildLp(row, payload, input.pricesUsd, mark)
+              : buildPendle(row, payload, input.pricesUsd, mark);
 
     // Пыль в суммы не входит — как у свободных средств: иначе «Активы»
     // и зоны разошлись бы с тем, что на экране, на её стоимость

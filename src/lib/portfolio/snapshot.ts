@@ -13,6 +13,11 @@ import {
   readWalletAaveDebt,
 } from "@/lib/chains/aave-debt";
 import {
+  persistAaveSupply,
+  persistAaveSupplyStatus,
+  readWalletAaveSupply,
+} from "@/lib/chains/aave-supply";
+import {
   persistFluidPositions,
   persistFluidStatus,
   readWalletFluid,
@@ -564,6 +569,13 @@ export async function refreshUserWallets(
       // Размещение заемных средств (Фаза 5). Каждый протокол в своем
       // try/catch: недоступность GMX API не должна лишать снепшот депозитов
       // Fluid — и уж тем более не должна ронять обновление кошелька целиком.
+      try {
+        const supplyStatuses = await readWalletAaveSupply(wallet.address as Address);
+        await persistAaveSupply(admin, userId, wallet.id as string, supplyStatuses);
+        await persistAaveSupplyStatus(admin, wallet.id as string, supplyStatuses);
+      } catch (err) {
+        console.warn(`[snapshot] депозиты Aave ${wallet.address}:`, err);
+      }
       try {
         const fluidStatuses = await readWalletFluid(wallet.address as Address);
         await persistFluidPositions(admin, userId, wallet.id as string, fluidStatuses);

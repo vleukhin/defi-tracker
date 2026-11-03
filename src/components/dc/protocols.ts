@@ -29,6 +29,8 @@ export const PROTOCOL_BRANDS: Record<string, ProtocolBrand> = {
 const PROTOCOL_ALIASES: Record<string, string> = {
   uni_v3: "uniswap",
   gmx_v2: "gmx",
+  // Депозит стейблов — свой источник, но протокол тот же: плитка Aave
+  aave_v3_supply: "aave",
 };
 
 const FALLBACK: ProtocolBrand = {

@@ -13,7 +13,7 @@ import {
   profitDelta,
   UnmarkedChip,
 } from "./card-parts";
-import { FluidCard } from "./fluid-card";
+import { DepositCard } from "./deposit-card";
 import { GmxCard } from "./gmx-card";
 import { MarkPopover } from "./mark-popover";
 import { PendleCard } from "./pendle-card";
@@ -29,7 +29,9 @@ import { UniswapCard } from "./uniswap-card";
  *
  * Третий тип из дизайна — заём — в списке позиций не приходит: в модели
  * данных это долговая строка Aave. Его карточка лежит рядом
- * (aave-card.tsx) и собирается из ответа /api/debt.
+ * (aave-card.tsx) и собирается из ответа /api/debt. Депозит стейблов на
+ * том же Aave, наоборот, позиция (`aave_v3_supply`) и идёт карточкой
+ * депозита, как Fluid.
  */
 export function PositionCard({
   position,
@@ -52,9 +54,10 @@ export function PositionCard({
   journal: GmJournalDto | null;
   onJournalRefetch: () => Promise<void>;
 }) {
-  if (position.protocol === "fluid") {
+  // Депозит лендинга — Fluid и стейблы на Aave: один инструмент, одна карточка
+  if (position.protocol === "fluid" || position.protocol === "aave_v3_supply") {
     return (
-      <FluidCard
+      <DepositCard
         position={position}
         busy={busy}
         onMark={onMark}

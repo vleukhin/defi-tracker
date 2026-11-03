@@ -122,17 +122,38 @@ const RAY_PER_PERCENT = 1e25;
 /** Потолок правдоподобия: выше — признак не ставки, а мусора в декодировании. */
 const MAX_PLAUSIBLE_RATE_PERCENT = 1000;
 
-/** currentVariableBorrowRate из кортежа резерва; null = форма не та. */
-export function borrowRatePercent(result: unknown): number | null {
+/**
+ * Ставка из кортежа резерва по имени поля; null = форма не та.
+ *
+ * Шкала и потолок правдоподобия у всех ставок резерва одни (ray, APR),
+ * поэтому разбор один: две копии разъехались бы на первой же правке.
+ */
+function reserveRatePercent(
+  result: unknown,
+  field: "currentVariableBorrowRate" | "currentLiquidityRate",
+): number | null {
   if (result === null || typeof result !== "object") return null;
-  const raw = (result as { currentVariableBorrowRate?: unknown })
-    .currentVariableBorrowRate;
+  const raw = (result as Record<string, unknown>)[field];
   if (typeof raw !== "bigint" || raw < 0n) return null;
   const percent = Number(raw) / RAY_PER_PERCENT;
   if (!Number.isFinite(percent) || percent > MAX_PLAUSIBLE_RATE_PERCENT) {
     return null;
   }
   return percent;
+}
+
+/** currentVariableBorrowRate из кортежа резерва; null = форма не та. */
+export function borrowRatePercent(result: unknown): number | null {
+  return reserveRatePercent(result, "currentVariableBorrowRate");
+}
+
+/**
+ * currentLiquidityRate — ставка ДЕПОЗИТА того же резерва. Живёт рядом со
+ * ставкой займа, потому что приходит тем же кортежем Pool.getReserveData
+ * и в той же шкале; читает её контур депозита (chains/aave-supply.ts).
+ */
+export function supplyRatePercent(result: unknown): number | null {
+  return reserveRatePercent(result, "currentLiquidityRate");
 }
 
 /** База рынков Aave v3 — USD с 8 знаками (BASE_CURRENCY_UNIT = 1e8). */

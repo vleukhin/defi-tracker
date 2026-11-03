@@ -15,6 +15,11 @@ import {
   readWalletAaveDebt,
 } from "@/lib/chains/aave-debt";
 import {
+  persistAaveSupply,
+  persistAaveSupplyStatus,
+  readWalletAaveSupply,
+} from "@/lib/chains/aave-supply";
+import {
   persistFluidPositions,
   persistFluidStatus,
   readWalletFluid,
@@ -133,6 +138,22 @@ export async function POST(request: NextRequest) {
       // Размещение заемных средств (Фаза 5). Три независимых контура: падение
       // GMX API не должно уносить с собой депозиты Fluid и LP-позиции,
       // поэтому у каждого свой try/catch.
+      //
+      // Депозит стейблов на Aave — размещение, а не залог: свой multicall
+      // и свой статус, отказ которого не трогает залог и долг
+      try {
+        const supplyStatuses = await readWalletAaveSupply(wallet.address as Address);
+        await persistAaveSupply(admin, user.id, wallet.id, supplyStatuses);
+        await persistAaveSupplyStatus(admin, wallet.id, supplyStatuses);
+        for (const s of supplyStatuses) {
+          for (const p of s.positions) {
+            if (p.coingeckoId) collateralIds.add(p.coingeckoId);
+          }
+        }
+      } catch (err) {
+        console.warn(`[refresh] депозиты Aave кошелька ${wallet.id} не прочитаны:`, err);
+      }
+
       try {
         const fluidStatuses = await readWalletFluid(wallet.address as Address);
         await persistFluidPositions(admin, user.id, wallet.id, fluidStatuses);
