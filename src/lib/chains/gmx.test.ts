@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
 import {
+  BRIDGED_GM_TOKENS,
   GMX_DATASTORE,
   MULTICHAIN_BALANCE,
   isSingleAssetMarket,
@@ -296,5 +297,118 @@ describe("readWalletGmx: GM внутри GMX (кросс-чейн покупка
     });
     expect(status.positions).toEqual([]);
     expect(status.unpriced).toEqual([]);
+  });
+});
+
+describe("readWalletGmx: GM OFT-токеном на другой сети", () => {
+  // Настоящий рынок из курируемого списка: только у него есть OFT
+  const ETH_ETH: GmxMarket = {
+    name: "ETH/USD [ETH-ETH]",
+    marketToken: BRIDGED_GM_TOKENS[0].marketToken,
+    indexToken: WETH,
+    longToken: WETH,
+    shortToken: WETH,
+  };
+  /** Пул ETH-ETH: 10 ETH двумя половинами, supply 100 GM. */
+  const ETH_ETH_POOL = {
+    totalSupply: 100n * 10n ** 18n,
+    gmPriceUsd: 0.8,
+    longTokenAmount: 5n * 10n ** 18n,
+    shortTokenAmount: 5n * 10n ** 18n,
+  };
+  const ethereum = (result: bigint | Error) => ({
+    multicall: vi.fn().mockImplementation(async () => {
+      if (result instanceof Error) throw result;
+      return [{ status: "success" as const, result }];
+    }),
+  });
+
+  it("курируемый список: только чужие сети, адреса валидны и не повторяются", () => {
+    for (const t of BRIDGED_GM_TOKENS) {
+      expect(t.chain).not.toBe("arbitrum");
+      expect(t.token).toMatch(/^0x[0-9a-fA-F]{40}$/);
+      expect(t.marketToken).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    }
+    const keys = BRIDGED_GM_TOKENS.map((t) => `${t.chain}:${t.token.toLowerCase()}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("позиция, лежащая целиком на Ethereum, читается и оценивается оракулом Arbitrum", async () => {
+    // Случай из жизни: на Arbitrum ноль, на Ethereum 26 650 GM — здесь 10
+    const eth = ethereum(10n * 10n ** 18n);
+    const status = await readWalletGmx(WALLET, {
+      apiData: apiData([ETH_ETH]),
+      logCall: noLog,
+      client: client([{ wallet: 0n, gmx: 0n }], [ETH_ETH_POOL]),
+      bridgedClients: { ethereum: eth },
+    });
+
+    expect(eth.multicall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contracts: [
+          expect.objectContaining({
+            address: BRIDGED_GM_TOKENS[0].token,
+            functionName: "balanceOf",
+            args: [WALLET],
+          }),
+        ],
+      }),
+    );
+    expect(status.positions).toHaveLength(1);
+    const position = status.positions[0];
+    expect(position.quantity).toBe(10);
+    expect(position.bridged).toEqual([
+      { chain: "ethereum", raw: 10n * 10n ** 18n },
+    ]);
+    expect(position.valueUsd).toBeCloseTo(8, 9);
+    // Доля 10% пула — OFT заперт в адаптере и входит в totalSupply
+    expect(position.components).toHaveLength(1);
+    expect(position.components[0].quantity).toBeCloseTo(1, 9);
+  });
+
+  it("все места складываются в одну позицию рынка", async () => {
+    const status = await readWalletGmx(WALLET, {
+      apiData: apiData([ETH_ETH]),
+      logCall: noLog,
+      client: client(
+        [{ wallet: 1n * 10n ** 18n, gmx: 2n * 10n ** 18n }],
+        [ETH_ETH_POOL],
+      ),
+      bridgedClients: { ethereum: ethereum(7n * 10n ** 18n) },
+    });
+    expect(status.positions[0].quantity).toBe(10);
+    expect(status.positions[0].multichainRaw).toBe(2n * 10n ** 18n);
+  });
+
+  it("Ethereum не ответил — размер неизвестен, рынок «без оценки», а не закрыт", async () => {
+    // На Arbitrum ноль: молчание отправило бы позицию в архив закрытых,
+    // хотя она целиком лежит на сети, которую мы просто не прочитали
+    const status = await readWalletGmx(WALLET, {
+      apiData: apiData([ETH_ETH]),
+      logCall: noLog,
+      client: client([{ wallet: 0n, gmx: 0n }], []),
+      bridgedClients: { ethereum: ethereum(new Error("rpc down")) },
+    });
+
+    expect(status.ok).toBe(true);
+    expect(status.positions).toEqual([]);
+    expect(status.unpriced).toEqual([
+      {
+        marketToken: ETH_ETH.marketToken.toLowerCase(),
+        marketName: ETH_ETH.name,
+        reason: "не прочитан GM на ethereum",
+      },
+    ]);
+  });
+
+  it("на рынках без OFT другие сети не опрашиваются вовсе", async () => {
+    const eth = ethereum(1n);
+    await readWalletGmx(WALLET, {
+      apiData: apiData([PAIR]),
+      logCall: noLog,
+      client: client([{ wallet: 0n }], []),
+      bridgedClients: { ethereum: eth },
+    });
+    expect(eth.multicall).not.toHaveBeenCalled();
   });
 });

@@ -81,6 +81,8 @@ interface GmPayload {
    * «не читалось», а не «в кошельке лежит всё».
    */
   multichainRaw?: string | null;
+  /** Части количества OFT-токеном на других сетях; старые строки его не хранят. */
+  bridged?: { chain: string; raw: string }[] | null;
   components: {
     /** null — рынок на одном активе: компонент один, сторон у него нет. */
     side: "long" | "short" | null;
@@ -507,7 +509,13 @@ function buildGm(
     supplyRatePercent: null,
     rewardsRatePercent: null,
     pendle: null,
-    gm: { multichainQuantity },
+    gm: {
+      multichainQuantity,
+      bridged: (payload.bridged ?? []).map((h) => ({
+        chain: h.chain,
+        quantity: Number(rawToQuantity(h.raw, GM_DECIMALS)),
+      })),
+    },
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,

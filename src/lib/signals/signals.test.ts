@@ -167,7 +167,7 @@ function position(overrides: Partial<PositionDto> = {}): PositionDto {
     supplyRatePercent: null,
     rewardsRatePercent: null,
     pendle: null,
-    gm: { multichainQuantity: 0 },
+    gm: { multichainQuantity: 0, bridged: [] },
     walletId: "w1",
     walletLabel: null,
     updatedAt: hoursAgo(0.1),

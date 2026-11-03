@@ -6,7 +6,7 @@ import { Chip, StatusChip } from "@/components/dc/chip";
 import { Metric } from "@/components/dc/metrics";
 import type { GmJournalDto, PositionDto } from "@/lib/api/types";
 import { chainLabel, dcPp, dcUsd, tablePct, tableSigned } from "@/lib/format";
-import { isSingleAssetGm } from "@/lib/positions/gm-asset";
+import { gmPlaces, isSingleAssetGm } from "@/lib/positions/gm-asset";
 import { gmLevels } from "@/lib/positions/gm-levels";
 import { GM_SHARE_TOLERANCE_PP, gmShare } from "@/lib/positions/gm-split";
 import {
@@ -48,9 +48,10 @@ import { type MarkFn } from "./shared";
  * ETH/USDC; выравнивают его при следующей покупке GM, и для этого нужно
  * видеть перекос.
  *
- * «В балансе GMX»: GM, купленные с другой сети, зачислены кошельку внутри
- * GMX и в самом кошельке не лежат. Стоимость и уровни у такой позиции те
- * же, но перевести или заложить её нельзя, пока она не выведена.
+ * «На Ethereum» / «в балансе GMX»: GM, купленные с другой сети, лежат не
+ * в кошельке на Arbitrum, а OFT-токеном на исходной сети или кредитом
+ * внутри GMX. Стоимость и уровни у такой позиции те же — это тот же GM, —
+ * но переводить и выводить её нужно там, где она лежит.
  */
 export function GmxCard({
   position,
@@ -80,12 +81,10 @@ export function GmxCard({
     share.deviationPp !== null &&
     Math.abs(share.deviationPp) > GM_SHARE_TOLERANCE_PP;
   const assetShare = share.categorySharePercent ?? share.poolSharePercent;
-  // Кросс-чейн покупка: GM зачислены внутри GMX, а не лежат в кошельке.
-  // Целиком или частью — разное для владельца: перевести или заложить
-  // можно только то, что в кошельке
-  const inGmx = position.gm?.multichainQuantity ?? 0;
-  const total = position.quantity === null ? null : Number(position.quantity);
-  const wholeInGmx = inGmx > 0 && total !== null && inGmx >= total;
+  // Кросс-чейн покупка: GM лежат не в кошельке на Arbitrum, а OFT-токеном
+  // на исходной сети или зачислены внутри GMX. Целиком или частью — разное
+  // для владельца: переводить и выводить позицию нужно там, где она лежит
+  const places = gmPlaces(position);
 
   // Пул на одном активе: полоса состава у него была бы одним сегментом
   // на 100% — она ничего не делит и только изображала бы пару
@@ -107,17 +106,19 @@ export function GmxCard({
             {/* Без точки отсчёта уровни не считаются вовсе, и молчать
                 об этом нельзя: кнопка шкалы в таком виде просто пуста */}
             {levels.entryPriceUsd === null && <Chip>без точки отсчёта</Chip>}
-            {inGmx > 0 && (
-              <Chip>{wholeInGmx ? "в балансе GMX" : "часть в балансе GMX"}</Chip>
-            )}
+            {places.map((place) => (
+              <Chip key={place.label}>
+                {place.whole ? place.label : `часть ${place.label}`}
+              </Chip>
+            ))}
           </>
         }
         meta={[
           position.title,
           chainLabel(position.chain),
-          inGmx > 0 && !wholeInGmx
-            ? `в GMX ${tokenQuantity(inGmx)} GM`
-            : null,
+          ...places
+            .filter((place) => !place.whole)
+            .map((place) => `${place.label} ${tokenQuantity(place.quantity)} GM`),
         ]}
         status={
           share.deviationPp === null ? undefined : offTarget ? (

@@ -293,6 +293,9 @@ export async function buildHistoricalChainSource(
     ]),
   ) as Record<ChainId, PinnedClient>;
   const gmxClient = clients[GMX_CHAIN] as unknown as GmxRpcClient;
+  // GM лежат и OFT-токенами на других сетях: их тоже читаем на блоке той
+  // даты, иначе вчерашняя точка взяла бы сегодняшний баланс на Ethereum
+  const gmxBridgedClients = readerClients<GmxRpcClient>(clients);
 
   for (const wallet of wallets) {
     const address = wallet.address as Address;
@@ -458,6 +461,7 @@ export async function buildHistoricalChainSource(
         const live = opts.gmxApiData ?? (await getGmxApiData());
         const probe: GmxChainStatus = await readWalletGmx(address, {
           client: gmxClient,
+          bridgedClients: gmxBridgedClients,
           apiData: live,
         });
         const ids = gmxHeldPriceIds(live, probe);
@@ -466,6 +470,7 @@ export async function buildHistoricalChainSource(
             ? probe
             : await readWalletGmx(address, {
                 client: gmxClient,
+                bridgedClients: gmxBridgedClients,
                 apiData: historicalGmxApiData(
                   live,
                   await getHistoricalCoinPrices(ids, targetSec),
@@ -490,6 +495,7 @@ export async function buildHistoricalChainSource(
               gmPriceUsd: p.gmPriceUsd,
               raw: p.raw.toString(),
               multichainRaw: p.multichainRaw.toString(),
+              bridged: p.bridged.map((h) => ({ chain: h.chain, raw: h.raw.toString() })),
               components: p.components,
             },
             updatedAt: checkedAt,

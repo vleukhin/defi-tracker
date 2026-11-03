@@ -316,14 +316,36 @@ describe("оценка позиций", () => {
       ],
       pricesUsd: PRICES,
     });
-    expect(r.positions[0].gm).toEqual({ multichainQuantity: 600 });
+    expect(r.positions[0].gm).toEqual({ multichainQuantity: 600, bridged: [] });
     // Стоимость считается от всего количества, а не от кошелька
     expect(r.positions[0].valueUsd).toBe(1550);
   });
 
+  it("GM OFT-токеном на другой сети виден отдельной частью по сети", () => {
+    const row = gmRow("g", 21_067);
+    const r = buildPositions({
+      rows: [
+        {
+          ...row,
+          payload: {
+            ...(row.payload as object),
+            raw: "26650759283000000000000",
+            multichainRaw: "0",
+            bridged: [{ chain: "ethereum", raw: "26650759283000000000000" }],
+          },
+        },
+      ],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions[0].gm).toEqual({
+      multichainQuantity: 0,
+      bridged: [{ chain: "ethereum", quantity: 26650.759283 }],
+    });
+  });
+
   it("строка до чтения DataStore — часть в GMX нулевая, а не ошибка", () => {
     const r = buildPositions({ rows: [gmRow("g", 1550)], pricesUsd: PRICES });
-    expect(r.positions[0].gm).toEqual({ multichainQuantity: 0 });
+    expect(r.positions[0].gm).toEqual({ multichainQuantity: 0, bridged: [] });
   });
 
   it("LP оценивается суммой компонентов по текущему тику", () => {
