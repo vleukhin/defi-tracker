@@ -301,6 +301,31 @@ describe("оценка позиций", () => {
     expect(r.summary.positionsUsd).toBe(1550);
   });
 
+  it("GM, зачисленный внутри GMX, виден отдельной частью количества", () => {
+    const row = gmRow("g", 1550);
+    const r = buildPositions({
+      rows: [
+        {
+          ...row,
+          payload: {
+            ...(row.payload as object),
+            raw: "1000000000000000000000",
+            multichainRaw: "600000000000000000000",
+          },
+        },
+      ],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions[0].gm).toEqual({ multichainQuantity: 600 });
+    // Стоимость считается от всего количества, а не от кошелька
+    expect(r.positions[0].valueUsd).toBe(1550);
+  });
+
+  it("строка до чтения DataStore — часть в GMX нулевая, а не ошибка", () => {
+    const r = buildPositions({ rows: [gmRow("g", 1550)], pricesUsd: PRICES });
+    expect(r.positions[0].gm).toEqual({ multichainQuantity: 0 });
+  });
+
   it("LP оценивается суммой компонентов по текущему тику", () => {
     const r = buildPositions({
       rows: [lpRow("42")],
@@ -622,5 +647,130 @@ describe("Pendle", () => {
       pendleRow("x", { assetCoingeckoId: null }),
     ]);
     expect(ids.sort()).toEqual(["ethena-usde", "staked-ether"]);
+  });
+});
+
+describe("пыль GM-пулов", () => {
+  it("пул дешевле $1 скрыт, но назван числом и в суммы не входит", () => {
+    // Остаток после вывода из GMX: живой пример — 0,00000011 GM на $0,00000009
+    const r = buildPositions({
+      rows: [gmRow("big", 22_000), gmRow("dust", 0.00000009)],
+      pricesUsd: PRICES,
+    });
+
+    expect(r.positions.map((p) => p.id)).toEqual(["big"]);
+    expect(r.dustPositions.map((p) => p.id)).toEqual(["dust"]);
+    expect(r.summary.dust.count).toBe(1);
+    expect(r.summary.dust.valueUsd).toBeCloseTo(0.00000009, 12);
+    // Активы и зоны считаются по тому же списку, что виден на экране
+    expect(r.summary.grossUsd).toBe(22_000);
+  });
+
+  it("неоценённый пул пылью не бывает: неизвестно — не значит меньше доллара", () => {
+    const r = buildPositions({ rows: [gmRow("g", null)], pricesUsd: PRICES });
+    expect(r.positions).toHaveLength(1);
+    expect(r.summary.dust.count).toBe(0);
+    expect(r.summary.unpricedCount).toBe(1);
+  });
+
+  it("ровно доллар — уже не пыль", () => {
+    const r = buildPositions({ rows: [gmRow("g", 1)], pricesUsd: PRICES });
+    expect(r.positions).toHaveLength(1);
+    expect(r.summary.dust.count).toBe(0);
+  });
+
+  it("правило касается только GM: дешёвый депозит Fluid остаётся на виду", () => {
+    const r = buildPositions({
+      rows: [fluidRow("f", "0.5", "usd-coin")],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions).toHaveLength(1);
+    expect(r.positions[0].valueUsd).toBe(0.5);
+    expect(r.summary.dust.count).toBe(0);
+  });
+});
+
+describe("депозит стейблов на Aave", () => {
+  function aaveRow(
+    usedAsCollateral: boolean | null,
+    supplyRatePercent: number | null = 4.2,
+  ): PositionRowInput {
+    return {
+      ...BASE,
+      id: "aave",
+      protocol: "aave_v3_supply",
+      externalId: "0xausdc",
+      quantity: "12400",
+      valueUsd: null,
+      payload: {
+        kind: "aave_supply",
+        symbol: "USDC",
+        coingeckoId: "usd-coin",
+        aToken: "0xausdc",
+        underlying: "0xusdc",
+        decimals: 6,
+        raw: "12400000000",
+        supplyRatePercent,
+        usedAsCollateral,
+      },
+    };
+  }
+
+  it("попадает в позиции: оценка по свежей цене, ставка, зона Yield", () => {
+    const r = buildPositions({
+      rows: [aaveRow(true)],
+      pricesUsd: new Map([["usd-coin", 0.9998]]),
+    });
+    expect(r.positions).toHaveLength(1);
+    const p = r.positions[0];
+    expect(p.protocol).toBe("aave_v3_supply");
+    expect(p.protocolLabel).toBe("Aave v3");
+    expect(p.valueUsd).toBeCloseTo(12_400 * 0.9998, 6);
+    expect(p.supplyRatePercent).toBe(4.2);
+    // награды Aave не читаются — null, а не выдуманный ноль
+    expect(p.rewardsRatePercent).toBeNull();
+    expect(p.zone).toBe("yield");
+    expect(p.zoneKey).toBe("aave_v3_supply:arbitrum:0xausdc");
+    expect(p.components).toEqual([
+      { symbol: "USDC", quantity: 12_400, valueUsd: p.valueUsd, side: null },
+    ]);
+    // входит в «Активы» так же, как любая позиция
+    expect(r.summary.grossUsd).toBeCloseTo(12_400 * 0.9998, 6);
+  });
+
+  it("подпись говорит, держит ли депозит HF", () => {
+    const subtitle = (used: boolean | null) =>
+      buildPositions({ rows: [aaveRow(used)], pricesUsd: new Map() })
+        .positions[0].subtitle;
+    expect(subtitle(true)).toBe("Депозит в залоге");
+    expect(subtitle(false)).toBe("Депозит, не в залоге");
+    expect(subtitle(null)).toBe("Депозит");
+  });
+
+  it("цена стейбла запрашивается для оценки", () => {
+    expect(positionPriceIds([aaveRow(true)])).toEqual(["usd-coin"]);
+  });
+
+  it("собственная доля образует категорию, как у Fluid", () => {
+    const r = buildPositions({
+      rows: [aaveRow(true)],
+      pricesUsd: new Map([["usd-coin", 1]]),
+      marksByKey: new Map([
+        [
+          "aave_v3_supply:arbitrum:0xausdc",
+          {
+            zone: "stability",
+            ownPrincipalUsd: 12_000,
+            borrowedPrincipalUsd: 0,
+            withdrawnUsd: null,
+            entryPriceUsd: null,
+          },
+        ],
+      ]),
+    });
+    const p = r.positions[0];
+    expect(p.zone).toBe("stability");
+    expect(p.ownCurrentUsd).toBeCloseTo(12_400, 6);
+    expect(r.summary.positionsUsd).toBeCloseTo(0, 6);
   });
 });

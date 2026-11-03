@@ -186,12 +186,16 @@ export function buildClosureRows(
     marksByKey.set(key, markOf(markByExternalId.get(row.external_id)));
   }
 
-  const { positions } = buildPositions({
+  const { positions, dustPositions } = buildPositions({
     rows: vanishedAsPositionRows(rows, walletId),
     pricesUsd,
     marksByKey,
   });
-  const dtoById = new Map(positions.map((p) => [p.id, p]));
+  // Пыль экран скрывает, но в архив закрытая позиция ложится со своей
+  // оценкой и названием, как любая другая
+  const dtoById = new Map(
+    [...positions, ...dustPositions].map((p) => [p.id, p]),
+  );
 
   return rows.map((row) => {
     const dto = dtoById.get(row.id);

@@ -10,6 +10,10 @@ import {
   type AaveDebtChainStatus,
 } from "@/lib/chains/aave-debt";
 import {
+  readWalletAaveSupply,
+  type AaveSupplyChainStatus,
+} from "@/lib/chains/aave-supply";
+import {
   FLUID_SOURCE,
   readWalletFluid,
   type FluidChainStatus,
@@ -37,7 +41,11 @@ import {
   type PinnedClient,
 } from "@/lib/chains/historical";
 import { CHAIN_IDS, type ChainId } from "@/lib/chains/config";
-import { GMX_SOURCE, PENDLE_SOURCE } from "@/lib/positions/sources";
+import {
+  AAVE_SUPPLY_SOURCE,
+  GMX_SOURCE,
+  PENDLE_SOURCE,
+} from "@/lib/positions/sources";
 import { pendleRowOf } from "@/lib/chains/pendle";
 import {
   getGmxApiData,
@@ -356,6 +364,51 @@ export async function buildHistoricalChainSource(
       }
     }
 
+    // --- Депозит стейблов на Aave: размещение, а не залог (см. aave-supply.ts).
+    // Статусы сетей — в общий список: исторический путь различает только
+    // залог, долг и свободные средства, остальное — «сеть не ответила»
+    try {
+      const statuses: AaveSupplyChainStatus[] = await readWalletAaveSupply(
+        address,
+        { clients: readerClients(clients) },
+      );
+      for (const status of statuses) {
+        chainStatuses.push(
+          statusRow(status.chain, status.ok, status.error ?? null, checkedAt),
+        );
+        if (!status.ok) continue;
+        for (const p of status.positions) {
+          const aToken = p.aToken.toLowerCase();
+          positionRows.push({
+            id: `hist:${AAVE_SUPPLY_SOURCE}:${p.chain}:${aToken}`,
+            protocol: AAVE_SUPPLY_SOURCE,
+            chain: p.chain,
+            externalId: aToken,
+            quantity: formatUnits(p.raw, p.decimals),
+            // null — оценка соберется по ИСТОРИЧЕСКОЙ цене в buildPositions
+            valueUsd: null,
+            payload: {
+              kind: "aave_supply",
+              symbol: p.symbol,
+              coingeckoId: p.coingeckoId,
+              aToken,
+              underlying: p.underlying.toLowerCase(),
+              decimals: p.decimals,
+              raw: p.raw.toString(),
+              supplyRatePercent: p.supplyRatePercent,
+              usedAsCollateral: p.usedAsCollateral,
+            },
+            updatedAt: checkedAt,
+            walletId: wallet.id,
+            walletLabel: wallet.label,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[historical] депозиты Aave ${address}:`, err);
+      failAllChains(chainStatuses, "депозиты Aave", err);
+    }
+
     // --- Размещенные позиции. Каждый протокол в своем try/catch, как
     // в refreshUserWallets: недоступность одного не лишает точку остальных
     try {
@@ -436,6 +489,7 @@ export async function buildHistoricalChainSource(
               marketToken: p.marketToken.toLowerCase(),
               gmPriceUsd: p.gmPriceUsd,
               raw: p.raw.toString(),
+              multichainRaw: p.multichainRaw.toString(),
               components: p.components,
             },
             updatedAt: checkedAt,

@@ -136,6 +136,20 @@ describe("запись закрытия", () => {
     expect(row.title).toBe("GM BTC/USD");
   });
 
+  it("пыль экран скрывает, а в архив она ложится как любая позиция", () => {
+    // Скрытие — решение экрана; закрытая запись обязана сохранить
+    // настоящую оценку и название, а не запасное «по адресу»
+    const [row] = buildClosureRows({
+      ...CONTEXT,
+      rows: [gmRow(0.00000009)],
+      marks: [],
+      pricesUsd: new Map(),
+    });
+
+    expect(row.last_value_usd).toBe(0.00000009);
+    expect(row.title).toBe("GM BTC/USD");
+  });
+
   it("нет цены актива — стоимость null, а не ноль", () => {
     const [row] = buildClosureRows({
       ...CONTEXT,

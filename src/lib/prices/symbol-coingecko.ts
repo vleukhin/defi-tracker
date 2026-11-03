@@ -48,6 +48,11 @@ const SYMBOL_TO_ID: Record<string, string> = {
 
   // --- стейблы ---
   USDC: "usd-coin",
+  // USDCn — нативный USDC в терминах address book'а Aave (Arbitrum,
+  // Optimism), где «USDC» занят бриджевым USDC.e. Оба стоят на цене
+  // канонического: так же их оценивает разбивка долга (chains/aave-debt.ts),
+  // и расходиться этим двум путям нельзя
+  USDCn: "usd-coin",
   "USDC.e": "bridged-usd-coin",
   USDbC: "bridged-usd-coin-base",
   USDT: "tether",

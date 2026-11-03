@@ -21,6 +21,7 @@ import {
   principalOf,
   profitDelta,
   splitNote,
+  tokenQuantity,
   UnmarkedChip,
   VisualRow,
 } from "./card-parts";
@@ -46,6 +47,10 @@ import { type MarkFn } from "./shared";
  * «Доля в GM»: рабочий сплит по стратегии (§8) — 70% BTC/USDC и 30%
  * ETH/USDC; выравнивают его при следующей покупке GM, и для этого нужно
  * видеть перекос.
+ *
+ * «В балансе GMX»: GM, купленные с другой сети, зачислены кошельку внутри
+ * GMX и в самом кошельке не лежат. Стоимость и уровни у такой позиции те
+ * же, но перевести или заложить её нельзя, пока она не выведена.
  */
 export function GmxCard({
   position,
@@ -75,6 +80,12 @@ export function GmxCard({
     share.deviationPp !== null &&
     Math.abs(share.deviationPp) > GM_SHARE_TOLERANCE_PP;
   const assetShare = share.categorySharePercent ?? share.poolSharePercent;
+  // Кросс-чейн покупка: GM зачислены внутри GMX, а не лежат в кошельке.
+  // Целиком или частью — разное для владельца: перевести или заложить
+  // можно только то, что в кошельке
+  const inGmx = position.gm?.multichainQuantity ?? 0;
+  const total = position.quantity === null ? null : Number(position.quantity);
+  const wholeInGmx = inGmx > 0 && total !== null && inGmx >= total;
 
   // Пул на одном активе: полоса состава у него была бы одним сегментом
   // на 100% — она ничего не делит и только изображала бы пару
@@ -96,9 +107,18 @@ export function GmxCard({
             {/* Без точки отсчёта уровни не считаются вовсе, и молчать
                 об этом нельзя: кнопка шкалы в таком виде просто пуста */}
             {levels.entryPriceUsd === null && <Chip>без точки отсчёта</Chip>}
+            {inGmx > 0 && (
+              <Chip>{wholeInGmx ? "в балансе GMX" : "часть в балансе GMX"}</Chip>
+            )}
           </>
         }
-        meta={[position.title, chainLabel(position.chain)]}
+        meta={[
+          position.title,
+          chainLabel(position.chain),
+          inGmx > 0 && !wholeInGmx
+            ? `в GMX ${tokenQuantity(inGmx)} GM`
+            : null,
+        ]}
         status={
           share.deviationPp === null ? undefined : offTarget ? (
             <StatusChip tone="warn">
