@@ -42,6 +42,10 @@ const PROBE_SPAN = 5_000n;
  * Ограничение жесткое: без него деградировавший RPC подвесил бы весь
  * POST /api/refresh. Не сошлись за четыре пробы — берем лучшее из
  * полученного, оно все равно на порядки точнее нужного.
+ *
+ * Это УМОЛЧАНИЕ, а не потолок: восстановление истории (chains/historical.ts)
+ * идет из скрипта, а не из запроса, и платит лишними пробами за точность —
+ * там промах в блоке сдвигает всю точку истории, а не одну цифру на экране.
  */
 export const MAX_BLOCK_PROBES = 4;
 
@@ -182,6 +186,7 @@ function distance(sample: BlockSample, targetSec: bigint): bigint {
 export async function blockAtTimestamp(
   client: BlockRpcClient,
   targetSec: bigint,
+  maxProbes: number = MAX_BLOCK_PROBES,
 ): Promise<BlockWindow | null> {
   let probes = 0;
   const read = async (blockNumber?: bigint): Promise<BlockSample | null> => {
@@ -209,10 +214,7 @@ export async function blockAtTimestamp(
   let anchor = best === seeded ? latest : seeded;
   const visited = new Set<bigint>([latest.block, seeded.block]);
 
-  while (
-    probes < MAX_BLOCK_PROBES &&
-    distance(best, targetSec) > BLOCK_TOLERANCE_SEC
-  ) {
+  while (probes < maxProbes && distance(best, targetSec) > BLOCK_TOLERANCE_SEC) {
     // Запасная секущая — через голову цепочки: у нее время заведомо отличается
     // от любой пробы, даже когда у соседних блоков оно совпало
     const guess =

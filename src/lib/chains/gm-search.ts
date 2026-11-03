@@ -75,7 +75,10 @@ export interface GmSearchArgs {
   gmToken: string;
   /** Кошелёк ИМЕННО этой позиции. */
   wallet: string;
-  /** Символ базового (long) актива пула. */
+  /**
+   * Символ базового актива пула: длинная сторона, а у рынка на одном активе
+   * (BTC/USD [BTC-BTC]) — единственный его токен.
+   */
   longSymbol: string | null;
   /** coingeckoId из payload позиции; null — попробуем вывести из символа. */
   coingeckoId: string | null;

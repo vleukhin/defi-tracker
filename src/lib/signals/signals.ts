@@ -19,7 +19,11 @@ import {
 } from "@/lib/hf-zones";
 import { chainLabel, dcPp, dcRate, dcUsd, tablePct } from "@/lib/format";
 import { gmLevels } from "@/lib/positions/gm-levels";
-import { GM_SHARE_TOLERANCE_PP, gmShare } from "@/lib/positions/gm-split";
+import {
+  GM_SHARE_TOLERANCE_PP,
+  gmMarketCategory,
+  gmShare,
+} from "@/lib/positions/gm-split";
 import { exitSide } from "@/lib/positions/lp-range";
 import { maturityDecision } from "@/lib/positions/maturity";
 import { RANGE_WAIT_HOURS, rangeDecision } from "@/lib/positions/range-timer";
@@ -517,8 +521,7 @@ function gmSignals(
       tone: "neutral",
       chip: dcPp(levels.growth.percent, 0),
       title: `${name} выше ориентира ${dcPp(levels.growth.percent, 0)} от точки отсчёта`,
-      detail:
-        "На существенном росте стратегия предусматривает первую фиксацию: часть GM продают, BTC/ETH уходят в залог, USDC — в Stability.",
+      detail: `На существенном росте стратегия предусматривает первую фиксацию: ${levels.growth.action}.`,
       hint: "Ориентир, а не уровень действия: на промежуточных отметках роста стратегия действий не предусматривает.",
       target: "zones",
     });
@@ -679,6 +682,10 @@ function leverageSignals(input: SignalsInput): SignalDraft[] {
   const positions = input.positions;
   if (positions === null) return out;
 
+  // Перекос сплита — свойство базового актива, а не пула: сигнал по нему
+  // выходит один на актив, сколько бы пулов на этот актив ни приходилось
+  const splitSaid = new Set<string>();
+
   for (const position of positions) {
     const spread = positionSpread(position, input.stableBorrowRatePercent);
     if (spread !== null && spread < 0) {
@@ -707,24 +714,28 @@ function leverageSignals(input: SignalsInput): SignalDraft[] {
     // «выровнять при следующей покупке» неисполним — выравнивать не с чем
     const gmPools = positions.filter((p) => p.protocol === "gmx_v2").length;
     if (position.protocol === "gmx_v2" && gmPools > 1) {
+      const category = gmMarketCategory(position);
       const share = gmShare(position, positions);
       if (
+        category !== null &&
+        !splitSaid.has(category) &&
         share.deviationPp !== null &&
-        share.sharePercent !== null &&
+        share.categorySharePercent !== null &&
         share.targetPercent !== null &&
         Math.abs(share.deviationPp) > GM_SHARE_TOLERANCE_PP
       ) {
-        const name = gmName(position, null);
+        splitSaid.add(category);
+        const asset = category === "btc" ? "BTC" : "ETH";
         out.push({
-          key: `gm-split:${position.id}`,
+          key: `gm-split:${category}`,
           kind: "gm-split",
           severity: "leverage",
           weight: Math.abs(share.deviationPp),
           tone: "neutral",
           chip: dcPp(share.deviationPp),
-          title: `Доля ${name} — ${tablePct(share.sharePercent, 1)} против цели ${tablePct(share.targetPercent, 0)}`,
+          title: `Доля ${asset} в GM — ${tablePct(share.categorySharePercent, 1)} против цели ${tablePct(share.targetPercent, 0)}`,
           detail: "Перекос выравнивают при следующей покупке GM, а не продажей.",
-          hint: "Рабочий сплит внутри GM — 70% BTC/USDC и 30% ETH/USDC (docs/07 §8); цель задана стратегией, а не настройкой.",
+          hint: "Рабочий сплит внутри GM — 70% BTC/USDC и 30% ETH/USDC (docs/07 §8); цель задана стратегией, а не настройкой. Считается по базовому активу: пулов на один актив бывает несколько, в том числе одноактивных.",
           target: "zones",
         });
       }
@@ -927,7 +938,7 @@ function positionHygiene(input: SignalsInput): SignalDraft[] {
         chip: "нет цены",
         title: `Цена ${name} не прочитана`,
         detail:
-          "Оракул GMX не отдал стоимость длинной стороны — уровни по этому пулу не считаются.",
+          "Оракул GMX не отдал стоимость базового актива — уровни по этому пулу не считаются.",
         hint: null,
         target: "zones",
       });

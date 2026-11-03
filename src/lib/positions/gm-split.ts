@@ -1,5 +1,6 @@
 import type { PositionDto } from "@/lib/api/types";
 import { symbolCategory } from "@/lib/symbol-category";
+import { gmBaseComponent } from "./gm-asset";
 
 /**
  * Рабочий сплит внутри GM-пулов (docs/07 §8): 70% BTC/USDC и 30% ETH/USDC,
@@ -11,6 +12,13 @@ import { symbolCategory } from "@/lib/symbol-category";
  *
  * Считается по стоимости GM-пулов, а не по вложенному: доля — это то, чем
  * позиция является сейчас, а вложенное давно разошлось с текущей ценой.
+ *
+ * Сравнивается с целью доля БАЗОВОГО АКТИВА, а не доля одного пула. Цель
+ * стратегии — про то, сколько денег Yield стоит в BTC и сколько в ETH, и у
+ * одного актива пулов бывает несколько: BTC/USDC рядом с одноактивным
+ * BTC/USD [BTC-BTC]. Сравнение каждого пула с 70% в такой расстановке
+ * показывало бы перекос, которого нет. Когда на актив приходится по одному
+ * пулу, обе доли совпадают, и число на карточке не меняется.
  */
 export const GM_TARGET_SHARE_PERCENT: Record<"btc" | "eth", number> = {
   btc: 70,
@@ -21,25 +29,46 @@ export const GM_TARGET_SHARE_PERCENT: Record<"btc" | "eth", number> = {
 export const GM_SHARE_TOLERANCE_PP = 5;
 
 export interface GmShare {
-  /** Доля позиции в стоимости всех GM-пулов, %. null = стоимость неизвестна. */
-  sharePercent: number | null;
+  /** Доля ЭТОГО пула в стоимости всех GM-пулов, %. null = неизвестна. */
+  poolSharePercent: number | null;
+  /**
+   * Доля всех пулов того же базового актива — её и сравнивают с целью.
+   * null = рынок не BTC и не ETH либо стоимость неизвестна.
+   */
+  categorySharePercent: number | null;
+  /**
+   * Сколько пулов приходится на этот базовый актив, включая текущий.
+   * У рынка вне BTC и ETH — ноль: доли по активу у него нет вовсе.
+   */
+  categoryPools: number;
   /** Цель по стратегии для этого рынка; null = рынок не BTC и не ETH. */
   targetPercent: number | null;
-  /** Отклонение доли от цели в п.п.; null, если нет одной из величин. */
+  /** Отклонение доли АКТИВА от цели в п.п.; null, если нет одной из величин. */
   deviationPp: number | null;
   /** Стоимость всех GM-пулов; null = хотя бы один не оценен. */
   totalUsd: number | null;
 }
 
 /**
- * Базовый актив GM-рынка — по long-компоненте: в паре BTC/USDC длинная
- * сторона и есть BTC. Короткая всегда стейбл и рынок не определяет.
+ * Базовый актив GM-рынка — по его компоненте (positions/gm-asset.ts): в паре
+ * BTC/USDC это длинная сторона, у одноактивного рынка — единственный
+ * компонент. Короткая сторона всегда стейбл и рынок не определяет.
  */
 export function gmMarketCategory(position: PositionDto): "btc" | "eth" | null {
-  const long = position.components.find((c) => c.side === "long");
-  if (!long) return null;
-  const category = symbolCategory(long.symbol);
+  const base = gmBaseComponent(position);
+  if (!base) return null;
+  const category = symbolCategory(base.symbol);
   return category === "btc" || category === "eth" ? category : null;
+}
+
+/** Сумма стоимостей с null-пропагацией: неоценённый пул = сумма неизвестна. */
+function totalOrNull(pools: PositionDto[]): number | null {
+  let total = 0;
+  for (const p of pools) {
+    if (p.valueUsd === null) return null;
+    total += p.valueUsd;
+  }
+  return total;
 }
 
 export function gmShare(
@@ -47,33 +76,35 @@ export function gmShare(
   positions: PositionDto[],
 ): GmShare {
   const pools = positions.filter((p) => p.protocol === "gmx_v2");
+  const category = gmMarketCategory(position);
+  const samePools =
+    category === null
+      ? []
+      : pools.filter((p) => gmMarketCategory(p) === category);
 
   // Null-пропагация как везде: неоцененный пул делает неизвестной всю сумму,
   // а с ней и долю — доля от части пулов вводила бы в заблуждение
-  let totalUsd: number | null = 0;
-  for (const p of pools) {
-    if (p.valueUsd === null || totalUsd === null) {
-      totalUsd = null;
-      break;
-    }
-    totalUsd += p.valueUsd;
-  }
+  const totalUsd = totalOrNull(pools);
+  const categoryUsd = category === null ? null : totalOrNull(samePools);
 
-  const sharePercent =
-    totalUsd !== null && totalUsd > 0 && position.valueUsd !== null
-      ? (position.valueUsd / totalUsd) * 100
+  const share = (partUsd: number | null): number | null =>
+    totalUsd !== null && totalUsd > 0 && partUsd !== null
+      ? (partUsd / totalUsd) * 100
       : null;
 
-  const category = gmMarketCategory(position);
+  const poolSharePercent = share(position.valueUsd);
+  const categorySharePercent = share(categoryUsd);
   const targetPercent =
     category === null ? null : GM_TARGET_SHARE_PERCENT[category];
 
   return {
-    sharePercent,
+    poolSharePercent,
+    categorySharePercent,
+    categoryPools: samePools.length,
     targetPercent,
     deviationPp:
-      sharePercent !== null && targetPercent !== null
-        ? sharePercent - targetPercent
+      categorySharePercent !== null && targetPercent !== null
+        ? categorySharePercent - targetPercent
         : null,
     totalUsd,
   };

@@ -200,6 +200,30 @@ function gm({
   });
 }
 
+/** GM-пул на одном активе: один компонент без стороны (BTC/USD [BTC-BTC]). */
+function gmSingle({
+  id = "s1",
+  entryPriceUsd = 100_000,
+  priceUsd = 100_000,
+  valueUsd = 10_000,
+  symbol = "WBTC.b",
+}: {
+  id?: string;
+  entryPriceUsd?: number | null;
+  priceUsd?: number | null;
+  valueUsd?: number | null;
+  symbol?: string;
+} = {}): PositionDto {
+  return position({
+    id,
+    protocol: "gmx_v2",
+    entryPriceUsd,
+    valueUsd,
+    title: `GM ${symbol}`,
+    components: [{ symbol, quantity: 1, valueUsd: priceUsd, side: null }],
+  });
+}
+
 /** CLMM-позиция Uniswap: вне диапазона с заданного момента. */
 function lp({
   id = "lp1",
@@ -547,6 +571,34 @@ describe("уровни GM", () => {
       ],
     });
     expect(kinds(inp)).toEqual([]);
+  });
+
+  it("перекос считается по активу: два BTC-пула дают один сигнал", () => {
+    // Парный и одноактивный BTC-пулы вместе стоят 78 400 — это +8,4 п.п.
+    // к цели 70%, и сказать об этом нужно один раз, а не дважды
+    const inp = input({
+      positions: [
+        gm({ id: "btc-pair", valueUsd: 48_400, priceUsd: 99_000 }),
+        gmSingle({ id: "btc-single", valueUsd: 30_000, priceUsd: 99_000 }),
+        gm({ id: "eth", valueUsd: 21_600, priceUsd: 99_000, symbol: "ETH" }),
+      ],
+    });
+    const split = buildSignals(inp, NOW).filter((s) => s.kind === "gm-split");
+    expect(split).toHaveLength(2);
+    expect(split.map((s) => s.title)).toEqual([
+      "Доля BTC в GM — 78,4% против цели 70%",
+      "Доля ETH в GM — 21,6% против цели 30%",
+    ]);
+  });
+
+  it("у одноактивного пула в действиях уровня нет стейблов", () => {
+    const signals = buildSignals(
+      input({ positions: [gmSingle({ priceUsd: 70_000 })] }),
+      NOW,
+    );
+    expect(signals[0].kind).toBe("gm-level");
+    expect(signals[0].detail).toContain("вырученные BTC/ETH уходят в залог");
+    expect(signals[0].detail).not.toContain("снова в GM");
   });
 });
 

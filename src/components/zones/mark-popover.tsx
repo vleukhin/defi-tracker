@@ -10,6 +10,7 @@ import { HelpTip } from "@/components/dc/help-tip";
 import { Label } from "@/components/ui/label";
 import { SheetPopover } from "@/components/dc/sheet-popover";
 import type { PositionDto, StrategyZone } from "@/lib/api/types";
+import { gmBaseComponent } from "@/lib/positions/gm-asset";
 import { cn } from "@/lib/utils";
 import {
   ZONE_ACCENT,
@@ -98,7 +99,7 @@ function MarkForm({
   // к уровням падения, — это GM-пулы (docs/07 §5). У депозита и у CLMM
   // свои события: ставка и выход из диапазона
   const withEntryPrice = position.protocol === "gmx_v2";
-  const market = position.components.find((c) => c.side === "long")?.symbol;
+  const market = gmBaseComponent(position)?.symbol;
 
   /** Одним запросом: разметка правится целиком, а не по полю за раз. */
   async function submit(event: React.FormEvent) {

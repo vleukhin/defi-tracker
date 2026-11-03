@@ -1,4 +1,10 @@
-import { createPublicClient, fallback, http, type PublicClient } from "viem";
+import {
+  createPublicClient,
+  fallback,
+  http,
+  type PublicClient,
+  type Transport,
+} from "viem";
 import { mainnet, arbitrum, base, optimism, type Chain } from "viem/chains";
 
 /**
@@ -84,16 +90,8 @@ export function alchemyRpcUrl(chainId: ChainId): string | null {
   return `https://${RPC_CONFIG[chainId].alchemyHost}/v2/${key}`;
 }
 
-function buildClient(chainId: ChainId): PublicClient {
-  const { viemChain, fallbackUrls } = RPC_CONFIG[chainId];
-  const alchemyUrl = alchemyRpcUrl(chainId);
-
-  const transports = [
-    // Ключевой провайдер первым в цепочке (ТЗ §7); без ключа — сразу fallback.
-    ...(alchemyUrl ? [http(alchemyUrl)] : []),
-    ...fallbackUrls.map((url) => http(url)),
-  ];
-
+function clientFor(chainId: ChainId, transport: Transport): PublicClient {
+  const { viemChain } = RPC_CONFIG[chainId];
   return createPublicClient({
     chain: {
       ...viemChain,
@@ -102,9 +100,36 @@ function buildClient(chainId: ChainId): PublicClient {
         multicall3: { address: MULTICALL3_ADDRESS },
       },
     },
-    transport: fallback(transports),
+    transport,
     batch: { multicall: { batchSize: 1024 } },
   });
+}
+
+function buildClient(chainId: ChainId): PublicClient {
+  const { fallbackUrls } = RPC_CONFIG[chainId];
+  const alchemyUrl = alchemyRpcUrl(chainId);
+
+  const transports = [
+    // Ключевой провайдер первым в цепочке (ТЗ §7); без ключа — сразу fallback.
+    ...(alchemyUrl ? [http(alchemyUrl)] : []),
+    ...fallbackUrls.map((url) => http(url)),
+  ];
+
+  return clientFor(chainId, fallback(transports));
+}
+
+/**
+ * Клиент БЕЗ запасных узлов — только Alchemy.
+ *
+ * Нужен чтению состояния на старом блоке: drpc и publicnode архива не
+ * держат, и запрос к ним вернёт «missing trie node» на каждый вызов.
+ * Молчаливое переключение на неархивный узел — худший исход из возможных,
+ * поэтому историю читает ровно тот провайдер, который умеет её отдавать,
+ * а без ключа функция честно возвращает null.
+ */
+export function archiveClient(chainId: ChainId): PublicClient | null {
+  const url = alchemyRpcUrl(chainId);
+  return url === null ? null : clientFor(chainId, http(url));
 }
 
 let clientCache: Record<ChainId, PublicClient> | null = null;

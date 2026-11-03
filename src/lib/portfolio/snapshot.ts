@@ -40,7 +40,7 @@ import {
 } from "@/lib/chains/reader";
 import type { FundsMark, SnapshotDto, SnapshotItemDto } from "@/lib/api/types";
 import { loadPortfolio, loadPortfolioAsAdmin } from "./load";
-import type { ChainStatusRow, LoadPortfolioResult } from "./load";
+import type { ChainSource, ChainStatusRow, LoadPortfolioResult } from "./load";
 import type { PortfolioCategory, PortfolioRow } from "./portfolio";
 
 /**
@@ -323,6 +323,20 @@ export interface CreateSnapshotOptions {
    * ловится проверкой ниже, потому что ошибка здесь означает утечку.
    */
   readerScope?: "rls" | "admin";
+  /**
+   * Сетевые данные извне вместо кэшей — восстановление пропущенной точки
+   * (portfolio/historical-source.ts). Вместе с nowMs, выставленным на момент
+   * той даты, даёт снепшот за прошлое: taken_on считается из nowMs.
+   *
+   * Требует readerScope: "admin" — пользовательской сессии у скрипта нет.
+   */
+  chainSource?: ChainSource;
+  /**
+   * true = собрать точку и НИЧЕГО не писать. Для предпросмотра
+   * восстановления: увидеть цифры до записи важнее, чем сэкономить прогон,
+   * а «сначала записать, потом посмотреть» в истории не отменяется.
+   */
+  dryRun?: boolean;
 }
 
 export interface CreateSnapshotResult {
@@ -372,6 +386,12 @@ export async function createSnapshot(
   const takenOn = takenAt.slice(0, 10);
 
   const readerScope = opts.readerScope ?? "rls";
+  if (opts.chainSource && readerScope !== "admin") {
+    // Подменный источник приходит из скрипта, где сессии пользователя нет.
+    // Молча проигнорировать его значило бы записать СЕГОДНЯШНЕЕ состояние
+    // в строку с прошлой датой — тихая порча истории
+    throw new Error('createSnapshot: chainSource требует readerScope: "admin"');
+  }
   if (readerScope === "rls" && userSupabase === admin) {
     // Service-role клиент под видом пользовательского: RLS не сработает,
     // и в снепшот попал бы портфель ВСЕХ пользователей сразу
@@ -385,6 +405,7 @@ export async function createSnapshot(
       ? await loadPortfolioAsAdmin(userSupabase, userId, {
           fetchIfExpired: opts.fetchIfExpired ?? true,
           nowMs,
+          chainSource: opts.chainSource,
         })
       : await loadPortfolio(userSupabase, userId, {
           admin,
@@ -407,24 +428,30 @@ export async function createSnapshot(
     freeBorrowedUsd: portfolio.overview.freeBorrowedUsd,
   });
 
+  const row = {
+    user_id: userId,
+    taken_on: takenOn,
+    taken_at: takenAt,
+    total_usd: build.totalUsd,
+    debt_usd: build.debtUsd,
+    collateral_usd: build.collateralUsd,
+    health_factor: build.healthFactor,
+    positions_usd: build.positionsUsd,
+    free_usd: build.freeUsd,
+    free_borrowed_usd: build.freeBorrowedUsd,
+    is_partial: build.isPartial,
+  };
+
+  if (opts.dryRun) {
+    return {
+      snapshot: dtoOf({ id: "", ...row }, build),
+      partialReasons: build.partialReasons,
+    };
+  }
+
   const { data: snapshotRow, error: snapshotError } = await admin
     .from("snapshots")
-    .upsert(
-      {
-        user_id: userId,
-        taken_on: takenOn,
-        taken_at: takenAt,
-        total_usd: build.totalUsd,
-        debt_usd: build.debtUsd,
-        collateral_usd: build.collateralUsd,
-        health_factor: build.healthFactor,
-        positions_usd: build.positionsUsd,
-        free_usd: build.freeUsd,
-        free_borrowed_usd: build.freeBorrowedUsd,
-        is_partial: build.isPartial,
-      },
-      { onConflict: "user_id,taken_on" },
-    )
+    .upsert(row, { onConflict: "user_id,taken_on" })
     // Строка select'а — один литерал: разбитую конкатенацией supabase-js
     // не разбирает и выводит тип строки как ошибку
     .select(
@@ -451,6 +478,15 @@ export async function createSnapshot(
   );
   if (itemsError) throw new Error(`snapshot_items upsert: ${itemsError.message}`);
 
+  return { snapshot: dtoOf(snapshot, build), partialReasons: build.partialReasons };
+}
+
+/**
+ * Строка снепшота в DTO. Отдельной функцией, потому что путей два — запись
+ * и предпросмотр (dryRun), — и собирать ответ двумя литералами значило бы
+ * показывать в предпросмотре не то, что потом запишется.
+ */
+function dtoOf(snapshot: SnapshotRow, build: SnapshotBuild): SnapshotDto {
   const items: SnapshotItemDto[] = build.items.map((item) => ({
     category: item.category,
     quantity: item.quantity,
@@ -463,30 +499,22 @@ export async function createSnapshot(
     freeUsd: item.freeUsd,
   }));
 
+  const num = (value: number | string | null): number | null =>
+    value === null ? null : Number(value);
+
   return {
-    snapshot: {
-      id: snapshot.id,
-      takenOn: snapshot.taken_on,
-      takenAt: snapshot.taken_at,
-      totalUsd: Number(snapshot.total_usd),
-      debtUsd: snapshot.debt_usd === null ? null : Number(snapshot.debt_usd),
-      collateralUsd:
-        snapshot.collateral_usd === null
-          ? null
-          : Number(snapshot.collateral_usd),
-      healthFactor:
-        snapshot.health_factor === null ? null : Number(snapshot.health_factor),
-      positionsUsd:
-        snapshot.positions_usd === null ? null : Number(snapshot.positions_usd),
-      freeUsd: snapshot.free_usd === null ? null : Number(snapshot.free_usd),
-      freeBorrowedUsd:
-        snapshot.free_borrowed_usd === null
-          ? null
-          : Number(snapshot.free_borrowed_usd),
-      isPartial: snapshot.is_partial,
-      items,
-    },
-    partialReasons: build.partialReasons,
+    id: snapshot.id,
+    takenOn: snapshot.taken_on,
+    takenAt: snapshot.taken_at,
+    totalUsd: Number(snapshot.total_usd),
+    debtUsd: num(snapshot.debt_usd),
+    collateralUsd: num(snapshot.collateral_usd),
+    healthFactor: num(snapshot.health_factor),
+    positionsUsd: num(snapshot.positions_usd),
+    freeUsd: num(snapshot.free_usd),
+    freeBorrowedUsd: num(snapshot.free_borrowed_usd),
+    isPartial: snapshot.is_partial,
+    items,
   };
 }
 

@@ -277,3 +277,49 @@ describe("отработанные уровни", () => {
     expect(v.growth).toBeNull();
   });
 });
+
+// --- Пул на одном активе -------------------------------------------------
+
+/** GM BTC/USD [BTC-BTC]: один компонент без стороны, стейблов в пуле нет. */
+function gmSingle({
+  entryPriceUsd = null,
+  quantity = 1,
+  valueUsd = 100_000,
+}: {
+  entryPriceUsd?: number | null;
+  quantity?: number;
+  valueUsd?: number | null;
+} = {}): PositionDto {
+  return {
+    ...gm({ entryPriceUsd }),
+    subtitle: "BTC/USD [WBTC.b-WBTC.b]",
+    components: [{ symbol: "WBTC.b", quantity, valueUsd, side: null }],
+  };
+}
+
+describe("пул на одном активе", () => {
+  it("цена базового актива берётся из единственного компонента", () => {
+    expect(gmMarketPriceUsd(gmSingle({ quantity: 0.5, valueUsd: 45_000 }))).toBe(
+      90_000,
+    );
+    expect(gmLevels(gmSingle()).marketSymbol).toBe("WBTC.b");
+  });
+
+  it("шкала та же, а в действиях нет стейблов, которых нет в пуле", () => {
+    const v = gmLevels(gmSingle({ entryPriceUsd: 100_000 }));
+    expect(v.levels.map((l) => l.priceUsd)).toEqual([
+      93_000, 85_000, 70_000, 50_000, 30_000,
+    ]);
+    expect(v.levels.every((l) => !l.action.includes("USDC"))).toBe(true);
+    expect(v.levels[0].action).toContain("GM продают на 30%");
+    expect(v.growth?.action).not.toContain("USDC");
+    // Действия Stability от состава пула не зависят: это другая зона
+    expect(v.levels[2].stabilityAction).toContain("GM BTC/USDC");
+  });
+
+  it("у двустороннего рынка действия по-прежнему про USDC", () => {
+    const v = gmLevels(gm({ entryPriceUsd: 100_000 }));
+    expect(v.levels[0].action).toContain("USDC — снова в GM");
+    expect(v.growth?.action).toContain("USDC — в Stability");
+  });
+});

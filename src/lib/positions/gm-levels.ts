@@ -1,4 +1,5 @@
 import type { PositionDto } from "@/lib/api/types";
+import { gmBaseComponent, isSingleAssetGm } from "./gm-asset";
 
 /**
  * Уровни действий по GM-пулу (docs/07 §5, §6, §7).
@@ -74,6 +75,31 @@ const GM_ACTION: Record<number, string> = {
 };
 
 /**
+ * То же действие в пуле на одном активе (BTC/USD [BTC-BTC], ETH/USD
+ * [ETH-ETH]). Стейблов в таком пуле нет, поэтому «USDC — снова в GM»
+ * отпадает: вырученное целиком и есть базовый актив, и уходит оно туда же,
+ * куда уходит базовый актив у двустороннего рынка, — в залог Growth.
+ *
+ * Документ стратегии одноактивные пулы не описывает (§8 задаёт сплит парами
+ * BTC/USDC и ETH/USDC), и домысливать за него мы не стали: текст говорит
+ * ровно то, что следует из §5 при отсутствии короткой стороны, и ни слова
+ * о судьбе стейблов, которых в пуле не бывает.
+ */
+const GM_SINGLE_ASSET_ACTION: Record<number, string> = {
+  7: "GM продают на 30%, вырученные BTC/ETH уходят в залог",
+  15: "GM продают полностью, вырученные BTC/ETH уходят в залог",
+  30: "текущие GM продают, вырученные BTC/ETH уходят в залог",
+  50: "текущие GM продают, вырученные BTC/ETH уходят в залог",
+  70: "текущие GM продают, вырученные BTC/ETH уходят в залог",
+};
+
+/** Первая фиксация на росте (§6) — и её же вариант для одного актива. */
+const GM_GROWTH_ACTION =
+  "часть GM продают, BTC/ETH уходят в залог, USDC — в Stability";
+const GM_GROWTH_SINGLE_ASSET_ACTION =
+  "часть GM продают, вырученные BTC/ETH уходят в залог";
+
+/**
  * Что на том же уровне делает Stability (§5, таблица Stability): с −30%
  * к продажам GM подключаются покупки из резерва. Проценты — от ВСЕГО
  * объёма зоны на начало цикла, а не от остатка.
@@ -141,6 +167,8 @@ export interface GmLevelsView {
   growth: {
     percent: number;
     priceUsd: number;
+    /** Что стратегия предусматривает на этом ориентире. */
+    action: string;
     reached: boolean | null;
     /** Отмечен отработанным; в журнале это уровень −50 (S8.1). */
     acted: boolean;
@@ -148,8 +176,9 @@ export interface GmLevelsView {
 }
 
 /**
- * Цена базового актива рынка — из длинной стороны пула: в паре BTC/USDC
- * длинная сторона и есть BTC, короткая всегда стейбл.
+ * Цена базового актива рынка — из его компонента (positions/gm-asset.ts):
+ * у двустороннего рынка это длинная сторона, у одноактивного — единственный
+ * компонент.
  *
  * Берётся из компонентов позиции, а не из цен CoinGecko: у GM это цена
  * оракула GMX, та самая, по которой пул и переоценивается. Ноль в стоимости
@@ -157,15 +186,15 @@ export interface GmLevelsView {
  * от нуля), поэтому нулевая стоимость даёт null, а не цену.
  */
 export function gmMarketPriceUsd(position: PositionDto): number | null {
-  const long = position.components.find((c) => c.side === "long");
-  if (!long || long.valueUsd === null) return null;
-  if (long.quantity <= 0 || long.valueUsd <= 0) return null;
-  return long.valueUsd / long.quantity;
+  const base = gmBaseComponent(position);
+  if (!base || base.valueUsd === null) return null;
+  if (base.quantity <= 0 || base.valueUsd <= 0) return null;
+  return base.valueUsd / base.quantity;
 }
 
 /** Символ базового актива рынка: «WBTC» → цена именно его. */
 export function gmMarketSymbol(position: PositionDto): string | null {
-  return position.components.find((c) => c.side === "long")?.symbol ?? null;
+  return gmBaseComponent(position)?.symbol ?? null;
 }
 
 /**
@@ -182,6 +211,10 @@ export function gmLevels(
   const entryPriceUsd = position.entryPriceUsd;
   const currentPriceUsd = gmMarketPriceUsd(position);
   const marketSymbol = gmMarketSymbol(position);
+  // Пул на одном активе отличается только текстом действий: шкала,
+  // точка отсчёта и арифметика у него те же
+  const singleAsset = isSingleAssetGm(position);
+  const actions = singleAsset ? GM_SINGLE_ASSET_ACTION : GM_ACTION;
 
   if (entryPriceUsd === null || entryPriceUsd <= 0) {
     return {
@@ -205,7 +238,7 @@ export function gmLevels(
     return {
       dropPercent,
       priceUsd,
-      action: GM_ACTION[dropPercent],
+      action: actions[dropPercent],
       stabilityAction: STABILITY_ACTION[dropPercent],
       // Только про сегодняшнюю цену: где она стоит относительно уровня.
       // Действовал ли там владелец — соседнее поле `acted`, и одно
@@ -249,6 +282,9 @@ export function gmLevels(
     growth: {
       percent: GM_GROWTH_LEVEL_PERCENT,
       priceUsd: growthPriceUsd,
+      action: singleAsset
+        ? GM_GROWTH_SINGLE_ASSET_ACTION
+        : GM_GROWTH_ACTION,
       reached:
         currentPriceUsd === null ? null : currentPriceUsd >= growthPriceUsd,
       acted: isActed(GM_GROWTH_LEVEL_KEY),

@@ -6,6 +6,7 @@ import { Chip, StatusChip } from "@/components/dc/chip";
 import { Metric } from "@/components/dc/metrics";
 import type { GmJournalDto, PositionDto } from "@/lib/api/types";
 import { chainLabel, dcPp, dcUsd, tablePct, tableSigned } from "@/lib/format";
+import { isSingleAssetGm } from "@/lib/positions/gm-asset";
 import { gmLevels } from "@/lib/positions/gm-levels";
 import { GM_SHARE_TOLERANCE_PP, gmShare } from "@/lib/positions/gm-split";
 import {
@@ -73,10 +74,14 @@ export function GmxCard({
   const offTarget =
     share.deviationPp !== null &&
     Math.abs(share.deviationPp) > GM_SHARE_TOLERANCE_PP;
+  const assetShare = share.categorySharePercent ?? share.poolSharePercent;
 
-  const composition = componentSegments(position.components, {
-    withSide: true,
-  });
+  // Пул на одном активе: полоса состава у него была бы одним сегментом
+  // на 100% — она ничего не делит и только изображала бы пару
+  const singleAsset = isSingleAssetGm(position);
+  const composition = singleAsset
+    ? null
+    : componentSegments(position.components, { withSide: true });
   const ownership = ownershipSegments(position);
 
   return (
@@ -139,16 +144,20 @@ export function GmxCard({
         />
         <Metric
           label="Доля в GM"
-          hint="Доля пула в стоимости всех GM-пулов. Рабочий сплит стратегии — 70% BTC/USDC и 30% ETH/USDC."
+          hint="Доля пулов базового актива в стоимости всех GM-пулов: цель стратегии — про то, сколько Yield стоит в BTC и сколько в ETH, а пулов на один актив бывает несколько. Рабочий сплит — 70% BTC/USDC и 30% ETH/USDC."
           value={
-            share.sharePercent === null ? null : tablePct(share.sharePercent, 1)
+            // Рынок вне BTC и ETH цели не имеет, и доля актива у него
+            // не считается — остаётся доля самого пула
+            assetShare === null ? null : tablePct(assetShare, 1)
           }
           mono={false}
           tone={offTarget ? "warn" : undefined}
           delta={
             share.targetPercent === null
               ? "рынок вне двух базовых активов"
-              : `цель ${tablePct(share.targetPercent, 0)}`
+              : share.categoryPools > 1 && share.poolSharePercent !== null
+                ? `цель ${tablePct(share.targetPercent, 0)}, этот пул ${tablePct(share.poolSharePercent, 1)}`
+                : `цель ${tablePct(share.targetPercent, 0)}`
           }
         />
       </MetricRow>
@@ -157,7 +166,9 @@ export function GmxCard({
         {composition === null ? (
           <PlainBlock label="Состав">
             {componentQuantities(position.components)}
-            {" — цен компонентов нет, доли не считаются"}
+            {singleAsset
+              ? " — пул на одном активе, сторон у него нет"
+              : " — цен компонентов нет, доли не считаются"}
           </PlainBlock>
         ) : (
           <BarBlock
@@ -192,7 +203,7 @@ export function GmxCard({
       <Verdict>
         {levels.lastReached !== null
           ? `Пройден уровень ${dcPp(-levels.lastReached.dropPercent, 0)}: по стратегии на нём ${levels.lastReached.action}.`
-          : share.sharePercent === null
+          : assetShare === null
             ? "Стоимость части GM-пулов неизвестна — доля не считается."
             : share.targetPercent === null
               ? "Рынок вне двух базовых активов: рабочий сплит стратегии его не задаёт."
