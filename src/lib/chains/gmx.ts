@@ -196,10 +196,12 @@ export interface GmPositionReading {
   /** Баланс GM в сыром виде (18 знаков): кошелёк плюс мультичейн-кредит. */
   raw: bigint;
   /**
-   * Часть `raw`, которая лежит не в кошельке, а в хранилище GMX
-   * (кросс-чейн покупка, см. MULTICHAIN_BALANCE). Ноль — обычная позиция.
+   * Часть `raw`, зачисленная кошельку внутри GMX (MULTICHAIN_BALANCE).
+   * Ноль — обычная позиция.
    */
   multichainRaw: bigint;
+  /** Части `raw`, лежащие OFT-токеном на других сетях (BRIDGED_GM_TOKENS). */
+  bridged: BridgedGmHolding[];
   quantity: number;
   /** Цена одного GM в долларах (оракул GMX). */
   gmPriceUsd: number;
@@ -235,10 +237,116 @@ export interface GmxRpcClient {
   }): Promise<readonly MulticallResult[]>;
 }
 
+/**
+ * GM на других сетях — LayerZero OFT, выпущенный 1:1 под GM, который
+ * адаптер GMX держит на Arbitrum.
+ *
+ * Кросс-чейн вход в пул (Stargate → LayerZeroProvider → DepositVault)
+ * заканчивается не на Arbitrum: GM минтятся адаптеру, а кошельку приходит
+ * их OFT-представление на ИСХОДНОЙ сети. У реального кошелька так лежат
+ * 26 650 GM ETH/USD [ETH-ETH] на Ethereum, а на Arbitrum — ноль. Это тот же
+ * GM: totalSupply рынка на Arbitrum его включает (он заперт в адаптере),
+ * поэтому доля в пуле и оценка считаются тем же оракулом, что и всегда.
+ *
+ * Список курируемый, как allowlist токенов: GMX API адресов OFT не отдаёт,
+ * а угадывать «похожий» токен по символу нельзя — подделку с таким же
+ * именем выпустить ничего не стоит. Каждая запись сверена по цепочке в обе
+ * стороны: у OFT `peers(30110)` (eid Arbitrum) указывает на адаптер, а
+ * `token()` адаптера — на рынок из `marketToken`.
+ */
+export interface BridgedGmToken {
+  chain: ChainId;
+  /** Адрес OFT-токена на той сети. */
+  token: Address;
+  /** GM-рынок на Arbitrum, под который токен выпущен. */
+  marketToken: Address;
+}
+
+export const BRIDGED_GM_TOKENS: readonly BridgedGmToken[] = [
+  // «GM: ETH/USD [WETH-WETH]». Сверено 03.11.2026: peers(30110) →
+  // адаптер 0x0110424a21d5df818f4a789e5d9d9141a4e29a3c, его token() →
+  // ETH/USD [ETH-ETH]
+  {
+    chain: "ethereum",
+    token: "0x0b335e18ab68ccd2e8946a6e785d8be65f413103",
+    marketToken: "0x450bb6774Dd8a756274E0ab4107953259d2ac541",
+  },
+];
+
 export interface GmxReadOptions {
+  /** Клиент Arbitrum — там рынки, оракул и DataStore. */
   client?: GmxRpcClient;
+  /**
+   * Клиенты сетей, где лежат OFT-токены GM (BRIDGED_GM_TOKENS). По
+   * умолчанию — живые; восстановление истории передаёт прибитые к блоку.
+   */
+  bridgedClients?: Partial<Record<ChainId, GmxRpcClient>>;
   apiData?: GmxApiData;
   logCall?: typeof logApiCall;
+}
+
+/** Часть позиции, лежащая OFT-токеном на другой сети. */
+export interface BridgedGmHolding {
+  chain: ChainId;
+  raw: bigint;
+}
+
+/**
+ * Балансы OFT-токенов GM по сетям: один multicall на сеть.
+ *
+ * Возвращает найденные части по рынку и рынки, чью часть прочитать не
+ * удалось. Второе — не «ноль»: позиция может лежать на той сети целиком,
+ * и упавший вызов означает лишь, что её размер неизвестен.
+ */
+async function readBridgedGm(
+  wallet: Address,
+  markets: ReadonlySet<string>,
+  clientOf: (chain: ChainId) => GmxRpcClient,
+  logCall: typeof logApiCall,
+): Promise<{
+  held: Map<string, BridgedGmHolding[]>;
+  failed: Map<string, ChainId>;
+}> {
+  const held = new Map<string, BridgedGmHolding[]>();
+  const failed = new Map<string, ChainId>();
+  const tokens = BRIDGED_GM_TOKENS.filter((t) =>
+    markets.has(t.marketToken.toLowerCase()),
+  );
+  const chains = [...new Set(tokens.map((t) => t.chain))];
+
+  for (const chain of chains) {
+    const onChain = tokens.filter((t) => t.chain === chain);
+    let results: readonly MulticallResult[] | null = null;
+    try {
+      results = await clientOf(chain).multicall({
+        contracts: onChain.map((t) => ({
+          address: t.token,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [wallet] as const,
+        })),
+        allowFailure: true,
+      });
+      void logCall("alchemy", `gmx:bridged:${chain}`, { units: 1 });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      void logCall("alchemy", `gmx:bridged:${chain}`, { units: 1, ok: false });
+      console.warn(`[gmx] GM на ${chain} не прочитан: ${message}`);
+    }
+
+    onChain.forEach((t, i) => {
+      const market = t.marketToken.toLowerCase();
+      const res = results?.[i];
+      if (!res || res.status !== "success" || typeof res.result !== "bigint") {
+        failed.set(market, chain);
+        return;
+      }
+      if (res.result === 0n) return;
+      held.set(market, [...(held.get(market) ?? []), { chain, raw: res.result }]);
+    });
+  }
+
+  return { held, failed };
 }
 
 /** Символ токена по адресу: в /tokens он есть, но нам удобнее по адресу. */
@@ -336,15 +444,49 @@ export async function readWalletGmx(
         ? res.result
         : null;
 
-    const held: { market: GmxMarket; raw: bigint; multichainRaw: bigint }[] = [];
-    const unreadable: { market: GmxMarket; known: bigint }[] = [];
+    // Третья часть — OFT-токены GM на других сетях (BRIDGED_GM_TOKENS)
+    // Клиенты по умолчанию создаются лениво: без OFT-токенов на рынках
+    // кошелька на другие сети не ходим вовсе
+    const bridged = await readBridgedGm(
+      wallet,
+      new Set(markets.map((m) => m.marketToken.toLowerCase())),
+      (chain) =>
+        (opts.bridgedClients ??
+          (getChainClients() as unknown as Record<ChainId, GmxRpcClient>))[
+          chain
+        ] as GmxRpcClient,
+      logCall,
+    );
+
+    const held: {
+      market: GmxMarket;
+      raw: bigint;
+      multichainRaw: bigint;
+      bridged: BridgedGmHolding[];
+    }[] = [];
+    const unreadable: { market: GmxMarket; reason: string }[] = [];
     markets.forEach((market, i) => {
+      const key = market.marketToken.toLowerCase();
       const inWallet = amountOf(balances[i * 2]);
       const inGmx = amountOf(balances[i * 2 + 1]);
+      const elsewhere = bridged.held.get(key) ?? [];
+      const failedChain = bridged.failed.get(key);
+
+      // Не прочитана часть на другой сети: позиция могла лежать там
+      // целиком. Рынков с OFT единицы, поэтому здесь шума нет, и рынок
+      // уходит в «без оценки» всегда — это только удерживает существующую
+      // строку от закрытия, новых строк unpriced не создаёт
+      if (failedChain !== undefined) {
+        unreadable.push({ market, reason: `не прочитан GM на ${failedChain}` });
+        return;
+      }
 
       if (inWallet !== null && inGmx !== null) {
-        const raw = inWallet + inGmx;
-        if (raw > 0n) held.push({ market, raw, multichainRaw: inGmx });
+        const raw =
+          inWallet + inGmx + elsewhere.reduce((sum, h) => sum + h.raw, 0n);
+        if (raw > 0n) {
+          held.push({ market, raw, multichainRaw: inGmx, bridged: elsewhere });
+        }
         return;
       }
       // Прочитана половина: размер позиции неизвестен. Положительная
@@ -353,7 +495,9 @@ export async function readWalletGmx(
       // ведём себя как раньше: рынков сотня, и «неизвестно» по каждому
       // было бы шумом, неотличимым от пустого кошелька.
       const known = inWallet ?? inGmx;
-      if (known !== null && known > 0n) unreadable.push({ market, known });
+      if ((known !== null && known > 0n) || elsewhere.length > 0) {
+        unreadable.push({ market, reason: "баланс прочитан только наполовину" });
+      }
     });
 
     if (held.length === 0 && unreadable.length === 0) {
@@ -413,7 +557,7 @@ export async function readWalletGmx(
     const unpriced: GmxChainStatus["unpriced"] = [];
     let cursor = 0;
 
-    for (const { market, raw, multichainRaw } of held) {
+    for (const { market, raw, multichainRaw, bridged: elsewhere } of held) {
       const supplyRes = priceResults[cursor++];
       const hasPriceCall =
         api.prices.has(market.indexToken.toLowerCase()) &&
@@ -490,6 +634,7 @@ export async function readWalletGmx(
         marketName: market.name,
         raw,
         multichainRaw,
+        bridged: elsewhere,
         quantity,
         gmPriceUsd,
         valueUsd,
@@ -497,11 +642,11 @@ export async function readWalletGmx(
       });
     }
 
-    for (const { market } of unreadable) {
+    for (const { market, reason } of unreadable) {
       unpriced.push({
         marketToken: market.marketToken.toLowerCase(),
         marketName: market.name,
-        reason: "баланс прочитан только наполовину",
+        reason,
       });
     }
 
@@ -529,6 +674,8 @@ export interface GmPositionPayload {
   raw: string;
   /** Часть `raw` в хранилище GMX; строки до этой поддержки его не хранят. */
   multichainRaw?: string;
+  /** Части `raw` OFT-токеном на других сетях; старые строки его не хранят. */
+  bridged?: { chain: string; raw: string }[];
   components: GmComponent[];
 }
 
@@ -560,6 +707,7 @@ export async function persistGmxPositions(
       gmPriceUsd: p.gmPriceUsd,
       raw: p.raw.toString(),
       multichainRaw: p.multichainRaw.toString(),
+      bridged: p.bridged.map((h) => ({ chain: h.chain, raw: h.raw.toString() })),
       components: p.components,
     },
     updated_at: nowIso,
