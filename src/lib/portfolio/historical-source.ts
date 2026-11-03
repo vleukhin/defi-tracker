@@ -436,6 +436,7 @@ export async function buildHistoricalChainSource(
               marketToken: p.marketToken.toLowerCase(),
               gmPriceUsd: p.gmPriceUsd,
               raw: p.raw.toString(),
+              multichainRaw: p.multichainRaw.toString(),
               components: p.components,
             },
             updatedAt: checkedAt,

@@ -735,10 +735,26 @@ export interface PositionDto {
   rewardsRatePercent: number | null;
   /** Токен Pendle и его погашение; null — позиция не Pendle. */
   pendle: PendleDetailsDto | null;
+  /** Где лежит GM-пул; null — позиция не GM. */
+  gm: GmDetailsDto | null;
   walletId: string;
   walletLabel: string | null;
   /** Момент чтения: стоимость позиции — на ЭТУ дату, не на момент показа. */
   updatedAt: string;
+}
+
+/**
+ * Где лежит GM-пул.
+ *
+ * Купленный кросс-чейном GM в кошельке не появляется: он зачислен кошельку
+ * внутри GMX, и `quantity` позиции складывается из двух частей. Разница
+ * видна владельцу, потому что от неё зависят его действия — такую позицию
+ * нельзя ни перевести, ни заложить, пока она не выведена из GMX, а историю
+ * входа по переводам токена у неё не найти (их не было).
+ */
+export interface GmDetailsDto {
+  /** Часть `quantity`, которая лежит в хранилище GMX, а не в кошельке. */
+  multichainQuantity: number;
 }
 
 /**
@@ -870,6 +886,11 @@ export interface PositionsSummaryDto {
   unpricedCount: number;
   /** Позиции без разметки собственной доли — их видно в интерфейсе. */
   unmarkedCount: number;
+  /**
+   * GM-пулы дешевле $1: скрыты и в суммы не входят, но названы числом —
+   * не теряются молча (тот же порог, что у свободных средств).
+   */
+  dust: { count: number; valueUsd: number };
 }
 
 /**

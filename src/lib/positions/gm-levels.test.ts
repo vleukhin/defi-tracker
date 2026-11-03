@@ -53,6 +53,7 @@ function gm({
     supplyRatePercent: null,
     rewardsRatePercent: null,
     pendle: null,
+    gm: { multichainQuantity: 0 },
     walletId: "w",
     walletLabel: null,
     updatedAt: "2026-08-04T00:00:00.000Z",

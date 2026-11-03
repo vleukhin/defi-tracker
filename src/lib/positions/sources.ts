@@ -11,11 +11,25 @@ export const GMX_SOURCE = "gmx_v2" as const;
 export const UNIV3_SOURCE = "uni_v3" as const;
 export const PENDLE_SOURCE = "pendle" as const;
 
+/**
+ * Депозит стейблов на Aave v3 — размещение, а не залог, поэтому источник
+ * свой, отдельный от 'aave_v3'.
+ *
+ * Залог (`aave_v3`) и долг (`aave_v3_debt`) — состояние заёмной позиции:
+ * у них нет ни ставки, ни зоны, ни разметки «свои / заёмные», а зона у
+ * залога по стратегии одна. Внесённые на тот же рынок стейблы — тот же
+ * инструмент, что депозит Fluid (docs/07 §3): доход начисляется ставкой,
+ * и держат его ровно пока ставка выше ставки по займу. Поэтому он читается
+ * своим контуром и живёт позицией.
+ */
+export const AAVE_SUPPLY_SOURCE = "aave_v3_supply" as const;
+
 export const POSITION_SOURCES = [
   FLUID_SOURCE,
   GMX_SOURCE,
   UNIV3_SOURCE,
   PENDLE_SOURCE,
+  AAVE_SUPPLY_SOURCE,
 ] as const;
 
 /**

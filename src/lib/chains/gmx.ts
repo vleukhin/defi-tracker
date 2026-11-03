@@ -5,6 +5,7 @@ import {
   formatUnits,
   keccak256,
   type Address,
+  type Hex,
 } from "viem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { closeVanishedPositions } from "./closures";
@@ -69,6 +70,41 @@ const GMX_PRICE_SCALE = 10 ** 30;
 export const MAX_PNL_FACTOR_FOR_TRADERS = keccak256(
   encodeAbiParameters([{ type: "string" }], ["MAX_PNL_FACTOR_FOR_TRADERS"]),
 );
+
+/**
+ * Мультичейн-баланс: GM, купленный кросс-чейном, лежит НЕ в кошельке.
+ *
+ * Покупка с другой сети (Stargate → LayerZeroProvider GMX → DepositVault)
+ * зачисляет GM в общее хранилище GMX, а право кошелька на них живёт
+ * записью в DataStore. `balanceOf` у кошелька по такой позиции отдаёт ноль,
+ * и без этой записи она невидима целиком: не «оценка неизвестна», а
+ * «позиции нет», хотя деньги вложены.
+ *
+ * Ключ — Keys.multichainBalanceKey: keccak256(abi.encode(MULTICHAIN_BALANCE,
+ * account, token)), где сама константа тоже abi.encode от строки.
+ */
+export const MULTICHAIN_BALANCE = keccak256(
+  encodeAbiParameters([{ type: "string" }], ["MULTICHAIN_BALANCE"]),
+);
+
+export function multichainBalanceKey(account: Address, token: string): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "address" }, { type: "address" }],
+      [MULTICHAIN_BALANCE, account, token as Address],
+    ),
+  );
+}
+
+export const dataStoreAbi = [
+  {
+    name: "getUint",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "key", type: "bytes32" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
 
 export const readerAbi = [
   {
@@ -157,8 +193,13 @@ export interface GmPositionReading {
   /** Адрес GM-токена — он же external_id. */
   marketToken: Address;
   marketName: string;
-  /** Баланс GM в сыром виде (18 знаков). */
+  /** Баланс GM в сыром виде (18 знаков): кошелёк плюс мультичейн-кредит. */
   raw: bigint;
+  /**
+   * Часть `raw`, которая лежит не в кошельке, а в хранилище GMX
+   * (кросс-чейн покупка, см. MULTICHAIN_BALANCE). Ноль — обычная позиция.
+   */
+  multichainRaw: bigint;
   quantity: number;
   /** Цена одного GM в долларах (оракул GMX). */
   gmPriceUsd: number;
@@ -269,27 +310,53 @@ export async function readWalletGmx(
   }
 
   try {
+    // Две величины на рынок: GM в кошельке и GM, зачисленные кошельку
+    // внутри GMX (кросс-чейн покупка). Обе в одном multicall'е.
     const balances = await client.multicall({
-      contracts: markets.map((m) => ({
-        address: m.marketToken as Address,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [wallet] as const,
-      })),
+      contracts: markets.flatMap((m) => [
+        {
+          address: m.marketToken as Address,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [wallet] as const,
+        },
+        {
+          address: GMX_DATASTORE as Address,
+          abi: dataStoreAbi,
+          functionName: "getUint",
+          args: [multichainBalanceKey(wallet, m.marketToken)] as const,
+        },
+      ]),
       allowFailure: true,
     });
     void logCall("alchemy", `gmx:balances`, { units: 1 });
 
-    const held: { market: GmxMarket; raw: bigint }[] = [];
-    balances.forEach((res, i) => {
-      if (res.status === "success" && typeof res.result === "bigint") {
-        if (res.result > 0n) held.push({ market: markets[i], raw: res.result });
+    const amountOf = (res: MulticallResult | undefined): bigint | null =>
+      res && res.status === "success" && typeof res.result === "bigint"
+        ? res.result
+        : null;
+
+    const held: { market: GmxMarket; raw: bigint; multichainRaw: bigint }[] = [];
+    const unreadable: { market: GmxMarket; known: bigint }[] = [];
+    markets.forEach((market, i) => {
+      const inWallet = amountOf(balances[i * 2]);
+      const inGmx = amountOf(balances[i * 2 + 1]);
+
+      if (inWallet !== null && inGmx !== null) {
+        const raw = inWallet + inGmx;
+        if (raw > 0n) held.push({ market, raw, multichainRaw: inGmx });
+        return;
       }
-      // Упавший balanceOf = «неизвестно»: молча нулем не подменяем,
-      // но и как позицию не считаем — рынков сотня, шум был бы велик.
+      // Прочитана половина: размер позиции неизвестен. Положительная
+      // половина означает, что позиция ЕСТЬ, и молчать о ней нельзя —
+      // иначе она уйдёт в закрытые как исчезнувшая. Обе половины упали —
+      // ведём себя как раньше: рынков сотня, и «неизвестно» по каждому
+      // было бы шумом, неотличимым от пустого кошелька.
+      const known = inWallet ?? inGmx;
+      if (known !== null && known > 0n) unreadable.push({ market, known });
     });
 
-    if (held.length === 0) {
+    if (held.length === 0 && unreadable.length === 0) {
       return { chain: GMX_CHAIN, ok: true, positions: [], unpriced: [] };
     }
 
@@ -346,7 +413,7 @@ export async function readWalletGmx(
     const unpriced: GmxChainStatus["unpriced"] = [];
     let cursor = 0;
 
-    for (const { market, raw } of held) {
+    for (const { market, raw, multichainRaw } of held) {
       const supplyRes = priceResults[cursor++];
       const hasPriceCall =
         api.prices.has(market.indexToken.toLowerCase()) &&
@@ -422,10 +489,19 @@ export async function readWalletGmx(
         marketToken: market.marketToken as Address,
         marketName: market.name,
         raw,
+        multichainRaw,
         quantity,
         gmPriceUsd,
         valueUsd,
         components,
+      });
+    }
+
+    for (const { market } of unreadable) {
+      unpriced.push({
+        marketToken: market.marketToken.toLowerCase(),
+        marketName: market.name,
+        reason: "баланс прочитан только наполовину",
       });
     }
 
@@ -451,6 +527,8 @@ export interface GmPositionPayload {
   marketToken: string;
   gmPriceUsd: number;
   raw: string;
+  /** Часть `raw` в хранилище GMX; строки до этой поддержки его не хранят. */
+  multichainRaw?: string;
   components: GmComponent[];
 }
 
@@ -481,6 +559,7 @@ export async function persistGmxPositions(
       marketToken: p.marketToken.toLowerCase(),
       gmPriceUsd: p.gmPriceUsd,
       raw: p.raw.toString(),
+      multichainRaw: p.multichainRaw.toString(),
       components: p.components,
     },
     updated_at: nowIso,

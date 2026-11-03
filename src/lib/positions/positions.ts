@@ -7,6 +7,8 @@ import type {
   StrategyZone,
 } from "@/lib/api/types";
 import { tableDate } from "@/lib/format";
+import { FREE_DUST_USD } from "@/lib/portfolio/portfolio";
+import { rawToQuantity } from "@/lib/portfolio/raw-amount";
 import { buildLpRange } from "./lp-range";
 import { POSITION_SOURCES, PROTOCOL_LABELS } from "./sources";
 import { DEFAULT_POSITION_ZONE, defaultZoneForPendle } from "./zones";
@@ -62,6 +64,12 @@ interface GmPayload {
   kind: "gmx_gm";
   marketName: string;
   gmPriceUsd: number;
+  /**
+   * Сырая часть количества, лежащая в хранилище GMX (кросс-чейн покупка).
+   * Необязателен: строки, записанные до её чтения, его не хранят — и это
+   * «не читалось», а не «в кошельке лежит всё».
+   */
+  multichainRaw?: string | null;
   components: {
     /** null — рынок на одном активе: компонент один, сторон у него нет. */
     side: "long" | "short" | null;
@@ -247,8 +255,39 @@ export function zoneKeyOf(row: {
 }
 
 export interface BuildPositionsResult {
+  /** Позиции экрана: без пыли (см. isDustPosition). */
   positions: PositionDto[];
+  /**
+   * Пыль: оценена, но на экран не выходит и в суммы не входит. Отдельным
+   * списком, а не выброшена: архиву закрытий (closures.ts) нужна оценка
+   * КАЖДОЙ исчезнувшей строки, и пыли тоже.
+   */
+  dustPositions: PositionDto[];
   summary: PositionsSummaryDto;
+}
+
+/**
+ * Пыль — GM-пул дешевле доллара. Порог тот же, что у свободных средств
+ * (FREE_DUST_USD): одно правило «что считать пылью» на приложение.
+ *
+ * Откуда она берётся. После вывода из GM внутри GMX остаётся остаток
+ * округления — у реального кошелька это 0,00000011 GM на $0,00000009, —
+ * и с чтением мультичейн-баланса (chains/gmx.ts) он стал бы карточкой
+ * на $0,00 со своими сигналами «нет точки отсчёта».
+ *
+ * Решение принимается здесь, после оценки, а не в читателе: кэш хранит
+ * показания, а не решения, и порог можно передумать без чтения сети.
+ * Неоценённая позиция пылью не бывает никогда — «меньше доллара» по
+ * неизвестной стоимости было бы ровно тем NULL = 0, которого здесь нет
+ * нигде. Только GM: у остальных протоколов такой хвост не возникает,
+ * и правило, которое никто не просил, их не трогает.
+ */
+export function isDustPosition(position: PositionDto): boolean {
+  return (
+    position.protocol === "gmx_v2" &&
+    position.valueUsd !== null &&
+    position.valueUsd < FREE_DUST_USD
+  );
 }
 
 const isProtocol = (p: string): p is PositionProtocol =>
@@ -267,6 +306,9 @@ function payloadOf(value: unknown): PositionPayload | null {
   }
   return null;
 }
+
+/** GM-токены всегда 18 знаков (chains/gmx.ts); тот модуль server-only. */
+const GM_DECIMALS = 18;
 
 /** Доля процента комиссии из fee tier Uniswap (500 => 0,05%). */
 function feeLabel(fee: number): string {
@@ -329,6 +371,7 @@ function buildFluid(
     supplyRatePercent: payload.supplyRatePercent ?? null,
     rewardsRatePercent: payload.rewardsRatePercent ?? null,
     pendle: null,
+    gm: null,
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -349,6 +392,12 @@ function buildGm(
     valueUsd: c.valueUsd,
     side: c.side,
   }));
+  // Часть количества, лежащая внутри GMX. Ноль и «не читалось» здесь
+  // различать нечем и незачем: карточка говорит только о положительной
+  // части, а её у старых строк просто нет
+  const multichainQuantity = Number(
+    rawToQuantity(payload.multichainRaw ?? null, GM_DECIMALS),
+  );
   return {
     id: row.id,
     protocol: "gmx_v2",
@@ -375,6 +424,7 @@ function buildGm(
     supplyRatePercent: null,
     rewardsRatePercent: null,
     pendle: null,
+    gm: { multichainQuantity },
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -466,6 +516,7 @@ function buildLp(
     supplyRatePercent: null,
     rewardsRatePercent: null,
     pendle: null,
+    gm: null,
     walletId: row.walletId,
     walletLabel: row.walletLabel,
     updatedAt: row.updatedAt,
@@ -539,6 +590,7 @@ function buildPendle(
     // этой позиции; в сравнение со ставкой займа ее не подаем
     supplyRatePercent: null,
     rewardsRatePercent: null,
+    gm: null,
     pendle: {
       tokenType: payload.tokenType,
       marketName: payload.marketName,
@@ -583,6 +635,7 @@ export function buildPositions(
   input: BuildPositionsInput,
 ): BuildPositionsResult {
   const positions: PositionDto[] = [];
+  const dustPositions: PositionDto[] = [];
   const values: (number | null)[] = [];
 
   for (const row of input.rows) {
@@ -601,6 +654,12 @@ export function buildPositions(
             ? buildLp(row, payload, input.pricesUsd, mark)
             : buildPendle(row, payload, input.pricesUsd, mark);
 
+    // Пыль в суммы не входит — как у свободных средств: иначе «Активы»
+    // и зоны разошлись бы с тем, что на экране, на её стоимость
+    if (isDustPosition(dto)) {
+      dustPositions.push(dto);
+      continue;
+    }
     positions.push(dto);
     values.push(dto.valueUsd);
   }
@@ -622,6 +681,7 @@ export function buildPositions(
 
   return {
     positions,
+    dustPositions,
     summary: {
       // Вклад в Активы = стоимость позиций минус своя доля внутри них:
       // та уже посчитана категорией «Стейблы»
@@ -633,6 +693,10 @@ export function buildPositions(
       unmarkedCount: positions.filter(
         (p) => p.ownPrincipalUsd === null || p.borrowedPrincipalUsd === null,
       ).length,
+      dust: {
+        count: dustPositions.length,
+        valueUsd: dustPositions.reduce((s, p) => s + (p.valueUsd ?? 0), 0),
+      },
     },
   };
 }

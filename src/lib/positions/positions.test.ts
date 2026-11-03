@@ -301,6 +301,31 @@ describe("оценка позиций", () => {
     expect(r.summary.positionsUsd).toBe(1550);
   });
 
+  it("GM, зачисленный внутри GMX, виден отдельной частью количества", () => {
+    const row = gmRow("g", 1550);
+    const r = buildPositions({
+      rows: [
+        {
+          ...row,
+          payload: {
+            ...(row.payload as object),
+            raw: "1000000000000000000000",
+            multichainRaw: "600000000000000000000",
+          },
+        },
+      ],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions[0].gm).toEqual({ multichainQuantity: 600 });
+    // Стоимость считается от всего количества, а не от кошелька
+    expect(r.positions[0].valueUsd).toBe(1550);
+  });
+
+  it("строка до чтения DataStore — часть в GMX нулевая, а не ошибка", () => {
+    const r = buildPositions({ rows: [gmRow("g", 1550)], pricesUsd: PRICES });
+    expect(r.positions[0].gm).toEqual({ multichainQuantity: 0 });
+  });
+
   it("LP оценивается суммой компонентов по текущему тику", () => {
     const r = buildPositions({
       rows: [lpRow("42")],
@@ -622,5 +647,45 @@ describe("Pendle", () => {
       pendleRow("x", { assetCoingeckoId: null }),
     ]);
     expect(ids.sort()).toEqual(["ethena-usde", "staked-ether"]);
+  });
+});
+
+describe("пыль GM-пулов", () => {
+  it("пул дешевле $1 скрыт, но назван числом и в суммы не входит", () => {
+    // Остаток после вывода из GMX: живой пример — 0,00000011 GM на $0,00000009
+    const r = buildPositions({
+      rows: [gmRow("big", 22_000), gmRow("dust", 0.00000009)],
+      pricesUsd: PRICES,
+    });
+
+    expect(r.positions.map((p) => p.id)).toEqual(["big"]);
+    expect(r.dustPositions.map((p) => p.id)).toEqual(["dust"]);
+    expect(r.summary.dust.count).toBe(1);
+    expect(r.summary.dust.valueUsd).toBeCloseTo(0.00000009, 12);
+    // Активы и зоны считаются по тому же списку, что виден на экране
+    expect(r.summary.grossUsd).toBe(22_000);
+  });
+
+  it("неоценённый пул пылью не бывает: неизвестно — не значит меньше доллара", () => {
+    const r = buildPositions({ rows: [gmRow("g", null)], pricesUsd: PRICES });
+    expect(r.positions).toHaveLength(1);
+    expect(r.summary.dust.count).toBe(0);
+    expect(r.summary.unpricedCount).toBe(1);
+  });
+
+  it("ровно доллар — уже не пыль", () => {
+    const r = buildPositions({ rows: [gmRow("g", 1)], pricesUsd: PRICES });
+    expect(r.positions).toHaveLength(1);
+    expect(r.summary.dust.count).toBe(0);
+  });
+
+  it("правило касается только GM: дешёвый депозит Fluid остаётся на виду", () => {
+    const r = buildPositions({
+      rows: [fluidRow("f", "0.5", "usd-coin")],
+      pricesUsd: PRICES,
+    });
+    expect(r.positions).toHaveLength(1);
+    expect(r.positions[0].valueUsd).toBe(0.5);
+    expect(r.summary.dust.count).toBe(0);
   });
 });

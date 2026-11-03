@@ -308,6 +308,12 @@ function TransferSearch({
   return (
     <div className="grid gap-1.5 border-line border-t pt-2">
       <Button type="button" size="sm" variant="ghost" onClick={() => void search()} disabled={loading}>{loading ? "Ищем…" : "Найти GM в блокчейне (14 дней)"}</Button>
+      {/* Поиск идёт по переводам токена в кошелёк, а кросс-чейн покупка их
+          не делает: GM зачислены внутри GMX. Пустой ответ здесь не значит,
+          что покупки не было, и сказать это нужно до нажатия */}
+      {(position.gm?.multichainQuantity ?? 0) > 0 && (
+        <p className="text-[12px] text-text-3">Часть GM зачислена внутри GMX — такие покупки переводами в кошелёк не видны, и поиск их не найдёт.</p>
+      )}
       {message && <p className="text-[12px] text-text-3">{message}</p>}
       {result?.rows.map((row) => (
         <button key={row.key} type="button" onClick={() => onPick(row)} className="flex items-center justify-between gap-2 rounded-control px-1.5 py-1 text-left text-[12px] hover:bg-raised">

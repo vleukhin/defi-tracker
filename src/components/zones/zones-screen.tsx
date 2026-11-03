@@ -248,6 +248,17 @@ export function ZonesScreen({
         </ul>
       )}
 
+      {/* Пыль скрыта, но названа числом — как у свободных средств:
+          молча пропавшая позиция выглядела бы закрытой */}
+      {positionsSummary.dust.count > 0 && (
+        <p className="-mt-1 px-1 text-[12.5px] text-text-3">
+          Скрыто{" "}
+          {countLabel(positionsSummary.dust.count, "GM-пул", "GM-пула", "GM-пулов")}{" "}
+          дешевле $1 на {dcUsd(positionsSummary.dust.valueUsd)} — остатки после
+          вывода
+        </p>
+      )}
+
       <FreeFundsCard
         balances={free}
         summary={freeSummary}
