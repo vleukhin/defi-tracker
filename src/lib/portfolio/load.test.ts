@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { loadPortfolio, loadPortfolioAsAdmin } from "./load";
+import { loadPortfolio, loadPortfolioAsAdmin, type ChainSource } from "./load";
 
 /**
  * Изоляция пользователей в admin-режиме (cron снимает снепшоты service-role
@@ -350,5 +350,168 @@ describe("loadPortfolio: независимые выборки уходят па
 
     release();
     await expect(pending).resolves.toBeTruthy();
+  });
+});
+
+/**
+ * Подменённый источник сетевых данных — восстановление пропущенной точки
+ * (scripts/restore-snapshot.ts). Проверяется главное: кэши «последнего
+ * известного состояния» на этом пути НЕ читаются. Прочитанная оттуда строка
+ * подмешала бы сегодняшнюю позицию во вчерашнюю точку, и на графике это
+ * выглядело бы как настоящее движение портфеля.
+ */
+describe("loadPortfolio: подменённый источник сетевых данных", () => {
+  const BLOCK_TIME = "2026-10-26T03:00:00.000Z";
+
+  function chainSource(over: Partial<ChainSource> = {}): ChainSource {
+    return {
+      collateral: [
+        {
+          walletId: WALLET,
+          walletLabel: null,
+          chain: "arbitrum",
+          symbol: "WETH",
+          category: "eth" as const,
+          coingeckoId: "weth",
+          quantity: "2",
+        },
+      ],
+      stableDebt: [],
+      healthRows: [
+        { totalDebtUsd: 1000, totalCollateralUsd: 8000, healthFactor: 2.5 },
+      ],
+      positionRows: [],
+      free: [
+        {
+          key: `${WALLET}:arbitrum:0xaf88d065e77c8cc2239327c5edb3a432268e5831`,
+          walletId: WALLET,
+          walletLabel: null,
+          chain: "arbitrum",
+          token: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+          symbol: "USDC",
+          category: "stable" as const,
+          coingeckoId: "usd-coin",
+          quantity: "500",
+          updatedAt: BLOCK_TIME,
+        },
+      ],
+      chains: [
+        { chain: "arbitrum", ok: true, error: null, checked_at: BLOCK_TIME },
+      ],
+      debtChains: [
+        { chain: "arbitrum", ok: true, error: null, checked_at: BLOCK_TIME },
+      ],
+      freeChains: [
+        { chain: "arbitrum", ok: true, error: null, checked_at: BLOCK_TIME },
+      ],
+      oldestCollateralAt: BLOCK_TIME,
+      loadPrices: async (ids: string[]) =>
+        new Map(
+          ids.map((id) => [
+            id,
+            {
+              // Историческая цена ETH — вдвое ниже сегодняшней в фикстурах
+              priceUsd: id === "bitcoin" ? 50_000 : 2000,
+              fetchedAt: BLOCK_TIME,
+              stale: false,
+            },
+          ]),
+        ),
+      ...over,
+    };
+  }
+
+  it("не читает кэши «последнего состояния»", async () => {
+    const recorded: RecordedQuery[] = [];
+    const admin = fakeClient(fixtures(), recorded);
+
+    await loadPortfolioAsAdmin(admin, USER, {
+      nowMs: NOW,
+      chainSource: chainSource(),
+    });
+
+    const read = recorded.map((q) => q.table);
+    for (const table of [
+      "protocol_positions",
+      "balances_cache",
+      "aave_account_health",
+      "chain_read_status",
+      "assets",
+    ]) {
+      expect(read, `кэш ${table} прочитан на историческом пути`).not.toContain(
+        table,
+      );
+    }
+    // Пользовательские таблицы читаются по-прежнему: историю они хранят сами
+    for (const table of ["wallets", "trades", "manual_positions", "deposits"]) {
+      expect(read, `таблица ${table} перестала читаться`).toContain(table);
+    }
+  });
+
+  it("считает портфель по переданным данным и историческим ценам", async () => {
+    const admin = fakeClient(fixtures(), []);
+
+    const result = await loadPortfolioAsAdmin(admin, USER, {
+      nowMs: NOW,
+      chainSource: chainSource(),
+    });
+
+    const eth = result.rows.find((r) => r.category === "eth")!;
+    // 2 WETH по исторической цене 2000, а не по 4000 из coin_prices
+    expect(eth.amountUsd).toBeCloseTo(4000, 6);
+    expect(eth.price).toBe(2000);
+    expect(result.debtHealth.collateralUsd).toBe(8000);
+    expect(result.overview.debtUsd).toBe(1000);
+  });
+
+  it("применяет к переданным балансам пользовательскую разметку «свои/заёмные»", async () => {
+    // Разметка живёт в balance_marks и истории не имеет: читать её вторым
+    // местом значило бы завести второе определение того же поля
+    const data = fixtures();
+    data.balance_marks = [
+      {
+        user_id: USER,
+        wallet_id: WALLET,
+        chain: "arbitrum",
+        token: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+        funds: "borrowed",
+      },
+    ];
+    const admin = fakeClient(data, []);
+
+    const result = await loadPortfolioAsAdmin(admin, USER, {
+      nowMs: NOW,
+      chainSource: chainSource(),
+    });
+
+    const stable = result.rows.find((r) => r.category === "stable")!;
+    expect(stable.freeBalances.map((b) => b.funds)).toEqual(["borrowed"]);
+  });
+
+  it("статусы сетей берёт из этого чтения, а не из chain_read_status", async () => {
+    const admin = fakeClient(fixtures(), []);
+
+    const result = await loadPortfolioAsAdmin(admin, USER, {
+      nowMs: NOW,
+      chainSource: chainSource({
+        chains: [
+          {
+            chain: "optimism",
+            ok: false,
+            error: "архив недоступен",
+            checked_at: BLOCK_TIME,
+          },
+        ],
+      }),
+    });
+
+    expect(result.chains).toEqual([
+      {
+        chain: "optimism",
+        ok: false,
+        error: "архив недоступен",
+        checked_at: BLOCK_TIME,
+      },
+    ]);
   });
 });

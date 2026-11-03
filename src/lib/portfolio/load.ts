@@ -60,6 +60,7 @@ import {
   type PortfolioCategory,
   type PortfolioResult,
   type PortfolioRow,
+  type PriceInput,
 } from "./portfolio";
 
 /**
@@ -123,9 +124,47 @@ export interface LoadPortfolioResult extends Omit<PortfolioResult, "rows"> {
   oldestCollateralAt: string | null;
 }
 
+/**
+ * Подмена СЕТЕВОЙ половины входа: залог, долг, позиции, свободные балансы,
+ * статусы чтения и цены приходят не из кэшей, а снаружи.
+ *
+ * Зачем. Кэш-таблицы (balances_cache, protocol_positions, aave_account_health,
+ * chain_read_status) хранят ОДНО состояние — последнее. Истории у них нет и
+ * быть не может: они перезаписываются на месте. Поэтому восстановление
+ * пропущенной точки читает те же контракты на блоке нужной даты
+ * (chains/historical.ts) и подставляет прочитанное сюда.
+ *
+ * Подменяется ровно сетевая половина. Журнал сделок, «внесено», цели, зоны,
+ * ручные записи и разметка позиций — пользовательские таблицы: они хранят
+ * историю сами и на обоих путях читаются одинаково, из базы. Собирать
+ * портфель вторым, «историческим» кодом было бы худшим решением из
+ * возможных: разъехались бы не цифры, а правила, по которым они считаются.
+ */
+export interface ChainSource {
+  collateral: CollateralInput[];
+  /** Долг в стейблах по резервам — стоимость заемных денег. */
+  stableDebt: StableBorrowReserveInput[];
+  healthRows: DebtHealthRow[];
+  positionRows: PositionRowInput[];
+  /**
+   * Свободные балансы БЕЗ разметки «свои/заемные»: funds проставит сам
+   * загрузчик из balance_marks — разметка пользовательская, и читать её
+   * вторым местом значит завести второе определение того же поля.
+   */
+  free: Omit<FreeBalanceInput, "funds">[];
+  chains: ChainStatusRow[];
+  debtChains: ChainStatusRow[];
+  freeChains: ChainStatusRow[];
+  oldestCollateralAt: string | null;
+  /** Цены нужных id. Исторический путь берет их на момент съема, не сейчас. */
+  loadPrices(ids: string[]): Promise<Map<string, PriceInput>>;
+}
+
 export interface LoadOptions {
   /** true = дотянуть истекшие цены (refresh); false = только кэш (дашборд). */
   fetchIfExpired?: boolean;
+  /** Сетевые данные извне вместо кэшей (восстановление истории). */
+  chainSource?: ChainSource;
   /**
    * Разметка фаз для Server-Timing (см. lib/api/timing). Роут передает сюда
    * свой таймер, чтобы в ответе было видно, сколько заняли выборки и цены.
@@ -227,6 +266,13 @@ export async function loadPortfolio(
   /** Нет кошельков — wallet-scoped выборки не нужны и в сеть не идут. */
   const noRows: Promise<DbRow[]> = Promise.resolve([]);
   const hasWallets = wallets.length > 0;
+  const chainSource = opts.chainSource;
+  /**
+   * Кэши — это «последнее известное состояние», то есть СЕГОДНЯ. На
+   * историческом пути их не только незачем читать: прочитанное оттуда
+   * молча подмешало бы текущие позиции во вчерашнюю точку.
+   */
+  const readCaches = hasWallets && chainSource === undefined;
 
   const [
     aavePositionRows,
@@ -243,7 +289,7 @@ export async function loadPortfolio(
   ] = await Promise.all([
     // Фильтр по кошелькам пользователя — не только для admin-режима: под RLS
     // он избыточен, но делает выборку одинаковой на обоих путях
-    hasWallets
+    readCaches
       ? awaitRows(
           "protocol_positions",
           supabase
@@ -281,7 +327,7 @@ export async function loadPortfolio(
       "deposits",
       scopeUser(supabase.from("deposits").select("user_id, amount")),
     ),
-    hasWallets
+    readCaches
       ? awaitRows(
           "aave_account_health",
           supabase
@@ -292,7 +338,7 @@ export async function loadPortfolio(
             .in("wallet_id", walletIds),
         )
       : noRows,
-    hasWallets
+    readCaches
       ? awaitRows(
           "protocol_positions (позиции)",
           supabase
@@ -314,7 +360,7 @@ export async function loadPortfolio(
           ),
       ),
     ),
-    hasWallets
+    readCaches
       ? awaitRows(
           "balances_cache",
           supabase
@@ -335,7 +381,7 @@ export async function loadPortfolio(
           ),
         )
       : noRows,
-    hasWallets
+    readCaches
       ? awaitRows(
           "chain_read_status",
           supabase
@@ -403,6 +449,16 @@ export async function loadPortfolio(
     }
   }
 
+  // Исторический путь: залог и долг прочитаны на блоке нужной даты, а не
+  // взяты из кэша. Контейнеры те же — дальше код не различает, откуда данные
+  if (chainSource) {
+    collateral.push(...chainSource.collateral);
+    for (const reserve of chainSource.stableDebt) {
+      stableDebtByReserve.set(`${reserve.chain}:${reserve.symbol}`, reserve);
+    }
+    oldestCollateralAt = chainSource.oldestCollateralAt;
+  }
+
   // --- Ручные записи ---
   assertOwned(manualRows as { user_id?: string }[], "manual_positions");
   const manual: ManualInput[] = manualRows.map((r) => ({
@@ -447,18 +503,21 @@ export async function loadPortfolio(
   // --- Долг (Фаза 4): канонические totals из aave_account_health.
   // Wallet-scoped (как protocol_positions): под RLS фильтр избыточен,
   // но делает выборку одинаковой на обоих путях ---
-  const healthRows: DebtHealthRow[] = healthData.map((row) => ({
-    totalDebtUsd:
-      row.total_debt_usd === null ? null : Number(row.total_debt_usd),
-    // Залог и HF нужны снепшоту (история LTV и HF): аккаунт читается один
-    // раз, и брать из его строк только долг было бы странной экономией
-    totalCollateralUsd:
-      row.total_collateral_usd === null
-        ? null
-        : Number(row.total_collateral_usd),
-    healthFactor:
-      row.health_factor === null ? null : Number(row.health_factor),
-  }));
+  const healthRows: DebtHealthRow[] = chainSource
+    ? chainSource.healthRows
+    : healthData.map((row) => ({
+        totalDebtUsd:
+          row.total_debt_usd === null ? null : Number(row.total_debt_usd),
+        // Залог и HF нужны снепшоту (история LTV и HF): аккаунт читается
+        // один раз, и брать из его строк только долг было бы странной
+        // экономией
+        totalCollateralUsd:
+          row.total_collateral_usd === null
+            ? null
+            : Number(row.total_collateral_usd),
+        healthFactor:
+          row.health_factor === null ? null : Number(row.health_factor),
+      }));
 
   // --- Размещенные позиции (Фаза 5): Fluid, GM-пулы, LP ---
   const positionRows: PositionRowInput[] = [];
@@ -477,6 +536,7 @@ export async function loadPortfolio(
       walletLabel: wallet?.label ?? null,
     });
   }
+  if (chainSource) positionRows.push(...chainSource.positionRows);
 
   // --- Разметка позиций (Фаза 6): зона и доля собственных средств.
   // Живет отдельно от строк читателя и адресуется натуральным ключом —
@@ -513,8 +573,24 @@ export async function loadPortfolio(
   // То, что лежит на адресе и не участвует ни в залоге, ни в позициях.
   // Читается chains/reader.ts в balances_cache; справочник assets дает
   // символ, decimals и coingecko id; balance_marks — происхождение денег.
+  // Разметка «свои / заемные». Отсутствие строки = «не размечено»,
+  // и это не то же самое, что own (см. миграцию balance_marks).
+  // Живет ВЫШЕ разбора балансов: разметка пользовательская, и исторический
+  // путь, который балансы читает сам, обязан применять ровно ее же
+  assertOwned(fundsRows as { user_id?: string }[], "balance_marks");
+  const fundsByKey = new Map<string, FundsMark>(
+    fundsRows.map((r) => [
+      `${r.wallet_id as string}:${r.chain as string}:${r.token as string}`,
+      r.funds as FundsMark,
+    ]),
+  );
+
   const free: FreeBalanceInput[] = [];
-  {
+  if (chainSource) {
+    for (const b of chainSource.free) {
+      free.push({ ...b, funds: fundsByKey.get(b.key) ?? null });
+    }
+  } else {
     const assetIds = [
       ...new Set(balanceRows.map((r) => r.asset_id as string)),
     ];
@@ -538,16 +614,6 @@ export async function loadPortfolio(
               .eq("is_hidden", false),
           );
     const assetById = new Map(assetRows.map((a) => [a.id as string, a]));
-
-    // Разметка «свои / заемные». Отсутствие строки = «не размечено»,
-    // и это не то же самое, что own (см. миграцию balance_marks)
-    assertOwned(fundsRows as { user_id?: string }[], "balance_marks");
-    const fundsByKey = new Map<string, FundsMark>(
-      fundsRows.map((r) => [
-        `${r.wallet_id as string}:${r.chain as string}:${r.token as string}`,
-        r.funds as FundsMark,
-      ]),
-    );
 
     for (const row of balanceRows) {
       const asset = assetById.get(row.asset_id as string);
@@ -590,11 +656,16 @@ export async function loadPortfolio(
       .filter((id): id is string => id !== null),
   ];
   mark("assets");
-  const prices = await getCoinPrices(priceIds, {
-    admin: opts.admin,
-    fetchIfExpired: opts.fetchIfExpired ?? false,
-    nowMs: opts.nowMs,
-  });
+  const prices: Map<string, PriceInput> = chainSource
+    // Цены на МОМЕНТ съема, а не сейчас: вчерашний состав по сегодняшней
+    // цене — это вчерашнему дню сегодняшний рынок, и на графике такая
+    // точка неотличима от настоящего движения портфеля
+    ? await chainSource.loadPrices(priceIds)
+    : await getCoinPrices(priceIds, {
+        admin: opts.admin,
+        fetchIfExpired: opts.fetchIfExpired ?? false,
+        nowMs: opts.nowMs,
+      });
   mark("prices");
 
   // Позиции считаются ДО портфеля: их собственные доли и образуют
@@ -652,7 +723,13 @@ export async function loadPortfolio(
   const chains: ChainStatusRow[] = [];
   const debtChains: ChainStatusRow[] = [];
   const freeChains: ChainStatusRow[] = [];
-  {
+  if (chainSource) {
+    // Исторический путь: статусы — это результат ЭТОГО чтения, а не
+    // последняя отметка в chain_read_status, относящаяся к сегодняшнему дню
+    chains.push(...chainSource.chains);
+    debtChains.push(...chainSource.debtChains);
+    freeChains.push(...chainSource.freeChains);
+  } else {
     const bySourceChain = new Map<string, ChainStatusRow>();
     for (const row of statusRows) {
       const key = `${row.source}:${row.chain}`;

@@ -34,6 +34,14 @@ export interface GmxMarket {
 export interface GmxApiData {
   /** decimals по адресу токена в нижнем регистре. */
   decimals: Map<string, number>;
+  /**
+   * Символ по адресу токена в нижнем регистре.
+   *
+   * Нужен восстановлению истории: оракульные цены в /prices/tickers только
+   * текущие, и чтобы оценить GM-пул на прошлую дату, цену приходится брать
+   * из исторического ряда по coingecko id — а id выводится из символа.
+   */
+  symbols: Map<string, string>;
   /** Сырые оракульные цены по адресу токена в нижнем регистре. */
   prices: Map<string, GmxTokenPrice>;
   /** Рынки по адресу GM-токена в нижнем регистре. */
@@ -49,6 +57,23 @@ export interface GmxApiOptions {
 /** Сырую цену GMX в доллары: масштаб зависит от decimals токена. */
 export function gmxPriceToUsd(raw: bigint, decimals: number): number {
   return Number(raw) / 10 ** (30 - decimals);
+}
+
+/**
+ * Доллары в сырую оракульную цену GMX — обратное к gmxPriceToUsd.
+ *
+ * Считается в BigInt, а не умножением double на 10^(30−decimals): у USDC
+ * (6 decimals) множитель равен 1e24, и результат давно за пределами точного
+ * диапазона double. Цена сначала огрубляется до восьми знаков — больше
+ * исторический ряд и не знает, — и только потом домножается нацело.
+ */
+export function usdToGmxPrice(priceUsd: number, decimals: number): bigint {
+  const SCALE = 8;
+  const exponent = 30 - decimals - SCALE;
+  const scaled = BigInt(Math.round(priceUsd * 10 ** SCALE));
+  return exponent >= 0
+    ? scaled * 10n ** BigInt(exponent)
+    : scaled / 10n ** BigInt(-exponent);
 }
 
 /** Средняя цена оракула — между min и max; спред у GMX узкий. */
@@ -113,6 +138,9 @@ export async function getGmxApiData(
     const data: GmxApiData = {
       decimals: new Map(
         tokens.tokens.map((t) => [t.address.toLowerCase(), t.decimals]),
+      ),
+      symbols: new Map(
+        tokens.tokens.map((t) => [t.address.toLowerCase(), t.symbol]),
       ),
       prices: new Map(
         tickers.map((t) => [

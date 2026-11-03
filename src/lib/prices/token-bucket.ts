@@ -6,13 +6,27 @@
 export class TokenBucket {
   private tokens: number;
   private lastRefill: number;
+  private readonly capacity: number;
+  /** Скорость пополнения, токенов в миллисекунду. */
+  private readonly refillPerMs: number;
+  private readonly now: () => number;
 
+  /**
+   * Поля объявлены отдельно, а не параметрами конструктора: parameter
+   * properties — единственная конструкция TypeScript, которая не является
+   * разметкой типов, и снять её простым стиранием нельзя. Скрипты
+   * (scripts/restore-snapshot.ts) исполняют код приложения прямо в Node,
+   * а Node умеет ровно стирание, — и один такой конструктор делал бы
+   * незагружаемым всё, что тянет за собой кэш цен.
+   */
   constructor(
-    private readonly capacity: number,
-    /** Скорость пополнения, токенов в миллисекунду. */
-    private readonly refillPerMs: number,
-    private readonly now: () => number = Date.now,
+    capacity: number,
+    refillPerMs: number,
+    now: () => number = Date.now,
   ) {
+    this.capacity = capacity;
+    this.refillPerMs = refillPerMs;
+    this.now = now;
     this.tokens = capacity;
     this.lastRefill = now();
   }
