@@ -13,8 +13,13 @@ import type { PriceSeries } from "@/lib/prices/coingecko";
  * запроса, как читать жалобу узла) проверяется без единого мока сети.
  *
  * Почему ERC-20 Transfer, а не события GMX: покупка GM (deposit) минтит токен
- * получателю, продажа (withdrawal) сжигает. Формат `EventLog1` у GMX
- * версионнозависим, `Transfer(address,address,uint256)` — нет.
+ * получателю, продажа (withdrawal) уводит его с кошелька в WithdrawalVault.
+ * Формат `EventLog1` у GMX версионнозависим, `Transfer(address,address,uint256)` — нет.
+ *
+ * Продажа — НЕ burn с кошелька. Заявка на вывод (`createWithdrawal`) переводит
+ * GM `кошелёк → WithdrawalVault`, а сжигает их уже keeper, отдельной
+ * транзакцией и с адреса vault (`vault → 0x0`): кошелёк в burn не участвует
+ * вовсе. Поиск, ждавший `кошелёк → 0x0`, продаж не находил никогда.
  */
 
 /** Глубина поиска — решение владельца (docs/09 §S8.5). */
@@ -40,6 +45,16 @@ export const TRANSFER_TOPIC = keccak256(
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 export const ZERO_TOPIC = `0x${"0".repeat(64)}`;
 
+/**
+ * WithdrawalVault GMX v2 на Arbitrum — куда уходят GM при продаже.
+ *
+ * Сверено по живой продаже: `кошелёк → 0x0628…1c55` в заявке, `0x0628…1c55 →
+ * 0x0` в исполнении. Поиск работает только на Arbitrum (см. GMX_CHAIN в
+ * gmx.ts), поэтому адрес один. Обновится контракт у GMX — продажи снова
+ * пропадут из поиска; следить за этим адресом при апгрейдах GMX.
+ */
+export const GMX_WITHDRAWAL_VAULT = "0x0628d46b5d145f183adb6ef1f2c97ed1c4701c55";
+
 /** Адрес как topic: 12 нулевых байт слева, 20 байт адреса справа. */
 export function addressTopic(addr: string): string {
   const hex = addr.toLowerCase().replace(/^0x/, "");
@@ -58,7 +73,14 @@ export function searchWindowSec(nowSec: bigint): {
 export type GmTransferKind = "buy" | "sell";
 
 /**
- * Покупка, продажа или ничего.
+ * Покупка, продажа, возврат отменённой продажи или ничего.
+ *
+ * - `0x0 → кошелёк` — mint, покупка.
+ * - `кошелёк → WithdrawalVault` — заявка на продажу (см. шапку файла).
+ * - `кошелёк → 0x0` — прямой burn; GMX v2 так не делает (сжигает только
+ *   контроллер и только с vault), но если случится, это тоже продажа.
+ * - `WithdrawalVault → кошелёк` — `refund`: keeper отменил заявку и вернул GM.
+ *   На экран не идёт, а гасит свою продажу в `assembleRows`.
  *
  * Перевод GM с кошелька на кошелёк (`wallet → wallet`) осознанно отбрасывается:
  * это не операция с пулом, количество GM у стратегии от него не меняется, а на
@@ -69,15 +91,17 @@ export function classifyTransfer(args: {
   from: string;
   to: string;
   wallet: string;
-}): GmTransferKind | null {
+}): GmTransferKind | "refund" | null {
   const from = args.from.toLowerCase();
   const to = args.to.toLowerCase();
   const wallet = args.wallet.toLowerCase();
   const zero = ZERO_ADDRESS;
+  const vault = GMX_WITHDRAWAL_VAULT;
 
-  if (from === zero && to === zero) return null;
+  if (from === wallet && to === wallet) return null;
   if (from === zero) return to === wallet ? "buy" : null;
-  if (to === zero) return from === wallet ? "sell" : null;
+  if (from === wallet) return to === zero || to === vault ? "sell" : null;
+  if (from === vault && to === wallet) return "refund";
   return null;
 }
 
@@ -121,17 +145,24 @@ export function assetTransfersParams(
 /**
  * Фильтр `eth_getLogs` для запасного пути.
  *
- * Оба индексированных места — «либо ноль, либо кошелёк»: это ровно mint
- * и burn плюс отсеиваемый `classifyTransfer` перевод кошелька самому себе.
+ * from ∈ {0x0, кошелёк, vault}, to ∈ {кошелёк, vault}: mint кошельку, заявка
+ * на продажу, возврат отменённой заявки (плюс отсеиваемые `classifyTransfer`
+ * комбинации вроде `кошелёк → кошелёк`).
+ *
+ * Нуля в получателе нет намеренно: вместе с vault в отправителе он притащил
+ * бы `vault → 0x0` — burn КАЖДОЙ продажи этого пула всеми держателями, сотни
+ * чужих логов на окно. Прямого burn с кошелька GMX v2 не делает, так что
+ * теряется только теоретический случай.
  */
 export function logsFilter(q: TransferQuery): Record<string, unknown> {
   const wallet = addressTopic(q.wallet);
+  const vault = addressTopic(GMX_WITHDRAWAL_VAULT);
   return {
     address: q.gmToken.toLowerCase(),
     topics: [
       TRANSFER_TOPIC,
-      [ZERO_TOPIC, wallet],
-      [ZERO_TOPIC, wallet],
+      [ZERO_TOPIC, wallet, vault],
+      [wallet, vault],
     ],
     fromBlock: numberToHex(q.fromBlock),
     toBlock: numberToHex(q.toBlock),
@@ -334,7 +365,7 @@ export interface GmTransferItem {
 const GM_DECIMALS = 18;
 
 /**
- * Классификация, дедупликация, сортировка и обрезка — одним проходом.
+ * Классификация, дедупликация, гашение отменённых продаж, сортировка и обрезка.
  *
  * Два пути (Alchemy отдельно «пришло» и «ушло», getLogs — одним фильтром)
  * дают пересекающиеся списки, поэтому ключ `${txHash}:${logIndex}` обязателен.
@@ -346,7 +377,8 @@ export function assembleRows(
   raws: readonly GmTransferRaw[],
   wallet: string,
 ): GmTransferItem[] {
-  const byKey = new Map<string, GmTransferItem>();
+  type Classified = GmTransferItem & { raw: bigint; refund: boolean };
+  const byKey = new Map<string, Classified>();
 
   for (const r of raws) {
     const kind = classifyTransfer({ from: r.from, to: r.to, wallet });
@@ -361,21 +393,44 @@ export function assembleRows(
       txHash,
       logIndex: r.logIndex,
       blockNumber: r.blockNumber,
-      kind,
+      kind: kind === "refund" ? "sell" : kind,
       gmAmount: formatUnits(r.raw, GM_DECIMALS),
       happenedAtSec: r.timestampSec ?? null,
       timeApproximate: false,
+      raw: r.raw,
+      refund: kind === "refund",
     });
   }
 
-  const rows = [...byKey.values()].sort((a, b) => {
+  const newestFirst = (a: Classified, b: Classified) => {
     if (a.blockNumber !== b.blockNumber) {
       return a.blockNumber > b.blockNumber ? -1 : 1;
     }
     return b.logIndex - a.logIndex;
-  });
+  };
+  const all = [...byKey.values()].sort(newestFirst);
 
-  return rows.slice(0, GM_ROW_LIMIT);
+  // Отменённая заявка на продажу: GMX вернул из vault ровно то количество,
+  // что ушло в заявку. Продажи не было — гасим ближайшую более раннюю
+  // заявку с той же суммой. Возврат без пары (заявка старше окна поиска)
+  // просто отбрасывается.
+  const cancelled = new Set<string>();
+  for (let i = all.length - 1; i >= 0; i--) {
+    const refund = all[i];
+    if (!refund.refund) continue;
+    for (let j = i + 1; j < all.length; j++) {
+      const sell = all[j];
+      if (sell.refund || sell.kind !== "sell" || cancelled.has(sell.key)) continue;
+      if (sell.raw !== refund.raw) continue;
+      cancelled.add(sell.key);
+      break;
+    }
+  }
+
+  return all
+    .filter((r) => !r.refund && !cancelled.has(r.key))
+    .slice(0, GM_ROW_LIMIT)
+    .map(({ raw: _raw, refund: _refund, ...row }) => row);
 }
 
 // --- Цены ---

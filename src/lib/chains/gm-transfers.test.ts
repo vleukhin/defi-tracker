@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  GMX_WITHDRAWAL_VAULT,
   GM_ROW_LIMIT,
   MAX_LOG_REQUESTS,
   MAX_LOG_SPAN,
@@ -49,6 +50,19 @@ describe("classifyTransfer", () => {
     expect(classifyTransfer({ from: wallet, to: ZERO_ADDRESS, wallet })).toBe("sell");
   });
 
+  it("заявка на вывод (кошелёк → WithdrawalVault) — продажа: burn делает уже vault", () => {
+    expect(classifyTransfer({ from: wallet, to: GMX_WITHDRAWAL_VAULT, wallet })).toBe("sell");
+    // burn самого vault кошелька не касается и операцией не считается
+    expect(classifyTransfer({ from: GMX_WITHDRAWAL_VAULT, to: ZERO_ADDRESS, wallet })).toBeNull();
+    // чужая заявка — не наша продажа
+    expect(classifyTransfer({ from: other, to: GMX_WITHDRAWAL_VAULT, wallet })).toBeNull();
+  });
+
+  it("vault → кошелёк — возврат отменённой заявки, а не покупка", () => {
+    expect(classifyTransfer({ from: GMX_WITHDRAWAL_VAULT, to: wallet, wallet })).toBe("refund");
+    expect(classifyTransfer({ from: GMX_WITHDRAWAL_VAULT, to: other, wallet })).toBeNull();
+  });
+
   it("перевод кошелёк → кошелёк отбрасывается: количество GM от него не меняется", () => {
     expect(classifyTransfer({ from: wallet, to: other, wallet })).toBeNull();
     expect(classifyTransfer({ from: other, to: wallet, wallet })).toBeNull();
@@ -96,7 +110,7 @@ describe("параметры запросов", () => {
     expect(ZERO_TOPIC).toHaveLength(66);
   });
 
-  it("logsFilter спрашивает mint и burn одним фильтром", () => {
+  it("logsFilter спрашивает mint, заявку на продажу и возврат одним фильтром", () => {
     const filter = logsFilter({
       gmToken,
       wallet,
@@ -106,8 +120,9 @@ describe("параметры запросов", () => {
     expect(filter.address).toBe(gmToken.toLowerCase());
     expect(filter.topics).toEqual([
       TRANSFER_TOPIC,
-      [ZERO_TOPIC, addressTopic(wallet)],
-      [ZERO_TOPIC, addressTopic(wallet)],
+      [ZERO_TOPIC, addressTopic(wallet), addressTopic(GMX_WITHDRAWAL_VAULT)],
+      // без нуля: иначе vault → 0x0 притащил бы burn всех чужих продаж пула
+      [addressTopic(wallet), addressTopic(GMX_WITHDRAWAL_VAULT)],
     ]);
     // Блоки — hex, а не десятичные: узел на десятичных ответит ошибкой
     expect(filter.fromBlock).toBe("0x64");
@@ -495,6 +510,51 @@ describe("assembleRows", () => {
     expect(rows.map((r) => r.kind)).toEqual(["buy", "sell"]);
     expect(rows.map((r) => r.gmAmount)).toEqual(["4", "5"]);
     expect(new Set(rows.map((r) => r.key)).size).toBe(2);
+  });
+
+  it("продажа через WithdrawalVault доходит до экрана, burn vault — нет", () => {
+    // Живой сценарий: заявка кошелёк → vault, через 13 блоков keeper сжигает
+    // с vault. Строка — одна, продажа, на блоке заявки
+    const rows = assembleRows(
+      [
+        raw({ txHash: tx(1), logIndex: 2, blockNumber: 100n, from: wallet, to: GMX_WITHDRAWAL_VAULT, raw: 9n * 10n ** 18n }),
+        raw({ txHash: tx(2), logIndex: 20, blockNumber: 113n, from: GMX_WITHDRAWAL_VAULT, to: ZERO_ADDRESS, raw: 9n * 10n ** 18n }),
+        raw({ txHash: tx(3), logIndex: 1, blockNumber: 50n, from: ZERO_ADDRESS, to: wallet, raw: 4n * 10n ** 18n }),
+      ],
+      wallet,
+    );
+    expect(rows.map((r) => [r.kind, r.gmAmount, r.blockNumber])).toEqual([
+      ["sell", "9", 100n],
+      ["buy", "4", 50n],
+    ]);
+  });
+
+  it("отменённая заявка на продажу гасится возвратом той же суммы", () => {
+    const rows = assembleRows(
+      [
+        raw({ txHash: tx(1), logIndex: 1, blockNumber: 100n, from: wallet, to: GMX_WITHDRAWAL_VAULT, raw: 9n * 10n ** 18n }),
+        raw({ txHash: tx(2), logIndex: 1, blockNumber: 110n, from: GMX_WITHDRAWAL_VAULT, to: wallet, raw: 9n * 10n ** 18n }),
+        // повторная заявка после отмены — уже настоящая продажа
+        raw({ txHash: tx(3), logIndex: 1, blockNumber: 120n, from: wallet, to: GMX_WITHDRAWAL_VAULT, raw: 9n * 10n ** 18n }),
+      ],
+      wallet,
+    );
+    expect(rows.map((r) => [r.kind, r.blockNumber])).toEqual([["sell", 120n]]);
+  });
+
+  it("возврат гасит только более раннюю заявку с той же суммой", () => {
+    const rows = assembleRows(
+      [
+        raw({ txHash: tx(1), logIndex: 1, blockNumber: 100n, from: wallet, to: GMX_WITHDRAWAL_VAULT, raw: 5n * 10n ** 18n }),
+        raw({ txHash: tx(2), logIndex: 1, blockNumber: 110n, from: GMX_WITHDRAWAL_VAULT, to: wallet, raw: 9n * 10n ** 18n }),
+        raw({ txHash: tx(3), logIndex: 1, blockNumber: 120n, from: wallet, to: GMX_WITHDRAWAL_VAULT, raw: 9n * 10n ** 18n }),
+      ],
+      wallet,
+    );
+    expect(rows.map((r) => [r.kind, r.gmAmount])).toEqual([
+      ["sell", "9"],
+      ["sell", "5"],
+    ]);
   });
 
   it("сортировка по (блок, logIndex) убыванием — свежее первым", () => {
